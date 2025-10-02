@@ -93,6 +93,7 @@ import UsherManagement from "@/components/admin/UsherManagment";
 import AdminAccountSettings from "@/components/admin/AdminAccountSettings";
 import ExpensesManagement from "@/components/admin/expansesManagment";
 import PayoutsManagement from "@/components/admin/PayoutsManagement";
+import MerchantManagement from "@/components/admin/MerchantManagement";
 
 // Import Owner's Finances components
 import CompanyFinances from "@/components/admin/CompanyFinances";
@@ -285,6 +286,11 @@ const EnhancedTabsList: React.FC<EnhancedTabsListProps> = ({
           value: "admins",
           label: t("admin.dashboard.tabs.admins"),
           icon: Users,
+        },
+        {
+          value: "merchants",
+          label: t("admin.dashboard.tabs.merchants"),
+          icon: Building2,
         },
       ],
     },
@@ -1452,6 +1458,14 @@ const AdminDashboard: React.FC = () => {
             className="space-y-6 transition-all duration-300 ease-in-out"
           >
             <AdminUserManagement />
+          </TabsContent>
+
+          {/* Merchant Management Tab */}
+          <TabsContent
+            value="merchants"
+            className="space-y-6 transition-all duration-300 ease-in-out"
+          >
+            <MerchantManagement />
           </TabsContent>
 
           {/* System Logs Tab */}

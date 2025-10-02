@@ -71,7 +71,7 @@ import { formatCurrencyForLocale } from "@/lib/utils";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
 
-type Usher = {
+interface Usher {
   id: string;
   name: string;
   email: string;
@@ -88,7 +88,8 @@ type Usher = {
   hourlyRate: number;
   totalHours: number;
   performance: "excellent" | "good" | "average" | "needs_improvement";
-};
+  isTeamLeader: boolean;
+}
 
 type Event = {
   id: string;
@@ -114,6 +115,7 @@ const UsherManagement: React.FC = () => {
   const [isAddUsherDialogOpen, setIsAddUsherDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [ushersPerPage, setUshersPerPage] = useState(10);
+  const [tempAssignedEvents, setTempAssignedEvents] = useState<string[]>([]);
 
   // Get date locale based on current language
   const getDateLocale = () => {
@@ -121,191 +123,198 @@ const UsherManagement: React.FC = () => {
   };
 
   // Mock ushers data
-  const ushers = useMemo(
-    (): Usher[] => [
-      {
-        id: "1",
-        name: t("admin.ushers.mock.ahmedHassan"),
-        email: "ahmed.hassan@example.com",
-        phone: "+20 10 1234 5678",
-        status: "active",
-        role: "senior",
-        hireDate: "2024-01-15",
-        lastActive: "2025-08-15T10:30:00",
-        totalEvents: 45,
-        rating: 4.8,
-        assignedEvents: ["E001", "E002", "E003"],
-        location: "Cairo",
-        experience: 3,
-        hourlyRate: 50,
-        totalHours: 1200,
-        performance: "excellent",
-      },
-      {
-        id: "2",
-        name: t("admin.ushers.mock.sarahMohamed"),
-        email: "sarah.mohamed@example.com",
-        phone: "+20 10 2345 6789",
-        status: "active",
-        role: "junior",
-        hireDate: "2024-03-20",
-        lastActive: "2025-08-14T15:45:00",
-        totalEvents: 28,
-        rating: 4.2,
-        assignedEvents: ["E001", "E004"],
-        location: "Alexandria",
-        experience: 1,
-        hourlyRate: 35,
-        totalHours: 800,
-        performance: "good",
-      },
-      {
-        id: "3",
-        name: t("admin.ushers.mock.omarAli"),
-        email: "omar.ali@example.com",
-        phone: "+20 10 3456 7890",
-        status: "inactive",
-        role: "supervisor",
-        hireDate: "2023-06-10",
-        lastActive: "2025-07-20T09:15:00",
-        totalEvents: 62,
-        rating: 4.6,
-        assignedEvents: ["E002"],
-        location: "Giza",
-        experience: 4,
-        hourlyRate: 60,
-        totalHours: 1800,
-        performance: "excellent",
-      },
-      {
-        id: "4",
-        name: t("admin.ushers.mock.fatimaAhmed"),
-        email: "fatima.ahmed@example.com",
-        phone: "+20 10 4567 8901",
-        status: "active",
-        role: "coordinator",
-        hireDate: "2023-09-15",
-        lastActive: "2025-08-16T11:00:00",
-        totalEvents: 78,
-        rating: 4.9,
-        assignedEvents: ["E001", "E002", "E003", "E004"],
-        location: "Cairo",
-        experience: 5,
-        hourlyRate: 70,
-        totalHours: 2200,
-        performance: "excellent",
-      },
-      {
-        id: "5",
-        name: t("admin.ushers.mock.youssefIbrahim"),
-        email: "youssef.ibrahim@example.com",
-        phone: "+20 10 5678 9012",
-        status: "suspended",
-        role: "junior",
-        hireDate: "2024-08-05",
-        lastActive: "2025-08-10T14:20:00",
-        totalEvents: 15,
-        rating: 3.2,
-        assignedEvents: [],
-        location: "Alexandria",
-        experience: 1,
-        hourlyRate: 35,
-        totalHours: 400,
-        performance: "needs_improvement",
-      },
-      {
-        id: "6",
-        name: t("admin.ushers.mock.nourHassan"),
-        email: "nour.hassan@example.com",
-        phone: "+20 10 6789 0123",
-        status: "active",
-        role: "senior",
-        hireDate: "2024-05-10",
-        lastActive: "2025-08-17T14:30:00",
-        totalEvents: 32,
-        rating: 4.4,
-        assignedEvents: ["E003", "E004"],
-        location: "Giza",
-        experience: 2,
-        hourlyRate: 50,
-        totalHours: 950,
-        performance: "good",
-      },
-      {
-        id: "7",
-        name: t("admin.ushers.mock.mariamAli"),
-        email: "mariam.ali@example.com",
-        phone: "+20 10 7890 1234",
-        status: "active",
-        role: "junior",
-        hireDate: "2024-07-15",
-        lastActive: "2025-08-18T09:15:00",
-        totalEvents: 18,
-        rating: 4.0,
-        assignedEvents: ["E001"],
-        location: "Cairo",
-        experience: 1,
-        hourlyRate: 35,
-        totalHours: 600,
-        performance: "average",
-      },
-      {
-        id: "8",
-        name: t("admin.ushers.mock.karimHassan"),
-        email: "karim.hassan@example.com",
-        phone: "+20 10 8901 2345",
-        status: "active",
-        role: "supervisor",
-        hireDate: "2023-12-01",
-        lastActive: "2025-08-19T10:30:00",
-        totalEvents: 55,
-        rating: 4.7,
-        assignedEvents: ["E002", "E003"],
-        location: "Alexandria",
-        experience: 3,
-        hourlyRate: 60,
-        totalHours: 1500,
-        performance: "excellent",
-      },
-      {
-        id: "9",
-        name: t("admin.ushers.mock.laylaAhmed"),
-        email: "layla.ahmed@example.com",
-        phone: "+20 10 9012 3456",
-        status: "inactive",
-        role: "junior",
-        hireDate: "2024-02-20",
-        lastActive: "2025-07-10T12:20:00",
-        totalEvents: 22,
-        rating: 3.8,
-        assignedEvents: [],
-        location: "Giza",
-        experience: 1,
-        hourlyRate: 35,
-        totalHours: 500,
-        performance: "average",
-      },
-      {
-        id: "10",
-        name: t("admin.ushers.mock.hassanAli"),
-        email: "hassan.ali@example.com",
-        phone: "+20 10 0123 4567",
-        status: "active",
-        role: "senior",
-        hireDate: "2024-04-05",
-        lastActive: "2025-08-20T15:45:00",
-        totalEvents: 38,
-        rating: 4.5,
-        assignedEvents: ["E001", "E004"],
-        location: "Cairo",
-        experience: 2,
-        hourlyRate: 50,
-        totalHours: 1100,
-        performance: "good",
-      },
-    ],
-    [t]
-  );
+  const [ushers, setUshers] = useState<Usher[]>([
+    {
+      id: "1",
+      name: t("admin.ushers.mock.ahmedHassan"),
+      email: "ahmed.hassan@example.com",
+      phone: "+20 10 1234 5678",
+      status: "active",
+      role: "senior",
+      hireDate: "2024-01-15",
+      lastActive: "2025-08-15T10:30:00",
+      totalEvents: 45,
+      rating: 4.8,
+      assignedEvents: ["E001", "E002", "E003"],
+      location: "Cairo",
+      experience: 3,
+      hourlyRate: 50,
+      totalHours: 1200,
+      performance: "excellent",
+      isTeamLeader: false,
+    },
+    {
+      id: "2",
+      name: t("admin.ushers.mock.sarahMohamed"),
+      email: "sarah.mohamed@example.com",
+      phone: "+20 10 2345 6789",
+      status: "active",
+      role: "junior",
+      hireDate: "2024-03-20",
+      lastActive: "2025-08-14T15:45:00",
+      totalEvents: 28,
+      rating: 4.2,
+      assignedEvents: ["E001", "E004"],
+      location: "Alexandria",
+      experience: 1,
+      hourlyRate: 35,
+      totalHours: 800,
+      performance: "good",
+      isTeamLeader: false,
+    },
+    {
+      id: "3",
+      name: t("admin.ushers.mock.omarAli"),
+      email: "omar.ali@example.com",
+      phone: "+20 10 3456 7890",
+      status: "inactive",
+      role: "supervisor",
+      hireDate: "2023-06-10",
+      lastActive: "2025-07-20T09:15:00",
+      totalEvents: 62,
+      rating: 4.6,
+      assignedEvents: ["E002"],
+      location: "Giza",
+      experience: 4,
+      hourlyRate: 60,
+      totalHours: 1800,
+      performance: "excellent",
+      isTeamLeader: false,
+    },
+    {
+      id: "4",
+      name: t("admin.ushers.mock.fatimaAhmed"),
+      email: "fatima.ahmed@example.com",
+      phone: "+20 10 4567 8901",
+      status: "active",
+      role: "coordinator",
+      hireDate: "2023-09-15",
+      lastActive: "2025-08-16T11:00:00",
+      totalEvents: 78,
+      rating: 4.9,
+      assignedEvents: ["E001", "E002", "E003", "E004"],
+      location: "Cairo",
+      experience: 5,
+      hourlyRate: 70,
+      totalHours: 2200,
+      performance: "excellent",
+      isTeamLeader: true,
+    },
+    {
+      id: "5",
+      name: t("admin.ushers.mock.youssefIbrahim"),
+      email: "youssef.ibrahim@example.com",
+      phone: "+20 10 5678 9012",
+      status: "suspended",
+      role: "junior",
+      hireDate: "2024-08-05",
+      lastActive: "2025-08-10T14:20:00",
+      totalEvents: 15,
+      rating: 3.2,
+      assignedEvents: [],
+      location: "Alexandria",
+      experience: 1,
+      hourlyRate: 35,
+      totalHours: 400,
+      performance: "needs_improvement",
+      isTeamLeader: false,
+    },
+    {
+      id: "6",
+      name: t("admin.ushers.mock.nourHassan"),
+      email: "nour.hassan@example.com",
+      phone: "+20 10 6789 0123",
+      status: "active",
+      role: "senior",
+      hireDate: "2024-05-10",
+      lastActive: "2025-08-17T14:30:00",
+      totalEvents: 32,
+      rating: 4.4,
+      assignedEvents: ["E003", "E004"],
+      location: "Giza",
+      experience: 2,
+      hourlyRate: 50,
+      totalHours: 950,
+      performance: "good",
+      isTeamLeader: false,
+    },
+    {
+      id: "7",
+      name: t("admin.ushers.mock.mariamAli"),
+      email: "mariam.ali@example.com",
+      phone: "+20 10 7890 1234",
+      status: "active",
+      role: "junior",
+      hireDate: "2024-07-15",
+      lastActive: "2025-08-18T09:15:00",
+      totalEvents: 18,
+      rating: 4.0,
+      assignedEvents: ["E001"],
+      location: "Cairo",
+      experience: 1,
+      hourlyRate: 35,
+      totalHours: 600,
+      performance: "average",
+      isTeamLeader: false,
+    },
+    {
+      id: "8",
+      name: t("admin.ushers.mock.karimHassan"),
+      email: "karim.hassan@example.com",
+      phone: "+20 10 8901 2345",
+      status: "active",
+      role: "supervisor",
+      hireDate: "2023-12-01",
+      lastActive: "2025-08-19T10:30:00",
+      totalEvents: 55,
+      rating: 4.7,
+      assignedEvents: ["E002", "E003"],
+      location: "Alexandria",
+      experience: 3,
+      hourlyRate: 60,
+      totalHours: 1500,
+      performance: "excellent",
+      isTeamLeader: false,
+    },
+    {
+      id: "9",
+      name: t("admin.ushers.mock.laylaAhmed"),
+      email: "layla.ahmed@example.com",
+      phone: "+20 10 9012 3456",
+      status: "inactive",
+      role: "junior",
+      hireDate: "2024-02-20",
+      lastActive: "2025-07-10T12:20:00",
+      totalEvents: 22,
+      rating: 3.8,
+      assignedEvents: [],
+      location: "Giza",
+      experience: 1,
+      hourlyRate: 35,
+      totalHours: 500,
+      performance: "average",
+      isTeamLeader: false,
+    },
+    {
+      id: "10",
+      name: t("admin.ushers.mock.hassanAli"),
+      email: "hassan.ali@example.com",
+      phone: "+20 10 0123 4567",
+      status: "active",
+      role: "senior",
+      hireDate: "2024-04-05",
+      lastActive: "2025-08-20T15:45:00",
+      totalEvents: 38,
+      rating: 4.5,
+      assignedEvents: ["E001", "E004"],
+      location: "Cairo",
+      experience: 2,
+      hourlyRate: 50,
+      totalHours: 1100,
+      performance: "good",
+      isTeamLeader: false,
+    },
+  ]);
 
   // Mock events data
   const events = useMemo(
@@ -487,6 +496,13 @@ const UsherManagement: React.FC = () => {
 
   const handleAssignEvents = (usher: Usher) => {
     setSelectedUsher(usher);
+    // If team leader, assign to all events automatically
+    if (usher.isTeamLeader) {
+      const allEventIds = events.map((event) => event.id);
+      setTempAssignedEvents(allEventIds);
+    } else {
+      setTempAssignedEvents([...usher.assignedEvents]);
+    }
     setIsAssignEventsDialogOpen(true);
   };
 
@@ -513,10 +529,21 @@ const UsherManagement: React.FC = () => {
   };
 
   const handleAssignEventsToUsher = () => {
-    toast({
-      title: t("admin.ushers.toast.eventsAssigned"),
-      description: t("admin.ushers.toast.eventsAssignedDesc"),
-    });
+    if (selectedUsher) {
+      const updatedUsher = {
+        ...selectedUsher,
+        assignedEvents: tempAssignedEvents,
+      };
+      setUshers(
+        ushers.map((u) => (u.id === selectedUsher.id ? updatedUsher : u))
+      );
+      setSelectedUsher(updatedUsher);
+
+      toast({
+        title: t("admin.ushers.toast.eventsAssigned"),
+        description: t("admin.ushers.toast.eventsAssignedDesc"),
+      });
+    }
     setIsAssignEventsDialogOpen(false);
   };
 
@@ -526,6 +553,47 @@ const UsherManagement: React.FC = () => {
       description: t("admin.ushers.toast.usherUpdatedDesc"),
     });
     setIsEditDialogOpen(false);
+  };
+
+  const handleToggleTeamLeader = (usher: Usher) => {
+    if (usher.isTeamLeader) {
+      // Remove team leader status
+      const updatedUsher = {
+        ...usher,
+        isTeamLeader: false,
+        assignedEvents: [],
+      };
+      setUshers(ushers.map((u) => (u.id === usher.id ? updatedUsher : u)));
+
+      // Update selected usher if it's the same one
+      if (selectedUsher && selectedUsher.id === usher.id) {
+        setSelectedUsher(updatedUsher);
+      }
+
+      toast({
+        title: "Team Leader Removed",
+        description: `${usher.name} is no longer a team leader`,
+      });
+    } else {
+      // Make team leader and assign to all events
+      const allEventIds = events.map((event) => event.id);
+      const updatedUsher = {
+        ...usher,
+        isTeamLeader: true,
+        assignedEvents: allEventIds,
+      };
+      setUshers(ushers.map((u) => (u.id === usher.id ? updatedUsher : u)));
+
+      // Update selected usher if it's the same one
+      if (selectedUsher && selectedUsher.id === usher.id) {
+        setSelectedUsher(updatedUsher);
+      }
+
+      toast({
+        title: "Team Leader Assigned",
+        description: `${usher.name} is now a team leader and assigned to all events`,
+      });
+    }
   };
 
   return (
@@ -718,6 +786,7 @@ const UsherManagement: React.FC = () => {
                   <TableHead className="rtl:text-right">
                     {t("admin.ushers.table.role")}
                   </TableHead>
+                  <TableHead className="rtl:text-right">Team Leader</TableHead>
                   <TableHead className="rtl:text-right">
                     {t("admin.ushers.table.status")}
                   </TableHead>
@@ -758,6 +827,18 @@ const UsherManagement: React.FC = () => {
                       <Badge className={getRoleColor(usher.role)}>
                         {getRoleText(usher.role)}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-center">
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            usher.isTeamLeader ? "bg-purple-500" : "bg-gray-300"
+                          }`}
+                        ></div>
+                        <span className="text-xs ml-2 rtl:mr-2 rtl:ml-0">
+                          {usher.isTeamLeader ? "Yes" : "No"}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge className={getStatusColor(usher.status)}>
@@ -806,6 +887,19 @@ const UsherManagement: React.FC = () => {
                           >
                             <Calendar className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
                             {t("admin.ushers.actions.assignEvents")}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => handleToggleTeamLeader(usher)}
+                            className={
+                              usher.isTeamLeader
+                                ? "text-purple-600"
+                                : "text-gray-600"
+                            }
+                          >
+                            <Users className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
+                            {usher.isTeamLeader
+                              ? "Remove Team Leader"
+                              : "Make Team Leader"}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {usher.status === "active" && (
@@ -865,7 +959,7 @@ const UsherManagement: React.FC = () => {
       </Card>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium rtl:text-right ltr:text-left">
@@ -916,6 +1010,20 @@ const UsherManagement: React.FC = () => {
           <CardContent className="rtl:text-right">
             <div className="text-2xl font-bold text-red-600">
               {ushers.filter((usher) => usher.status === "suspended").length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium rtl:text-right ltr:text-left">
+              Team Leaders
+            </CardTitle>
+            <Users className="h-4 w-4 text-purple-600 flex-shrink-0" />
+          </CardHeader>
+          <CardContent className="rtl:text-right">
+            <div className="text-2xl font-bold text-purple-600">
+              {ushers.filter((usher) => usher.isTeamLeader).length}
             </div>
           </CardContent>
         </Card>
@@ -1006,6 +1114,23 @@ const UsherManagement: React.FC = () => {
                     type="number"
                     defaultValue={selectedUsher.hourlyRate.toString()}
                   />
+                </div>
+                <div className="col-span-2">
+                  <div className="flex items-center space-x-2 rtl:flex-row-reverse rtl:space-x-reverse">
+                    <div
+                      className={`w-4 h-4 rounded-full ${
+                        selectedUsher.isTeamLeader
+                          ? "bg-purple-500"
+                          : "bg-gray-300"
+                      }`}
+                    ></div>
+                    <span className="text-sm font-medium">
+                      Team Leader (Joker)
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      - Assigns to all events automatically
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1122,6 +1247,17 @@ const UsherManagement: React.FC = () => {
                   dir={i18n.language === "ar" ? "rtl" : "ltr"}
                 />
               </div>
+              <div className="col-span-2">
+                <div className="flex items-center space-x-2 rtl:flex-row-reverse rtl:space-x-reverse">
+                  <div className="w-4 h-4 rounded-full bg-gray-300"></div>
+                  <span className="text-sm font-medium">
+                    Team Leader (Joker)
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    - Assigns to all events automatically
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter className="rtl:flex-row-reverse">
@@ -1178,6 +1314,63 @@ const UsherManagement: React.FC = () => {
                 </div>
               </div>
 
+              {/* Team Leader Section */}
+              <div className="space-y-2">
+                <h4 className="font-medium rtl:text-right ltr:text-left">
+                  Team Leader Assignment
+                </h4>
+                <div className="p-4 border rounded-lg bg-purple-50 border-purple-200">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 rtl:text-right">
+                      <p className="font-medium text-purple-800">
+                        {selectedUsher.isTeamLeader
+                          ? "Current Team Leader"
+                          : "Not a Team Leader"}
+                      </p>
+                      <p className="text-sm text-purple-600">
+                        {selectedUsher.isTeamLeader
+                          ? "This usher is assigned to all events as a team leader (joker)"
+                          : "Make this usher a team leader to assign them to all events at once"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 rtl:flex-row-reverse">
+                      <div
+                        className={`w-4 h-4 rounded-full ${
+                          selectedUsher.isTeamLeader
+                            ? "bg-purple-500"
+                            : "bg-gray-300"
+                        }`}
+                      ></div>
+                      <Button
+                        variant={
+                          selectedUsher.isTeamLeader ? "outline" : "default"
+                        }
+                        size="sm"
+                        onClick={() => handleToggleTeamLeader(selectedUsher)}
+                        className={
+                          selectedUsher.isTeamLeader
+                            ? "text-purple-600 border-purple-600"
+                            : "bg-purple-600 hover:bg-purple-700"
+                        }
+                      >
+                        {selectedUsher.isTeamLeader
+                          ? "Remove Team Leader"
+                          : "Make Team Leader"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                {selectedUsher.isTeamLeader && (
+                  <div className="p-3 border rounded-lg bg-blue-50 border-blue-200">
+                    <p className="text-sm text-blue-800">
+                      <strong>Note:</strong> Team leaders are automatically
+                      assigned to all events and cannot be manually unassigned
+                      from individual events.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <h4 className="font-medium rtl:text-right ltr:text-left">
                   {t("admin.ushers.assignEvents.availableEvents")}
@@ -1202,27 +1395,41 @@ const UsherManagement: React.FC = () => {
                       <div className="flex items-center gap-2 rtl:flex-row-reverse">
                         <Badge
                           className={
-                            selectedUsher.assignedEvents.includes(event.id)
+                            tempAssignedEvents.includes(event.id)
                               ? "bg-green-100 text-green-800"
                               : "bg-gray-100 text-gray-800"
                           }
                         >
-                          {selectedUsher.assignedEvents.includes(event.id)
+                          {tempAssignedEvents.includes(event.id)
                             ? t("admin.ushers.assignEvents.assigned")
                             : t("admin.ushers.assignEvents.notAssigned")}
                         </Badge>
                         <Button
                           variant={
-                            selectedUsher.assignedEvents.includes(event.id)
+                            tempAssignedEvents.includes(event.id)
                               ? "outline"
                               : "default"
                           }
                           size="sm"
+                          disabled={selectedUsher.isTeamLeader}
                           onClick={() => {
-                            // Toggle assignment logic would go here
+                            if (tempAssignedEvents.includes(event.id)) {
+                              setTempAssignedEvents(
+                                tempAssignedEvents.filter(
+                                  (id) => id !== event.id
+                                )
+                              );
+                            } else {
+                              setTempAssignedEvents([
+                                ...tempAssignedEvents,
+                                event.id,
+                              ]);
+                            }
                           }}
                         >
-                          {selectedUsher.assignedEvents.includes(event.id)
+                          {selectedUsher.isTeamLeader
+                            ? "Auto-Assigned"
+                            : tempAssignedEvents.includes(event.id)
                             ? t("admin.ushers.assignEvents.remove")
                             : t("admin.ushers.assignEvents.assign")}
                         </Button>
@@ -1237,8 +1444,8 @@ const UsherManagement: React.FC = () => {
                   {t("admin.ushers.assignEvents.currentAssignments")}
                 </h4>
                 <div className="space-y-2">
-                  {selectedUsher.assignedEvents.length > 0 ? (
-                    selectedUsher.assignedEvents.map((eventId) => {
+                  {tempAssignedEvents.length > 0 ? (
+                    tempAssignedEvents.map((eventId) => {
                       const event = events.find((e) => e.id === eventId);
                       return event ? (
                         <div
@@ -1355,6 +1562,25 @@ const UsherManagement: React.FC = () => {
                     <p className="text-sm text-muted-foreground rtl:text-right">
                       {selectedUsher.location}
                     </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium rtl:text-right">
+                      Team Leader Status
+                    </label>
+                    <div className="flex items-center gap-2 rtl:flex-row-reverse">
+                      <div
+                        className={`w-4 h-4 rounded-full ${
+                          selectedUsher.isTeamLeader
+                            ? "bg-purple-500"
+                            : "bg-gray-300"
+                        }`}
+                      ></div>
+                      <span className="text-sm text-muted-foreground">
+                        {selectedUsher.isTeamLeader
+                          ? "Team Leader (Joker)"
+                          : "Regular Usher"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

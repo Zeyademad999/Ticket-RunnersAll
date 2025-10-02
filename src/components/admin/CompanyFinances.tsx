@@ -266,7 +266,7 @@ const CompanyFinances = () => {
   return (
     <div className="space-y-6" dir={i18n.language === "ar" ? "rtl" : "ltr"}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rtl:flex-row-reverse">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold rtl:text-right ltr:text-left">
             {t("admin.dashboard.tabs.companyFinances")}
@@ -306,8 +306,8 @@ const CompanyFinances = () => {
             subtitle={t("admin.companyFinances.subtitle")}
             filename="company-finances"
           >
-            <Button className="flex items-center gap-2 rtl:flex-row-reverse text-xs sm:text-sm">
-              <Download className="h-3 w-3 sm:h-4 sm:w-4" />
+            <Button className="text-xs sm:text-sm">
+              <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
               <span className="hidden sm:inline">
                 {t("admin.export.title")}
               </span>
@@ -322,7 +322,7 @@ const CompanyFinances = () => {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-4">
           <TabsTrigger value="overview">
             {t("admin.companyFinances.tabs.overview")}
           </TabsTrigger>
@@ -334,9 +334,6 @@ const CompanyFinances = () => {
           </TabsTrigger>
           <TabsTrigger value="profitShare">
             {t("admin.companyFinances.tabs.profitShare")}
-          </TabsTrigger>
-          <TabsTrigger value="reports">
-            {t("admin.companyFinances.tabs.reports")}
           </TabsTrigger>
         </TabsList>
 
@@ -930,23 +927,6 @@ const CompanyFinances = () => {
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Reports Tab */}
-        <TabsContent value="reports" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("admin.companyFinances.tabs.reports")}</CardTitle>
-              <CardDescription>
-                {t("admin.companyFinances.reportsDescription")}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-muted-foreground">
-                {t("admin.companyFinances.comingSoon")}
               </div>
             </CardContent>
           </Card>

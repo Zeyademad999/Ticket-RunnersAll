@@ -152,6 +152,7 @@ const CustomerManagement: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [vipFilter, setVipFilter] = useState<string>("all");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
     null
   );
@@ -250,7 +251,7 @@ const CustomerManagement: React.FC = () => {
   };
 
   // Mock customers data
-  const customers: Customer[] = [
+  const [customers, setCustomers] = useState<Customer[]>([
     {
       id: "C001",
       name: "Ahmed Hassan",
@@ -538,7 +539,7 @@ const CustomerManagement: React.FC = () => {
         "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
       labels: [],
     },
-  ];
+  ]);
 
   // Mock customer bookings
   const customerBookings: CustomerBooking[] = [
@@ -610,10 +611,16 @@ const CustomerManagement: React.FC = () => {
         statusFilter === "all" || customer.status === statusFilter;
       const matchesLocation =
         locationFilter === "all" || customer.location.includes(locationFilter);
+      const matchesVIP =
+        vipFilter === "all" ||
+        (vipFilter === "vip" &&
+          customer.labels.some((label) => label.name === "VIP")) ||
+        (vipFilter === "non-vip" &&
+          !customer.labels.some((label) => label.name === "VIP"));
 
-      return matchesSearch && matchesStatus && matchesLocation;
+      return matchesSearch && matchesStatus && matchesLocation && matchesVIP;
     });
-  }, [customers, searchTerm, statusFilter, locationFilter]);
+  }, [customers, searchTerm, statusFilter, locationFilter, vipFilter]);
 
   // Get unique locations for filter
   const uniqueLocations = useMemo(() => {
@@ -629,7 +636,7 @@ const CustomerManagement: React.FC = () => {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, locationFilter]);
+  }, [searchTerm, statusFilter, locationFilter, vipFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -808,6 +815,78 @@ const CustomerManagement: React.FC = () => {
     setShowManageLabelsDialog(true);
   };
 
+  const handleSetVIP = (customer: Customer) => {
+    const vipLabel: CustomerLabel = {
+      id: "vip-label",
+      name: "VIP",
+      color: "#F59E0B",
+      description: "Very Important Person",
+      icon: "Crown",
+    };
+
+    // Check if customer already has VIP label
+    const hasVIP = customer.labels.some((label) => label.name === "VIP");
+
+    if (hasVIP) {
+      toast({
+        title: t("admin.customers.vip.alreadyVIP"),
+        description: t("admin.customers.vip.alreadyVIPDesc"),
+        variant: "default",
+      });
+      return;
+    }
+
+    // Add VIP label to customer
+    const updatedCustomer = {
+      ...customer,
+      labels: [...customer.labels, vipLabel],
+    };
+
+    // Update the customers array
+    const updatedCustomers = customers.map((c) =>
+      c.id === customer.id ? updatedCustomer : c
+    );
+
+    // Update the state
+    setCustomers(updatedCustomers);
+
+    // Update selected customer if it's the same one
+    if (selectedCustomer && selectedCustomer.id === customer.id) {
+      setSelectedCustomer(updatedCustomer);
+    }
+
+    toast({
+      title: t("admin.customers.vip.setVIPSuccess"),
+      description: t("admin.customers.vip.setVIPSuccessDesc"),
+    });
+  };
+
+  const handleRemoveVIP = (customer: Customer) => {
+    // Remove VIP label from customer
+    const updatedCustomer = {
+      ...customer,
+      labels: customer.labels.filter((label) => label.name !== "VIP"),
+    };
+
+    // Update the customers array
+    const updatedCustomers = customers.map((c) =>
+      c.id === customer.id ? updatedCustomer : c
+    );
+
+    // Update the state
+    setCustomers(updatedCustomers);
+
+    // Update selected customer if it's the same one
+    if (selectedCustomer && selectedCustomer.id === customer.id) {
+      setSelectedCustomer(updatedCustomer);
+    }
+
+    toast({
+      title: t("admin.customers.vip.removeVIPSuccess"),
+      description: t("admin.customers.vip.removeVIPSuccessDesc"),
+    });
+  };
+
   const handleAddLabel = () => {
     if (!newLabel.name.trim()) {
       toast({
@@ -833,6 +912,12 @@ const CustomerManagement: React.FC = () => {
       };
       setSelectedCustomer(updatedCustomer);
       setSelectedLabels(updatedCustomer.labels);
+
+      // Update the customers array
+      const updatedCustomers = customers.map((c) =>
+        c.id === selectedCustomer.id ? updatedCustomer : c
+      );
+      setCustomers(updatedCustomers);
     }
 
     setNewLabel({
@@ -856,6 +941,12 @@ const CustomerManagement: React.FC = () => {
       };
       setSelectedCustomer(updatedCustomer);
       setSelectedLabels(updatedCustomer.labels);
+
+      // Update the customers array
+      const updatedCustomers = customers.map((c) =>
+        c.id === selectedCustomer.id ? updatedCustomer : c
+      );
+      setCustomers(updatedCustomers);
     }
 
     toast({
@@ -872,6 +963,16 @@ const CustomerManagement: React.FC = () => {
           ? { ...customer, labels: selectedLabels }
           : customer
       );
+
+      // Update the state
+      setCustomers(updatedCustomers);
+
+      // Update selected customer
+      const updatedSelectedCustomer = {
+        ...selectedCustomer,
+        labels: selectedLabels,
+      };
+      setSelectedCustomer(updatedSelectedCustomer);
 
       toast({
         title: t("admin.customers.labels.toast.labelsSaved"),
@@ -909,6 +1010,7 @@ const CustomerManagement: React.FC = () => {
               search: searchTerm,
               status: statusFilter,
               location: locationFilter,
+              vip: vipFilter,
             }}
             onExport={(format) => {
               toast({
@@ -938,6 +1040,78 @@ const CustomerManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* VIP Statistics */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t("admin.customers.stats.totalCustomers")}
+                </p>
+                <p className="text-2xl font-bold">
+                  {formatNumber(customers.length)}
+                </p>
+              </div>
+              <User className="h-8 w-8 text-blue-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t("admin.customers.stats.vipCustomers")}
+                </p>
+                <p className="text-2xl font-bold text-yellow-600">
+                  {formatNumber(
+                    customers.filter((c) =>
+                      c.labels.some((label) => label.name === "VIP")
+                    ).length
+                  )}
+                </p>
+              </div>
+              <Crown className="h-8 w-8 text-yellow-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t("admin.customers.stats.activeCustomers")}
+                </p>
+                <p className="text-2xl font-bold text-green-600">
+                  {formatNumber(
+                    customers.filter((c) => c.status === "active").length
+                  )}
+                </p>
+              </div>
+              <UserCheck className="h-8 w-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t("admin.customers.stats.recurrentUsers")}
+                </p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {formatNumber(
+                    customers.filter((c) => c.recurrentUser).length
+                  )}
+                </p>
+              </div>
+              <Repeat className="h-8 w-8 text-purple-600" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Filters */}
       <Card>
         <CardHeader>
@@ -947,7 +1121,7 @@ const CustomerManagement: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground rtl:right-3 rtl:left-auto" />
               <Input
@@ -995,6 +1169,28 @@ const CustomerManagement: React.FC = () => {
                     {location}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={vipFilter} onValueChange={setVipFilter}>
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={t("admin.customers.filters.vipStatus")}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  {t("admin.customers.filters.allCustomers")}
+                </SelectItem>
+                <SelectItem value="vip">
+                  <div className="flex items-center gap-2">
+                    <Crown className="h-4 w-4 text-yellow-600" />
+                    {t("admin.customers.filters.vipOnly")}
+                  </div>
+                </SelectItem>
+                <SelectItem value="non-vip">
+                  {t("admin.customers.filters.nonVipOnly")}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1220,6 +1416,27 @@ const CustomerManagement: React.FC = () => {
                             {t("admin.customers.actions.manageLabels")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          {/* VIP Management */}
+                          {customer.labels.some(
+                            (label) => label.name === "VIP"
+                          ) ? (
+                            <DropdownMenuItem
+                              onClick={() => handleRemoveVIP(customer)}
+                              className="text-orange-600"
+                            >
+                              <Crown className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                              {t("admin.customers.actions.removeVIP")}
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem
+                              onClick={() => handleSetVIP(customer)}
+                              className="text-yellow-600"
+                            >
+                              <Crown className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                              {t("admin.customers.actions.setVIP")}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
                           {customer.status === "active" && (
                             <>
                               <DropdownMenuItem
@@ -1338,9 +1555,21 @@ const CustomerManagement: React.FC = () => {
                     <p className="text-muted-foreground rtl:text-right ltr:text-left">
                       {selectedCustomer.email}
                     </p>
-                    <Badge className={getStatusColor(selectedCustomer.status)}>
-                      {getStatusText(selectedCustomer.status)}
-                    </Badge>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <Badge
+                        className={getStatusColor(selectedCustomer.status)}
+                      >
+                        {getStatusText(selectedCustomer.status)}
+                      </Badge>
+                      {selectedCustomer.labels.some(
+                        (label) => label.name === "VIP"
+                      ) && (
+                        <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
+                          <Crown className="h-3 w-3 mr-1 rtl:ml-1 rtl:mr-0" />
+                          VIP
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="md:col-span-2">
@@ -1467,9 +1696,34 @@ const CustomerManagement: React.FC = () => {
             >
               {t("admin.customers.dialogs.close")}
             </Button>
-            <Button onClick={() => handleEditCustomer(selectedCustomer!)}>
-              {t("admin.customers.actions.editCustomer")}
-            </Button>
+            {selectedCustomer && (
+              <>
+                {selectedCustomer.labels.some(
+                  (label) => label.name === "VIP"
+                ) ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleRemoveVIP(selectedCustomer)}
+                    className="text-orange-600 border-orange-600 hover:bg-orange-50"
+                  >
+                    <Crown className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                    {t("admin.customers.actions.removeVIP")}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSetVIP(selectedCustomer)}
+                    className="text-yellow-600 border-yellow-600 hover:bg-yellow-50"
+                  >
+                    <Crown className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                    {t("admin.customers.actions.setVIP")}
+                  </Button>
+                )}
+                <Button onClick={() => handleEditCustomer(selectedCustomer)}>
+                  {t("admin.customers.actions.editCustomer")}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

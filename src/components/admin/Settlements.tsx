@@ -561,7 +561,7 @@ const Settlements = () => {
   return (
     <div className="space-y-6" dir={i18n.language === "ar" ? "rtl" : "ltr"}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rtl:flex-row-reverse">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold rtl:text-right ltr:text-left">
             {t("admin.dashboard.tabs.settlements")}
@@ -573,9 +573,12 @@ const Settlements = () => {
         <div className="flex items-center gap-2">
           <Dialog open={showAddSettlement} onOpenChange={setShowAddSettlement}>
             <DialogTrigger asChild>
-              <Button className="flex items-center gap-2 rtl:flex-row-reverse">
-                <Plus className="h-4 w-4" />
-                {t("admin.settlements.actions.addSettlement")}
+              <Button className="text-xs sm:text-sm">
+                <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+                <span className="hidden sm:inline">
+                  {t("admin.settlements.actions.addSettlement")}
+                </span>
+                <span className="sm:hidden">Add</span>
               </Button>
             </DialogTrigger>
             <DialogContent
@@ -727,12 +730,12 @@ const Settlements = () => {
             filename="settlements"
             onExport={handleExport}
           >
-            <Button
-              variant="outline"
-              className="flex items-center gap-2 rtl:flex-row-reverse"
-            >
-              <Download className="h-4 w-4" />
-              {t("admin.settlements.actions.export")}
+            <Button variant="outline" className="text-xs sm:text-sm">
+              <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+              <span className="hidden sm:inline">
+                {t("admin.settlements.actions.export")}
+              </span>
+              <span className="sm:hidden">Export</span>
             </Button>
           </ExportDialog>
         </div>

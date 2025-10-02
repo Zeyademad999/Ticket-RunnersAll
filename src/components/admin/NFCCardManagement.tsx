@@ -103,215 +103,229 @@ const NFCCardManagement: React.FC = () => {
   const [isAssignBySerialDialogOpen, setIsAssignBySerialDialogOpen] =
     useState(false);
   const [isGenerateKeyDialogOpen, setIsGenerateKeyDialogOpen] = useState(false);
+  const [isAddByRangeDialogOpen, setIsAddByRangeDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [cardsPerPage, setCardsPerPage] = useState(10);
+
+  // Form state for dialogs
+  const [newCardForm, setNewCardForm] = useState({
+    quantity: 1,
+    startSerialNumber: "",
+  });
+
+  const [assignBySerialForm, setAssignBySerialForm] = useState({
+    serialNumber: "",
+    customerMobile: "",
+  });
+
+  const [addByRangeForm, setAddByRangeForm] = useState({
+    serialStart: "",
+    serialEnd: "",
+  });
 
   // Get date locale based on current language
   const getDateLocale = () => {
     return i18n.language === "ar" ? ar : enUS;
   };
 
-  // Mock NFC cards data
-  const nfcCards = useMemo(
-    (): NFCCard[] => [
-      {
-        id: "1",
-        serialNumber: "NFC-001-2025",
-        customerId: "C001",
-        customerName: t("admin.tickets.nfc.mock.customer.ahmedHassan"),
-        status: "active",
-        issueDate: "2025-01-15",
-        expiryDate: "2026-01-15",
-        balance: 500,
-        lastUsed: "2025-08-15T10:30:00",
-        usageCount: 25,
-        cardType: "premium",
-      },
-      {
-        id: "2",
-        serialNumber: "NFC-002-2025",
-        customerId: "C002",
-        customerName: t("admin.tickets.nfc.mock.customer.sarahMohamed"),
-        status: "active",
-        issueDate: "2025-02-20",
-        expiryDate: "2026-02-20",
-        balance: 300,
-        lastUsed: "2025-08-14T15:45:00",
-        usageCount: 18,
-        cardType: "standard",
-      },
-      {
-        id: "3",
-        serialNumber: "NFC-003-2025",
-        customerId: "C003",
-        customerName: t("admin.tickets.nfc.mock.customer.omarAli"),
-        status: "inactive",
-        issueDate: "2025-03-10",
-        expiryDate: "2026-03-10",
-        balance: 0,
-        lastUsed: "2025-07-20T09:15:00",
-        usageCount: 5,
-        cardType: "standard",
-      },
-      {
-        id: "4",
-        serialNumber: "NFC-004-2025",
-        customerId: "C004",
-        customerName: t("admin.tickets.nfc.mock.customer.fatimaAhmed"),
-        status: "expired",
-        issueDate: "2024-06-15",
-        expiryDate: "2025-06-15",
-        balance: 0,
-        lastUsed: "2025-05-30T14:20:00",
-        usageCount: 12,
-        cardType: "vip",
-      },
-      {
-        id: "5",
-        serialNumber: "NFC-005-2025",
-        customerId: "C005",
-        customerName: t("admin.tickets.nfc.mock.customer.youssefIbrahim"),
-        status: "active",
-        issueDate: "2025-04-05",
-        expiryDate: "2026-04-05",
-        balance: 750,
-        lastUsed: "2025-08-16T11:00:00",
-        usageCount: 32,
-        cardType: "vip",
-      },
-      {
-        id: "6",
-        serialNumber: "NFC-006-2025",
-        customerId: "C006",
-        customerName: t("admin.tickets.nfc.mock.customer.nourHassan"),
-        status: "active",
-        issueDate: "2025-05-10",
-        expiryDate: "2026-05-10",
-        balance: 200,
-        lastUsed: "2025-08-17T14:30:00",
-        usageCount: 8,
-        cardType: "standard",
-      },
-      {
-        id: "7",
-        serialNumber: "NFC-007-2025",
-        customerId: "C007",
-        customerName: t("admin.tickets.nfc.mock.customer.mariamAli"),
-        status: "inactive",
-        issueDate: "2025-06-15",
-        expiryDate: "2026-06-15",
-        balance: 0,
-        lastUsed: "2025-07-25T16:45:00",
-        usageCount: 15,
-        cardType: "premium",
-      },
-      {
-        id: "8",
-        serialNumber: "NFC-008-2025",
-        customerId: "C008",
-        customerName: "Karim Hassan",
-        status: "active",
-        issueDate: "2025-07-01",
-        expiryDate: "2026-07-01",
-        balance: 400,
-        lastUsed: "2025-08-18T09:15:00",
-        usageCount: 22,
-        cardType: "vip",
-      },
-      {
-        id: "9",
-        serialNumber: "NFC-009-2025",
-        customerId: "C009",
-        customerName: "Layla Ahmed",
-        status: "expired",
-        issueDate: "2024-08-20",
-        expiryDate: "2025-08-20",
-        balance: 0,
-        lastUsed: "2025-07-10T12:20:00",
-        usageCount: 6,
-        cardType: "standard",
-      },
-      {
-        id: "10",
-        serialNumber: "NFC-010-2025",
-        customerId: "C010",
-        customerName: "Hassan Ali",
-        status: "active",
-        issueDate: "2025-08-05",
-        expiryDate: "2026-08-05",
-        balance: 300,
-        lastUsed: "2025-08-19T10:30:00",
-        usageCount: 18,
-        cardType: "premium",
-      },
-      {
-        id: "11",
-        serialNumber: "NFC-011-2025",
-        customerId: "C011",
-        customerName: "Nour Ibrahim",
-        status: "active",
-        issueDate: "2025-08-12",
-        expiryDate: "2026-08-12",
-        balance: 150,
-        lastUsed: "2025-08-20T15:45:00",
-        usageCount: 12,
-        cardType: "standard",
-      },
-      {
-        id: "12",
-        serialNumber: "NFC-012-2025",
-        customerId: "C012",
-        customerName: "Amira Mohamed",
-        status: "inactive",
-        issueDate: "2025-08-18",
-        expiryDate: "2026-08-18",
-        balance: 0,
-        lastUsed: "2025-08-15T11:00:00",
-        usageCount: 4,
-        cardType: "vip",
-      },
-      {
-        id: "13",
-        serialNumber: "NFC-013-2025",
-        customerId: "C013",
-        customerName: "Omar Khalil",
-        status: "active",
-        issueDate: "2025-08-25",
-        expiryDate: "2026-08-25",
-        balance: 600,
-        lastUsed: "2025-08-21T13:20:00",
-        usageCount: 28,
-        cardType: "premium",
-      },
-      {
-        id: "14",
-        serialNumber: "NFC-014-2025",
-        customerId: "C014",
-        customerName: "Fatima Hassan",
-        status: "active",
-        issueDate: "2025-09-01",
-        expiryDate: "2026-09-01",
-        balance: 250,
-        lastUsed: "2025-08-22T16:10:00",
-        usageCount: 14,
-        cardType: "standard",
-      },
-      {
-        id: "15",
-        serialNumber: "NFC-015-2025",
-        customerId: "C015",
-        customerName: "Youssef Ali",
-        status: "expired",
-        issueDate: "2024-09-10",
-        expiryDate: "2025-09-10",
-        balance: 0,
-        lastUsed: "2025-08-05T09:30:00",
-        usageCount: 9,
-        cardType: "vip",
-      },
-    ],
-    [t]
-  );
+  // Mock NFC cards data - now as state to make it mutable
+  const [nfcCards, setNfcCards] = useState<NFCCard[]>([
+    {
+      id: "1",
+      serialNumber: "NFC-001-2025",
+      customerId: "C001",
+      customerName: t("admin.tickets.nfc.mock.customer.ahmedHassan"),
+      status: "active",
+      issueDate: "2025-01-15",
+      expiryDate: "2026-01-15",
+      balance: 500,
+      lastUsed: "2025-08-15T10:30:00",
+      usageCount: 25,
+      cardType: "premium",
+    },
+    {
+      id: "2",
+      serialNumber: "NFC-002-2025",
+      customerId: "C002",
+      customerName: t("admin.tickets.nfc.mock.customer.sarahMohamed"),
+      status: "active",
+      issueDate: "2025-02-20",
+      expiryDate: "2026-02-20",
+      balance: 300,
+      lastUsed: "2025-08-14T15:45:00",
+      usageCount: 18,
+      cardType: "standard",
+    },
+    {
+      id: "3",
+      serialNumber: "NFC-003-2025",
+      customerId: "C003",
+      customerName: t("admin.tickets.nfc.mock.customer.omarAli"),
+      status: "inactive",
+      issueDate: "2025-03-10",
+      expiryDate: "2026-03-10",
+      balance: 0,
+      lastUsed: "2025-07-20T09:15:00",
+      usageCount: 5,
+      cardType: "standard",
+    },
+    {
+      id: "4",
+      serialNumber: "NFC-004-2025",
+      customerId: "C004",
+      customerName: t("admin.tickets.nfc.mock.customer.fatimaAhmed"),
+      status: "expired",
+      issueDate: "2024-06-15",
+      expiryDate: "2025-06-15",
+      balance: 0,
+      lastUsed: "2025-05-30T14:20:00",
+      usageCount: 12,
+      cardType: "vip",
+    },
+    {
+      id: "5",
+      serialNumber: "NFC-005-2025",
+      customerId: "C005",
+      customerName: t("admin.tickets.nfc.mock.customer.youssefIbrahim"),
+      status: "active",
+      issueDate: "2025-04-05",
+      expiryDate: "2026-04-05",
+      balance: 750,
+      lastUsed: "2025-08-16T11:00:00",
+      usageCount: 32,
+      cardType: "vip",
+    },
+    {
+      id: "6",
+      serialNumber: "NFC-006-2025",
+      customerId: "C006",
+      customerName: t("admin.tickets.nfc.mock.customer.nourHassan"),
+      status: "active",
+      issueDate: "2025-05-10",
+      expiryDate: "2026-05-10",
+      balance: 200,
+      lastUsed: "2025-08-17T14:30:00",
+      usageCount: 8,
+      cardType: "standard",
+    },
+    {
+      id: "7",
+      serialNumber: "NFC-007-2025",
+      customerId: "C007",
+      customerName: t("admin.tickets.nfc.mock.customer.mariamAli"),
+      status: "inactive",
+      issueDate: "2025-06-15",
+      expiryDate: "2026-06-15",
+      balance: 0,
+      lastUsed: "2025-07-25T16:45:00",
+      usageCount: 15,
+      cardType: "premium",
+    },
+    {
+      id: "8",
+      serialNumber: "NFC-008-2025",
+      customerId: "C008",
+      customerName: "Karim Hassan",
+      status: "active",
+      issueDate: "2025-07-01",
+      expiryDate: "2026-07-01",
+      balance: 400,
+      lastUsed: "2025-08-18T09:15:00",
+      usageCount: 22,
+      cardType: "vip",
+    },
+    {
+      id: "9",
+      serialNumber: "NFC-009-2025",
+      customerId: "C009",
+      customerName: "Layla Ahmed",
+      status: "expired",
+      issueDate: "2024-08-20",
+      expiryDate: "2025-08-20",
+      balance: 0,
+      lastUsed: "2025-07-10T12:20:00",
+      usageCount: 6,
+      cardType: "standard",
+    },
+    {
+      id: "10",
+      serialNumber: "NFC-010-2025",
+      customerId: "C010",
+      customerName: "Hassan Ali",
+      status: "active",
+      issueDate: "2025-08-05",
+      expiryDate: "2026-08-05",
+      balance: 300,
+      lastUsed: "2025-08-19T10:30:00",
+      usageCount: 18,
+      cardType: "premium",
+    },
+    {
+      id: "11",
+      serialNumber: "NFC-011-2025",
+      customerId: "C011",
+      customerName: "Nour Ibrahim",
+      status: "active",
+      issueDate: "2025-08-12",
+      expiryDate: "2026-08-12",
+      balance: 150,
+      lastUsed: "2025-08-20T15:45:00",
+      usageCount: 12,
+      cardType: "standard",
+    },
+    {
+      id: "12",
+      serialNumber: "NFC-012-2025",
+      customerId: "C012",
+      customerName: "Amira Mohamed",
+      status: "inactive",
+      issueDate: "2025-08-18",
+      expiryDate: "2026-08-18",
+      balance: 0,
+      lastUsed: "2025-08-15T11:00:00",
+      usageCount: 4,
+      cardType: "vip",
+    },
+    {
+      id: "13",
+      serialNumber: "NFC-013-2025",
+      customerId: "C013",
+      customerName: "Omar Khalil",
+      status: "active",
+      issueDate: "2025-08-25",
+      expiryDate: "2026-08-25",
+      balance: 600,
+      lastUsed: "2025-08-21T13:20:00",
+      usageCount: 28,
+      cardType: "premium",
+    },
+    {
+      id: "14",
+      serialNumber: "NFC-014-2025",
+      customerId: "C014",
+      customerName: "Fatima Hassan",
+      status: "active",
+      issueDate: "2025-09-01",
+      expiryDate: "2026-09-01",
+      balance: 250,
+      lastUsed: "2025-08-22T16:10:00",
+      usageCount: 14,
+      cardType: "standard",
+    },
+    {
+      id: "15",
+      serialNumber: "NFC-015-2025",
+      customerId: "C015",
+      customerName: "Youssef Ali",
+      status: "expired",
+      issueDate: "2024-09-10",
+      expiryDate: "2025-09-10",
+      balance: 0,
+      lastUsed: "2025-08-05T09:30:00",
+      usageCount: 9,
+      cardType: "vip",
+    },
+  ]);
 
   // Mock customers data
   const customers = useMemo(
@@ -456,12 +470,100 @@ const NFCCardManagement: React.FC = () => {
     return isAfter(new Date(), parseISO(expiryDate));
   };
 
+  // Helper function to parse serial number and extract prefix and number
+  const parseSerialNumber = (serialNumber: string) => {
+    // Match patterns like CARD050, NFC-001-2025, etc.
+    const match = serialNumber.match(/^([A-Za-z-]+)(\d+)(.*)$/);
+    if (!match) return null;
+
+    return {
+      prefix: match[1],
+      number: parseInt(match[2]),
+      suffix: match[3] || "",
+    };
+  };
+
+  // Helper function to generate serial numbers in range
+  const generateSerialNumbersInRange = (start: string, end: string) => {
+    const startParsed = parseSerialNumber(start);
+    const endParsed = parseSerialNumber(end);
+
+    if (!startParsed || !endParsed) return null;
+
+    // Check if prefixes match
+    if (
+      startParsed.prefix !== endParsed.prefix ||
+      startParsed.suffix !== endParsed.suffix
+    ) {
+      return null;
+    }
+
+    const serialNumbers: string[] = [];
+    const startNum = startParsed.number;
+    const endNum = endParsed.number;
+
+    if (startNum > endNum) return null;
+
+    for (let i = startNum; i <= endNum; i++) {
+      const serialNumber = `${startParsed.prefix}${i
+        .toString()
+        .padStart(startParsed.number.toString().length, "0")}${
+        startParsed.suffix
+      }`;
+      serialNumbers.push(serialNumber);
+    }
+
+    return serialNumbers;
+  };
+
+  // Helper function to validate serial range format
+  const validateSerialRange = (start: string, end: string) => {
+    if (!start.trim() || !end.trim()) {
+      return {
+        valid: false,
+        error: "Both start and end serial numbers are required",
+      };
+    }
+
+    const startParsed = parseSerialNumber(start);
+    const endParsed = parseSerialNumber(end);
+
+    if (!startParsed || !endParsed) {
+      return { valid: false, error: "Invalid serial number format" };
+    }
+
+    if (
+      startParsed.prefix !== endParsed.prefix ||
+      startParsed.suffix !== endParsed.suffix
+    ) {
+      return {
+        valid: false,
+        error: "Serial numbers must have the same prefix and suffix",
+      };
+    }
+
+    if (startParsed.number > endParsed.number) {
+      return {
+        valid: false,
+        error: "Start number must be less than or equal to end number",
+      };
+    }
+
+    const range = endParsed.number - startParsed.number + 1;
+    if (range > 1000) {
+      return { valid: false, error: "Range cannot exceed 1000 cards" };
+    }
+
+    return { valid: true, range };
+  };
+
   const handleEditCard = (card: NFCCard) => {
     setSelectedCard(card);
     setIsEditDialogOpen(true);
   };
 
   const handleDeleteCard = (cardId: string) => {
+    setNfcCards((prevCards) => prevCards.filter((card) => card.id !== cardId));
     toast({
       title: t("admin.tickets.nfc.toast.cardDeleted"),
       description: t("admin.tickets.nfc.toast.cardDeletedDesc"),
@@ -484,6 +586,11 @@ const NFCCardManagement: React.FC = () => {
   };
 
   const handleDeactivateCard = (cardId: string) => {
+    setNfcCards((prevCards) =>
+      prevCards.map((card) =>
+        card.id === cardId ? { ...card, status: "inactive" as const } : card
+      )
+    );
     toast({
       title: t("admin.tickets.nfc.toast.cardDeactivated"),
       description: t("admin.tickets.nfc.toast.cardDeactivatedDesc"),
@@ -491,6 +598,11 @@ const NFCCardManagement: React.FC = () => {
   };
 
   const handleReactivateCard = (cardId: string) => {
+    setNfcCards((prevCards) =>
+      prevCards.map((card) =>
+        card.id === cardId ? { ...card, status: "active" as const } : card
+      )
+    );
     toast({
       title: t("admin.tickets.nfc.toast.cardReactivated"),
       description: t("admin.tickets.nfc.toast.cardReactivatedDesc"),
@@ -511,6 +623,88 @@ const NFCCardManagement: React.FC = () => {
       description: t("admin.tickets.nfc.toast.cardAssignedBySerialDesc"),
     });
     setIsAssignBySerialDialogOpen(false);
+  };
+
+  const handleAddCardsByRange = () => {
+    // Validate the range
+    const validation = validateSerialRange(
+      addByRangeForm.serialStart,
+      addByRangeForm.serialEnd
+    );
+
+    if (!validation.valid) {
+      toast({
+        title: t("admin.tickets.nfc.toast.error"),
+        description: validation.error,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Generate serial numbers in range
+    const serialNumbers = generateSerialNumbersInRange(
+      addByRangeForm.serialStart,
+      addByRangeForm.serialEnd
+    );
+
+    if (!serialNumbers) {
+      toast({
+        title: t("admin.tickets.nfc.toast.error"),
+        description: "Failed to generate serial numbers",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if any serial numbers already exist
+    const existingSerialNumbers = serialNumbers.filter((serialNumber) =>
+      nfcCards.some((card) => card.serialNumber === serialNumber)
+    );
+
+    if (existingSerialNumbers.length > 0) {
+      toast({
+        title: t("admin.tickets.nfc.toast.error"),
+        description: `Some serial numbers already exist: ${existingSerialNumbers
+          .slice(0, 3)
+          .join(", ")}${existingSerialNumbers.length > 3 ? "..." : ""}`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Create new cards locally
+    const newCards: NFCCard[] = serialNumbers.map((serialNumber, index) => ({
+      id: (nfcCards.length + index + 1).toString(),
+      serialNumber: serialNumber,
+      customerId: "", // Unassigned
+      customerName: "", // Unassigned
+      status: "inactive" as const, // Unassigned cards are inactive
+      issueDate: new Date().toISOString().split("T")[0],
+      expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0], // 1 year from now
+      balance: 0,
+      lastUsed: "",
+      usageCount: 0,
+      cardType: "standard" as const, // Default card type
+    }));
+
+    // Add cards to local state
+    setNfcCards((prevCards) => [...prevCards, ...newCards]);
+
+    // Close dialog and reset form
+    setIsAddByRangeDialogOpen(false);
+    setAddByRangeForm({ serialStart: "", serialEnd: "" });
+
+    // Show success toast
+    toast({
+      title: t("admin.tickets.nfc.toast.cardsAddedByRange"),
+      description: t("admin.tickets.nfc.toast.cardsAddedByRangeDesc", {
+        count: serialNumbers.length,
+        start: addByRangeForm.serialStart,
+        end: addByRangeForm.serialEnd,
+      }),
+    });
   };
 
   const handleCopyKey = () => {
@@ -588,6 +782,17 @@ const NFCCardManagement: React.FC = () => {
               {t("admin.tickets.nfc.actions.assignBySerial")}
             </span>
             <span className="sm:hidden">Serial</span>
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setIsAddByRangeDialogOpen(true)}
+            className="text-xs sm:text-sm"
+          >
+            <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+            <span className="hidden sm:inline">
+              {t("admin.tickets.nfc.actions.addByRange")}
+            </span>
+            <span className="sm:hidden">Range</span>
           </Button>
         </div>
       </div>
@@ -1087,6 +1292,112 @@ const NFCCardManagement: React.FC = () => {
             </Button>
             <Button onClick={handleAssignCardBySerial}>
               {t("admin.tickets.nfc.dialogs.assignBySerialButton")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Cards by Range Dialog */}
+      <Dialog
+        open={isAddByRangeDialogOpen}
+        onOpenChange={setIsAddByRangeDialogOpen}
+      >
+        <DialogContent className="rtl:text-right ltr:text-left">
+          <DialogHeader>
+            <DialogTitle className="rtl:text-right ltr:text-left">
+              {t("admin.tickets.nfc.dialogs.addByRange")}
+            </DialogTitle>
+            <DialogDescription className="rtl:text-right ltr:text-left">
+              {t("admin.tickets.nfc.dialogs.addByRangeSubtitle")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 rtl:space-x-reverse">
+              <div>
+                <label className="text-sm font-medium rtl:text-right">
+                  {t("admin.tickets.nfc.form.serialStart")}
+                </label>
+                <Input
+                  placeholder={t("admin.tickets.nfc.form.enterSerialStart")}
+                  value={addByRangeForm.serialStart}
+                  onChange={(e) =>
+                    setAddByRangeForm((prev) => ({
+                      ...prev,
+                      serialStart: e.target.value,
+                    }))
+                  }
+                  dir={i18n.language === "ar" ? "rtl" : "ltr"}
+                />
+                <p className="text-xs text-muted-foreground mt-1 rtl:text-right">
+                  {t("admin.tickets.nfc.form.serialStartHelp")}
+                </p>
+              </div>
+              <div>
+                <label className="text-sm font-medium rtl:text-right">
+                  {t("admin.tickets.nfc.form.serialEnd")}
+                </label>
+                <Input
+                  placeholder={t("admin.tickets.nfc.form.enterSerialEnd")}
+                  value={addByRangeForm.serialEnd}
+                  onChange={(e) =>
+                    setAddByRangeForm((prev) => ({
+                      ...prev,
+                      serialEnd: e.target.value,
+                    }))
+                  }
+                  dir={i18n.language === "ar" ? "rtl" : "ltr"}
+                />
+                <p className="text-xs text-muted-foreground mt-1 rtl:text-right">
+                  {t("admin.tickets.nfc.form.serialEndHelp")}
+                </p>
+              </div>
+            </div>
+
+            {/* Preview section */}
+            {addByRangeForm.serialStart && addByRangeForm.serialEnd && (
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-800 rtl:text-right">
+                  <strong>{t("admin.tickets.nfc.form.rangePreview")}:</strong>{" "}
+                  {(() => {
+                    const validation = validateSerialRange(
+                      addByRangeForm.serialStart,
+                      addByRangeForm.serialEnd
+                    );
+                    if (validation.valid) {
+                      const serialNumbers = generateSerialNumbersInRange(
+                        addByRangeForm.serialStart,
+                        addByRangeForm.serialEnd
+                      );
+                      return t("admin.tickets.nfc.form.rangePreviewDesc", {
+                        count: validation.range,
+                        start: addByRangeForm.serialStart,
+                        end: addByRangeForm.serialEnd,
+                        examples:
+                          serialNumbers?.slice(0, 3).join(", ") +
+                          (serialNumbers && serialNumbers.length > 3
+                            ? "..."
+                            : ""),
+                      });
+                    } else {
+                      return validation.error;
+                    }
+                  })()}
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="rtl:flex-row-reverse">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddByRangeForm({ serialStart: "", serialEnd: "" });
+                setIsAddByRangeDialogOpen(false);
+              }}
+            >
+              {t("admin.tickets.nfc.dialogs.cancel")}
+            </Button>
+            <Button onClick={handleAddCardsByRange}>
+              {t("admin.tickets.nfc.dialogs.addByRangeButton")}
             </Button>
           </DialogFooter>
         </DialogContent>

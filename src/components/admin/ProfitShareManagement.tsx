@@ -103,13 +103,17 @@ const ProfitShareManagement = () => {
   // Real-time validation
   useEffect(() => {
     if (totalProfitShare > 100) {
-      setValidationError("Total profit share cannot exceed 100%");
+      setValidationError(
+        t("admin.profitShare.validationErrors.totalProfitShareExceeded")
+      );
     } else if (totalProfitShare < 0) {
-      setValidationError("Total profit share cannot be negative");
+      setValidationError(
+        t("admin.profitShare.validationErrors.totalProfitShareNegative")
+      );
     } else {
       setValidationError("");
     }
-  }, [totalProfitShare]);
+  }, [totalProfitShare, t]);
 
   const handleProfitShareChange = (ownerId: string, newShare: number) => {
     setOwners((prev) =>
@@ -130,20 +134,24 @@ const ProfitShareManagement = () => {
 
   const handleAddOwner = () => {
     if (!newOwnerName || !newOwnerEmail || !newOwnerShare) {
-      setValidationError("All fields are required");
+      setValidationError(
+        t("admin.profitShare.validationErrors.allFieldsRequired")
+      );
       return;
     }
 
     const shareValue = parseFloat(newOwnerShare);
     if (isNaN(shareValue)) {
-      setValidationError("Invalid profit share value");
+      setValidationError(
+        t("admin.profitShare.validationErrors.invalidProfitShare")
+      );
       return;
     }
 
     const newTotal = totalProfitShare + shareValue;
     if (newTotal > 100) {
       setValidationError(
-        "Adding this owner would exceed 100% total profit share"
+        t("admin.profitShare.validationErrors.addingOwnerExceeds100")
       );
       return;
     }
@@ -187,7 +195,7 @@ const ProfitShareManagement = () => {
   return (
     <div className="space-y-6" dir={i18n.language === "ar" ? "rtl" : "ltr"}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rtl:flex-row-reverse">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold rtl:text-right ltr:text-left">
             {t("admin.dashboard.tabs.profitShare")}
@@ -198,10 +206,15 @@ const ProfitShareManagement = () => {
         </div>
         <Button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="flex items-center gap-2"
+          className="text-xs sm:text-sm"
         >
-          <Plus className="h-4 w-4" />
-          Add Owner
+          <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+          <span className="hidden sm:inline">
+            {t("admin.profitShare.addOwner")}
+          </span>
+          <span className="sm:hidden">
+            {t("admin.profitShare.addOwnerShort")}
+          </span>
         </Button>
       </div>
 
@@ -288,7 +301,7 @@ const ProfitShareManagement = () => {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 rtl:flex-row-reverse">
             <Share2 className="h-5 w-5" />
-            Total Profit Share Allocation
+            {t("admin.profitShare.totalProfitShareAllocation")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -307,10 +320,12 @@ const ProfitShareManagement = () => {
                 )}
                 <span className="text-sm text-muted-foreground">
                   {totalProfitShare === 100
-                    ? "Perfect allocation"
+                    ? t("admin.profitShare.perfectAllocation")
                     : totalProfitShare > 100
-                    ? "Exceeds 100%"
-                    : `${(100 - totalProfitShare).toFixed(1)}% remaining`}
+                    ? t("admin.profitShare.exceeds100")
+                    : `${(100 - totalProfitShare).toFixed(1)}% ${t(
+                        "admin.profitShare.remaining"
+                      )}`}
                 </span>
               </div>
             </div>
@@ -334,48 +349,56 @@ const ProfitShareManagement = () => {
       {showAddForm && (
         <Card>
           <CardHeader>
-            <CardTitle>Add New Owner</CardTitle>
+            <CardTitle>{t("admin.profitShare.addNewOwner")}</CardTitle>
             <CardDescription>
-              Add a new owner with their profit share percentage
+              {t("admin.profitShare.addNewOwnerDesc")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="ownerName">Owner Name</Label>
+                <Label htmlFor="ownerName">
+                  {t("admin.profitShare.ownerName")}
+                </Label>
                 <Input
                   id="ownerName"
                   value={newOwnerName}
                   onChange={(e) => setNewOwnerName(e.target.value)}
-                  placeholder="Enter owner name"
+                  placeholder={t("admin.profitShare.ownerNamePlaceholder")}
                 />
               </div>
               <div>
-                <Label htmlFor="ownerEmail">Email</Label>
+                <Label htmlFor="ownerEmail">
+                  {t("admin.profitShare.email")}
+                </Label>
                 <Input
                   id="ownerEmail"
                   type="email"
                   value={newOwnerEmail}
                   onChange={(e) => setNewOwnerEmail(e.target.value)}
-                  placeholder="Enter email address"
+                  placeholder={t("admin.profitShare.emailPlaceholder")}
                 />
               </div>
               <div>
-                <Label htmlFor="ownerShare">Profit Share (%)</Label>
+                <Label htmlFor="ownerShare">
+                  {t("admin.profitShare.profitSharePercent")}
+                </Label>
                 <Input
                   id="ownerShare"
                   type="number"
                   step="0.1"
                   value={newOwnerShare}
                   onChange={(e) => setNewOwnerShare(e.target.value)}
-                  placeholder="Enter percentage"
+                  placeholder={t("admin.profitShare.profitSharePlaceholder")}
                 />
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={handleAddOwner}>Add Owner</Button>
+              <Button onClick={handleAddOwner}>
+                {t("admin.profitShare.addOwner")}
+              </Button>
               <Button variant="outline" onClick={() => setShowAddForm(false)}>
-                Cancel
+                {t("admin.profitShare.cancel")}
               </Button>
             </div>
           </CardContent>
@@ -393,10 +416,9 @@ const ProfitShareManagement = () => {
       {/* Owners List */}
       <Card>
         <CardHeader>
-          <CardTitle>Profit Share Owners</CardTitle>
+          <CardTitle>{t("admin.profitShare.profitShareOwners")}</CardTitle>
           <CardDescription>
-            Manage profit share percentages for each owner. Total cannot exceed
-            100%.
+            {t("admin.profitShare.profitShareOwnersDesc")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -415,14 +437,18 @@ const ProfitShareManagement = () => {
                       </p>
                     </div>
                     <Badge variant={owner.isActive ? "default" : "secondary"}>
-                      {owner.isActive ? "Active" : "Inactive"}
+                      {owner.isActive
+                        ? t("admin.profitShare.active")
+                        : t("admin.profitShare.inactive")}
                     </Badge>
                     {owner.profitShare < 0 && (
-                      <Badge variant="destructive">Overdrawn</Badge>
+                      <Badge variant="destructive">
+                        {t("admin.profitShare.overdrawn")}
+                      </Badge>
                     )}
                   </div>
                   <div className="mt-2 text-sm text-muted-foreground">
-                    Current Balance:{" "}
+                    {t("admin.profitShare.currentBalance")}:{" "}
                     {formatCurrencyForLocale(
                       owner.currentBalance,
                       i18n.language
@@ -450,14 +476,14 @@ const ProfitShareManagement = () => {
                         size="sm"
                         onClick={() => handleSaveChanges(owner.id)}
                       >
-                        Save
+                        {t("admin.profitShare.save")}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={handleCancelEdit}
                       >
-                        Cancel
+                        {t("admin.profitShare.cancel")}
                       </Button>
                     </div>
                   ) : (
@@ -468,7 +494,7 @@ const ProfitShareManagement = () => {
                         variant="outline"
                         onClick={() => setEditingOwner(owner.id)}
                       >
-                        Edit
+                        {t("admin.profitShare.edit")}
                       </Button>
                     </div>
                   )}
@@ -478,7 +504,9 @@ const ProfitShareManagement = () => {
                     variant="outline"
                     onClick={() => handleToggleActive(owner.id)}
                   >
-                    {owner.isActive ? "Deactivate" : "Activate"}
+                    {owner.isActive
+                      ? t("admin.profitShare.deactivate")
+                      : t("admin.profitShare.activate")}
                   </Button>
 
                   <Button

@@ -519,7 +519,7 @@ const Deposits = () => {
   return (
     <div className="space-y-6" dir={i18n.language === "ar" ? "rtl" : "ltr"}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rtl:flex-row-reverse">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold rtl:text-right ltr:text-left">
             {t("admin.dashboard.tabs.deposits")}
@@ -528,18 +528,24 @@ const Deposits = () => {
             {t("admin.deposits.subtitle")}
           </p>
         </div>
-        <div className="flex items-center gap-2 rtl:flex-row-reverse">
+        <div className="flex items-center gap-2">
           <Button
             onClick={() => setIsExportDialogOpen(true)}
             variant="outline"
-            size="sm"
+            className="text-xs sm:text-sm"
           >
-            <Download className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-            {t("admin.deposits.actions.export")}
+            <Download className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+            <span className="hidden sm:inline">
+              {t("admin.deposits.actions.export")}
+            </span>
+            <span className="sm:hidden">Export</span>
           </Button>
-          <Button onClick={handleAddDeposit} size="sm">
-            <Plus className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-            {t("admin.deposits.actions.addDeposit")}
+          <Button onClick={handleAddDeposit} className="text-xs sm:text-sm">
+            <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+            <span className="hidden sm:inline">
+              {t("admin.deposits.actions.addDeposit")}
+            </span>
+            <span className="sm:hidden">Add</span>
           </Button>
         </div>
       </div>

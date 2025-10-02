@@ -134,6 +134,7 @@ interface Event {
     value: number;
   };
   ticketTransferEnabled: boolean;
+  childrenAllowed: boolean;
   ticketLimit: number;
   usheringAccounts: number;
   imageUrl: string;
@@ -204,6 +205,7 @@ const EventsManagement: React.FC = () => {
     ticketLimit: 1,
     description: "",
     ticketTransferEnabled: false,
+    childrenAllowed: true,
     commissionRate: {
       type: "percentage" as "percentage" | "flat",
       value: 10,
@@ -228,6 +230,7 @@ const EventsManagement: React.FC = () => {
     ticketLimit: 1,
     description: "",
     ticketTransferEnabled: false,
+    childrenAllowed: true,
     commissionRate: {
       type: "percentage" as "percentage" | "flat",
       value: 10,
@@ -403,6 +406,7 @@ const EventsManagement: React.FC = () => {
         value: 5,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 5,
       usheringAccounts: 3,
       imageUrl:
@@ -432,6 +436,7 @@ const EventsManagement: React.FC = () => {
         value: 25,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 2,
       usheringAccounts: 2,
       imageUrl:
@@ -461,6 +466,7 @@ const EventsManagement: React.FC = () => {
         value: 3,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 4,
       usheringAccounts: 1,
       imageUrl:
@@ -490,6 +496,7 @@ const EventsManagement: React.FC = () => {
         value: 15,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 3,
       usheringAccounts: 2,
       imageUrl:
@@ -519,6 +526,7 @@ const EventsManagement: React.FC = () => {
         value: 8,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 6,
       usheringAccounts: 15,
       imageUrl:
@@ -549,6 +557,7 @@ const EventsManagement: React.FC = () => {
         value: 20,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 3,
       usheringAccounts: 8,
       imageUrl:
@@ -579,6 +588,7 @@ const EventsManagement: React.FC = () => {
         value: 4,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 4,
       usheringAccounts: 5,
       imageUrl:
@@ -609,6 +619,7 @@ const EventsManagement: React.FC = () => {
         value: 30,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 2,
       usheringAccounts: 4,
       imageUrl:
@@ -639,6 +650,7 @@ const EventsManagement: React.FC = () => {
         value: 6,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 3,
       usheringAccounts: 6,
       imageUrl:
@@ -669,6 +681,7 @@ const EventsManagement: React.FC = () => {
         value: 5,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 5,
       usheringAccounts: 10,
       imageUrl:
@@ -699,6 +712,7 @@ const EventsManagement: React.FC = () => {
         value: 5,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 4,
       usheringAccounts: 3,
       imageUrl:
@@ -729,6 +743,7 @@ const EventsManagement: React.FC = () => {
         value: 3,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 1,
       usheringAccounts: 2,
       imageUrl:
@@ -759,6 +774,7 @@ const EventsManagement: React.FC = () => {
         value: 5,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 6,
       usheringAccounts: 8,
       imageUrl:
@@ -789,6 +805,7 @@ const EventsManagement: React.FC = () => {
         value: 3,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 2,
       usheringAccounts: 2,
       imageUrl:
@@ -814,7 +831,12 @@ const EventsManagement: React.FC = () => {
         type: "percentage",
         value: 10,
       },
+      transferFee: {
+        type: "percentage",
+        value: 5,
+      },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 2,
       usheringAccounts: 3,
       imageUrl:
@@ -845,6 +867,7 @@ const EventsManagement: React.FC = () => {
         value: 5,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 3,
       usheringAccounts: 2,
       imageUrl:
@@ -870,7 +893,12 @@ const EventsManagement: React.FC = () => {
         type: "percentage",
         value: 10,
       },
+      transferFee: {
+        type: "percentage",
+        value: 5,
+      },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 2,
       usheringAccounts: 4,
       imageUrl:
@@ -901,6 +929,7 @@ const EventsManagement: React.FC = () => {
         value: 5,
       },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 4,
       usheringAccounts: 5,
       imageUrl:
@@ -926,7 +955,12 @@ const EventsManagement: React.FC = () => {
         type: "percentage",
         value: 10,
       },
+      transferFee: {
+        type: "percentage",
+        value: 8,
+      },
       ticketTransferEnabled: true,
+      childrenAllowed: true,
       ticketLimit: 8,
       usheringAccounts: 20,
       imageUrl:
@@ -957,6 +991,7 @@ const EventsManagement: React.FC = () => {
         value: 3,
       },
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       ticketLimit: 2,
       usheringAccounts: 2,
       imageUrl:
@@ -1074,6 +1109,7 @@ const EventsManagement: React.FC = () => {
       ticketLimit: event.ticketLimit,
       description: event.description,
       ticketTransferEnabled: event.ticketTransferEnabled,
+      childrenAllowed: event.childrenAllowed,
       commissionRate: event.commissionRate,
       transferFee: event.transferFee,
       imageUrl: event.imageUrl,
@@ -1677,6 +1713,7 @@ const EventsManagement: React.FC = () => {
         value: 5,
       },
       ticketTransferEnabled: newEvent.ticketTransferEnabled,
+      childrenAllowed: newEvent.childrenAllowed,
       ticketLimit: newEvent.ticketLimit,
       usheringAccounts: 0,
       imageUrl: "/public/placeholderLogo.png",
@@ -1702,6 +1739,7 @@ const EventsManagement: React.FC = () => {
       ticketLimit: 1,
       description: "",
       ticketTransferEnabled: false,
+      childrenAllowed: true,
       commissionRate: {
         type: "percentage" as "percentage" | "flat",
         value: 10,
@@ -2084,6 +2122,7 @@ const EventsManagement: React.FC = () => {
                   <TableHead className="rtl:text-right">
                     {t("admin.events.table.status")}
                   </TableHead>
+                  <TableHead className="rtl:text-right">Children</TableHead>
                   <TableHead className="rtl:text-right">
                     {t("admin.events.table.sales")}
                   </TableHead>
@@ -2138,6 +2177,20 @@ const EventsManagement: React.FC = () => {
                       <Badge className={getStatusColor(event.status)}>
                         {getStatusText(event.status)}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-center">
+                        <div
+                          className={`w-3 h-3 rounded-full ${
+                            event.childrenAllowed
+                              ? "bg-green-500"
+                              : "bg-red-500"
+                          }`}
+                        ></div>
+                        <span className="text-xs ml-2 rtl:mr-2 rtl:ml-0">
+                          {event.childrenAllowed ? "Yes" : "No"}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="rtl:text-right">
@@ -2348,6 +2401,20 @@ const EventsManagement: React.FC = () => {
                       />
                       <span className="text-sm">
                         {t("admin.events.actions.ticketTransfers")}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2 rtl:flex-row-reverse rtl:space-x-reverse">
+                      <div
+                        className={`w-4 h-4 rounded-full ${
+                          selectedEvent.childrenAllowed
+                            ? "bg-green-500"
+                            : "bg-red-500"
+                        }`}
+                      ></div>
+                      <span className="text-sm">
+                        {selectedEvent.childrenAllowed
+                          ? "Children Allowed"
+                          : "Children Not Allowed"}
                       </span>
                     </div>
                   </div>
@@ -2692,6 +2759,15 @@ const EventsManagement: React.FC = () => {
                     <span className="text-sm">
                       {t("admin.events.form.enableTicketTransfers")}
                     </span>
+                  </div>
+                  <div className="flex items-center space-x-2 rtl:flex-row-reverse rtl:space-x-reverse">
+                    <Switch
+                      checked={editEventData.childrenAllowed}
+                      onCheckedChange={(checked) =>
+                        handleEditEventDataChange("childrenAllowed", checked)
+                      }
+                    />
+                    <span className="text-sm">Allow Children</span>
                   </div>
 
                   {/* Commission Rate Configuration */}
@@ -4262,6 +4338,15 @@ For questions about this event, please contact the organizer.`;
               <span className="text-sm">
                 {t("admin.events.form.enableTicketTransfers")}
               </span>
+            </div>
+            <div className="flex items-center space-x-2 rtl:flex-row-reverse rtl:space-x-reverse">
+              <Switch
+                checked={newEvent.childrenAllowed}
+                onCheckedChange={(checked) =>
+                  handleNewEventChange("childrenAllowed", checked)
+                }
+              />
+              <span className="text-sm">Allow Children</span>
             </div>
 
             {/* Commission Rate Configuration */}

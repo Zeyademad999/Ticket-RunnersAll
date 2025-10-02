@@ -256,7 +256,7 @@ const ProfitWithdrawals = () => {
   return (
     <div className="space-y-6" dir={i18n.language === "ar" ? "rtl" : "ltr"}>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rtl:flex-row-reverse">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold rtl:text-right ltr:text-left">
             {t("admin.dashboard.tabs.profitWithdrawals")}
@@ -267,9 +267,12 @@ const ProfitWithdrawals = () => {
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              {t("admin.profitWithdrawals.newWithdrawal")}
+            <Button className="text-xs sm:text-sm">
+              <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+              <span className="hidden sm:inline">
+                {t("admin.profitWithdrawals.newWithdrawal")}
+              </span>
+              <span className="sm:hidden">Add</span>
             </Button>
           </DialogTrigger>
           <DialogContent
