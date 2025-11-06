@@ -1,0 +1,863 @@
+import { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import { Header } from "@/components/Header";
+import { Footer } from "@/components/Footer";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/Contexts/AuthContext";
+import {
+  Ticket,
+  User,
+  Phone,
+  Users,
+  Plus,
+  Minus,
+  Calendar,
+  MapPin,
+  Clock,
+  CreditCard,
+  Store,
+  Info,
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import i18n from "@/lib/i18n";
+
+const Booking = () => {
+  const { t } = useTranslation();
+  const { user, isVip } = useAuth();
+  const ticketTiers = [
+    {
+      key: "regular",
+      label: t("booking.tiers.regular"),
+      price: 250,
+      description: t("booking.tierDescriptions.regular"),
+    },
+    {
+      key: "gold",
+      label: t("booking.tiers.gold"),
+      price: 400,
+      description: t("booking.tierDescriptions.gold"),
+    },
+    {
+      key: "platinum",
+      label: t("booking.tiers.platinum"),
+      price: 600,
+      description: t("booking.tierDescriptions.platinum"),
+    },
+  ] as const;
+  type TierKey = (typeof ticketTiers)[number]["key"];
+  const [quantities, setQuantities] = useState<Record<TierKey, number>>({
+    regular: 0,
+    gold: 0,
+    platinum: 0,
+  });
+  const { id } = useParams();
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const [showTerms, setShowTerms] = useState(false);
+
+  const onConfirmPayment = () => {
+    setShowTerms(true);
+  };
+
+  const onAcceptTerms = () => {
+    setShowTerms(false);
+    proceedWithPayment();
+  };
+  const proceedWithPayment = () => {
+    const newBooking = {
+      id,
+      title: eventData.title,
+      date: eventData.date,
+      time: eventData.time,
+      timestamp: new Date().toISOString(),
+    };
+
+    const stored = localStorage.getItem("bookedEvents");
+    const existing = stored ? JSON.parse(stored) : [];
+    localStorage.setItem(
+      "bookedEvents",
+      JSON.stringify([...existing, newBooking])
+    );
+
+    toast({
+      title: t("booking.paymentSuccessTitle"),
+      description: t("booking.paymentSuccessDescription"),
+    });
+
+    navigate("/payment-confirmation", {
+      state: {
+        eventTitle: eventData.title,
+        totalAmount,
+        transactionId: crypto.randomUUID(),
+      },
+    });
+  };
+
+  const [tickets, setTickets] = useState<
+    {
+      name: string;
+      mobile: string;
+      socialMedia: string;
+      email?: string;
+      assignedTicketNumber: number;
+      ticketType: string;
+      assigned?: boolean;
+      child?: boolean;
+      isOwnerTicket?: boolean;
+      age?: number | string;
+    }[]
+  >([]);
+
+  const [customerInfo, setCustomerInfo] = useState({ name: "", mobile: "" });
+  const userTicketTypeRef = useRef<TierKey | "">("");
+  const [userTicketType, setUserTicketType] = useState<TierKey | "">("");
+  const [addOrder, setAddOrder] = useState<TierKey[]>([]);
+
+  const ticketTypeColors: Record<TierKey, string> = {
+    platinum:
+      "bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 border-l-4 border-gray-400 dark:border-gray-300", // platinum
+    gold: "bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/30 border-l-4 border-yellow-400 dark:border-yellow-300", // gold
+    regular:
+      "bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 border-l-4 border-green-400 dark:border-green-300", // green
+  };
+
+  const ticketTypeBadges: Record<TierKey, { text: string; color: string }> = {
+    platinum: { text: "VIP", color: "bg-gray-600 dark:bg-gray-500 text-white" },
+    gold: {
+      text: "Premium",
+      color: "bg-yellow-600 dark:bg-yellow-500 text-white",
+    },
+    regular: {
+      text: "Standard",
+      color: "bg-green-600 dark:bg-green-500 text-white",
+    },
+  };
+
+  const eventData = {
+    title: "Cairo Jazz Festival 2024",
+    date: "2024-02-15",
+    time: "10:00",
+    location: "Cairo Opera House",
+    minimumAge: "13",
+    price: 250,
+    childrenEnabled: true,
+    freeChildAge: 5, // Children under 5 years old are free
+    isUnseated: true, // This event is unseated (VIP eligible)
+  };
+
+  const totalTickets = Object.values(quantities).reduce((s, n) => s + n, 0);
+
+  // Calculate base ticket price
+  const baseTicketPrice = ticketTiers.reduce(
+    (sum, t) => sum + t.price * quantities[t.key],
+    0
+  );
+
+  // Calculate discount for free children
+  const freeChildrenDiscount = tickets.reduce((discount, ticket) => {
+    if (
+      ticket.child &&
+      typeof ticket.age === "number" &&
+      ticket.age <= eventData.freeChildAge
+    ) {
+      // Find the ticket tier price for this ticket
+      const tierPrice =
+        ticketTiers.find((t) => t.key === ticket.ticketType)?.price || 0;
+      return discount + tierPrice;
+    }
+    return discount;
+  }, 0);
+
+  // Calculate VIP discount for unseated events (2 free tickets)
+  let vipDiscount = 0;
+  if (eventData.isUnseated && isVip) {
+    // Calculate the value of the first 2 tickets across all tiers
+    let freeTicketsCount = 0;
+    let freeTicketsValue = 0;
+
+    for (const tier of ticketTiers) {
+      const tierQuantity = quantities[tier.key];
+      if (tierQuantity > 0) {
+        const ticketsToMakeFree = Math.min(tierQuantity, 2 - freeTicketsCount);
+        if (ticketsToMakeFree > 0) {
+          freeTicketsValue += tier.price * ticketsToMakeFree;
+          freeTicketsCount += ticketsToMakeFree;
+        }
+        if (freeTicketsCount >= 2) break;
+      }
+    }
+    vipDiscount = freeTicketsValue;
+  }
+
+  const totalTicketPrice = baseTicketPrice - freeChildrenDiscount - vipDiscount;
+  const vatAmount = totalTicketPrice * 0.14;
+  const cardCost = 150;
+  const renewalCost = 150;
+  const totalAmount = totalTicketPrice + vatAmount + cardCost + renewalCost;
+
+  const changeQty = (tier: TierKey, delta: number) => {
+    setQuantities((prev) => {
+      const newQty = Math.max(0, prev[tier] + delta);
+      setAddOrder((prevOrder) => {
+        if (delta > 0) {
+          // Add ticket
+          return [...prevOrder, tier];
+        } else if (delta < 0) {
+          // Remove the first occurrence of this tier
+          const idx = prevOrder.indexOf(tier);
+          if (idx !== -1) {
+            return prevOrder.filter((_, i) => i !== idx);
+          }
+        }
+        return prevOrder;
+      });
+      return { ...prev, [tier]: newQty };
+    });
+  };
+
+  const updateTicket = (
+    index: number,
+    field: string,
+    value: string | boolean | number
+  ) => {
+    const updated = [...tickets];
+    updated[index] = { ...updated[index], [field]: value };
+    setTickets(updated);
+  };
+  useEffect(() => {
+    if (addOrder.length === 0) {
+      setTickets([]);
+      return;
+    }
+    // Assign all tickets including the first one
+    setTickets((prev) => {
+      const updated = [...prev];
+      addOrder.forEach((ticketType, index) => {
+        if (!updated[index]) {
+          updated[index] = {
+            name: "",
+            mobile: "",
+            socialMedia: "",
+            assignedTicketNumber: index + 1,
+            ticketType,
+            isOwnerTicket: false,
+          };
+        } else {
+          updated[index].assignedTicketNumber = index + 1;
+          updated[index].ticketType = ticketType;
+        }
+      });
+      return updated.slice(0, addOrder.length);
+    });
+  }, [addOrder]);
+
+  const [hours, minutes] = eventData.time.split(":").map(Number);
+  const timeDate = new Date();
+  timeDate.setHours(hours, minutes, 0);
+
+  const formattedTime = new Intl.DateTimeFormat(i18n.language, {
+    hour: "numeric",
+    minute: "numeric",
+    hour12: true,
+  }).format(timeDate);
+
+  const handlePayment = () => {
+    const newBooking = {
+      id,
+      title: eventData.title,
+      date: eventData.date,
+      time: eventData.time,
+      timestamp: new Date().toISOString(),
+    };
+
+    const stored = localStorage.getItem("bookedEvents");
+    const existing = stored ? JSON.parse(stored) : [];
+    localStorage.setItem(
+      "bookedEvents",
+      JSON.stringify([...existing, newBooking])
+    );
+
+    toast({
+      title: t("booking.paymentSuccessTitle"),
+      description: t("booking.paymentSuccessDescription"),
+    });
+
+    navigate("/payment-confirmation", {
+      state: {
+        eventTitle: eventData.title,
+        totalAmount,
+        transactionId: crypto.randomUUID(),
+      },
+    });
+  };
+
+  const currency = t("currency.egp");
+  const numberFormat = new Intl.NumberFormat(i18n.language);
+
+  // Check if any ticket has empty required fields
+  const hasIncompleteTickets = tickets.some((t) => {
+    if (!t) return false;
+
+    // If this is the owner's ticket, no validation needed
+    if (t.isOwnerTicket) return false;
+
+    // For all tickets, name is always required (except owner's ticket)
+    if (!t.name.trim()) return true;
+
+    // For non-child tickets, mobile is required (except owner's ticket)
+    if (!t.child) {
+      if (!t.mobile.trim()) return true;
+    }
+
+    return false;
+  });
+
+  // Debug logging
+  console.log("Tickets:", tickets);
+  console.log("hasIncompleteTickets:", hasIncompleteTickets);
+
+  return (
+    <div className="min-h-screen bg-gradient-dark">
+      <Dialog open={showTerms} onOpenChange={setShowTerms}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("terms.title")}</DialogTitle>
+          </DialogHeader>
+          <p>{t("terms.message")}</p>
+          <div className="flex justify-end gap-4 mt-4">
+            <Button variant="outline" onClick={() => setShowTerms(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={onAcceptTerms}>{t("common.accept")}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-2">
+              {t("booking.title")}
+            </h1>
+          </div>
+          {eventData.minimumAge && (
+            <div className="mb-4 text-sm text-destructive">
+              {t("booking.ageRestrictionNotice", { age: eventData.minimumAge })}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Booking Form */}
+            <div className="space-y-6">
+              {/* Event Details */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Ticket className="h-5 w-5 text-primary" />
+                    {t("booking.eventDetails")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <h3 className="font-semibold text-lg">{eventData.title}</h3>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <Calendar className="h-4 w-4" />
+                      {new Intl.DateTimeFormat(i18n.language, {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      }).format(new Date(eventData.date))}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="h-4 w-4" />
+                      {formattedTime}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <MapPin className="h-4 w-4" />
+                      {eventData.location}
+                    </div>
+                  </div>
+                  {eventData.childrenEnabled && (
+                    <div className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
+                      <Users className="h-4 w-4" />
+                      {t("booking.childrenWelcome", {
+                        age: eventData.freeChildAge,
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Ticket Quantity */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t("booking.ticketQuantities")}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {ticketTiers.map((tier) => (
+                    <div
+                      key={tier.key}
+                      className={`p-4 rounded-lg ${
+                        ticketTypeColors[tier.key]
+                      } transition-all duration-200 hover:shadow-md`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Badge className={ticketTypeBadges[tier.key].color}>
+                              {ticketTypeBadges[tier.key].text}
+                            </Badge>
+                            <h3 className="font-semibold text-lg">
+                              {t(`booking.tiers.${tier.key}`)}
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-bold text-primary">
+                              {tier.price}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              {t("currency.egp")} {t("booking.perTicket")}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 ml-4">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => changeQty(tier.key, -1)}
+                            disabled={quantities[tier.key] === 0}
+                            className="hover:bg-destructive hover:text-destructive-foreground"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </Button>
+                          <span className="font-bold text-xl w-12 text-center bg-background/50 dark:bg-background/20 rounded-lg py-2">
+                            {quantities[tier.key]}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={() => changeQty(tier.key, 1)}
+                            className="hover:bg-primary hover:text-primary-foreground"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <Accordion type="single" collapsible className="mt-3">
+                        <AccordionItem
+                          value={`details-${tier.key}`}
+                          className="border-none"
+                        >
+                          <AccordionTrigger className="py-2 hover:no-underline">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Info className="h-4 w-4" />
+                              View Details
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                            <p className="text-sm text-muted-foreground leading-relaxed pt-2">
+                              {tier.description}
+                            </p>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </div>
+                  ))}
+
+                  <div className="flex justify-between pt-2">
+                    <span className="font-medium">{t("booking.subtotal")}</span>
+                    <span>
+                      {numberFormat.format(totalTicketPrice)} {currency}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* All Tickets Information */}
+
+              {addOrder.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <div className="flex flex-col gap-1 mb-2">
+                      <p className="text-red-500">
+                        {t("booking.ticketDisclaimer")}
+                      </p>
+                    </div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5 text-primary" />
+                      {t("booking.allTicketsInfo")}
+                    </CardTitle>
+                    <CardDescription>
+                      {t("booking.ticketsOptional")}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {addOrder.map((ticketType, index) => {
+                      const bgClass = ticketTypeColors[ticketType];
+                      const ticketRaw = tickets[index] || {};
+                      const ticket = {
+                        assigned: true,
+                        child: false,
+                        email: "",
+                        isOwnerTicket: false,
+                        ...ticketRaw,
+                      };
+
+                      const ticketNumber = index + 1;
+
+                      return (
+                        <div
+                          key={index}
+                          className={`border border-border rounded-lg p-4 space-y-3 ${bgClass}`}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-medium">
+                                {t("booking.ticket") + ` ${ticketNumber}`}
+                              </h4>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateTicket(
+                                      index,
+                                      "isOwnerTicket",
+                                      !ticket.isOwnerTicket
+                                    )
+                                  }
+                                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 ${
+                                    ticket.isOwnerTicket
+                                      ? "bg-primary"
+                                      : "bg-gray-200 dark:bg-gray-700"
+                                  }`}
+                                >
+                                  <span
+                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                      ticket.isOwnerTicket
+                                        ? "translate-x-6"
+                                        : "translate-x-1"
+                                    }`}
+                                  />
+                                </button>
+                                <span
+                                  className={`text-sm font-medium transition-colors ${
+                                    ticket.isOwnerTicket
+                                      ? "text-primary"
+                                      : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {t("booking.thisIsMyTicket")}
+                                </span>
+                              </div>
+                            </div>
+                            {ticket.isOwnerTicket && (
+                              <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg border border-amber-200 dark:border-amber-700">
+                                <div className="flex items-start gap-2">
+                                  <svg
+                                    className="w-4 h-4 mt-0.5 flex-shrink-0"
+                                    fill="currentColor"
+                                    viewBox="0 0 20 20"
+                                  >
+                                    <path
+                                      fillRule="evenodd"
+                                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                                      clipRule="evenodd"
+                                    />
+                                  </svg>
+                                  <span>{t("booking.transferFeeWarning")}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                              <Label>{t("booking.ticketType")}</Label>
+                              <Input
+                                value={t(`booking.tiers.${ticketType}`) || ""}
+                                disabled
+                              />
+
+                              {/* Only show child checkbox if not owner's ticket and children are enabled for this event */}
+                              {!ticket.isOwnerTicket &&
+                                eventData.childrenEnabled && (
+                                  <div className="flex flex-col gap-2 pt-2">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateTicket(
+                                            index,
+                                            "child",
+                                            !ticket.child
+                                          )
+                                        }
+                                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:ring-offset-2 ${
+                                          ticket.child
+                                            ? "bg-green-500"
+                                            : "bg-gray-200 dark:bg-gray-700"
+                                        }`}
+                                      >
+                                        <span
+                                          className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                                            ticket.child
+                                              ? "translate-x-5"
+                                              : "translate-x-1"
+                                          }`}
+                                        />
+                                      </button>
+                                      <span
+                                        className={`text-sm font-medium transition-colors ${
+                                          ticket.child
+                                            ? "text-green-600 dark:text-green-400"
+                                            : "text-muted-foreground"
+                                        }`}
+                                      >
+                                        {t("booking.child")}
+                                      </span>
+                                    </div>
+                                    {/* Show age input if child is checked */}
+                                    {ticket.child && (
+                                      <div className="space-y-2">
+                                        <Label>{t("booking.childAge")}</Label>
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          max="18"
+                                          value={ticket.age || ""}
+                                          onChange={(e) => {
+                                            const value = e.target.value;
+                                            if (value === "") {
+                                              updateTicket(index, "age", "");
+                                            } else {
+                                              const age = parseInt(value);
+                                              if (!isNaN(age) && age >= 0) {
+                                                updateTicket(index, "age", age);
+                                              }
+                                            }
+                                          }}
+                                          placeholder={t(
+                                            "booking.childAgePlaceholder"
+                                          )}
+                                        />
+                                        {typeof ticket.age === "number" &&
+                                          ticket.age <=
+                                            eventData.freeChildAge && (
+                                            <div className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 p-2 rounded">
+                                              {t("booking.freeChildMessage", {
+                                                age: eventData.freeChildAge,
+                                              })}
+                                            </div>
+                                          )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                              {/* Only show name and mobile if not owner's ticket */}
+                              {!ticket.isOwnerTicket ? (
+                                <>
+                                  <div className="space-y-2">
+                                    <Label>{t("booking.name")}</Label>
+                                    <Input
+                                      value={ticket.name}
+                                      onChange={(e) =>
+                                        updateTicket(
+                                          index,
+                                          "name",
+                                          e.target.value
+                                        )
+                                      }
+                                      placeholder={t("booking.name")}
+                                    />
+                                  </div>
+                                  {/* Only show mobile if not child */}
+                                  {!ticket.child && (
+                                    <div className="space-y-2">
+                                      <Label>{t("booking.mobile")}</Label>
+                                      <Input
+                                        type="tel"
+                                        value={ticket.mobile}
+                                        onChange={(e) =>
+                                          updateTicket(
+                                            index,
+                                            "mobile",
+                                            e.target.value
+                                          )
+                                        }
+                                        placeholder={t("booking.mobile")}
+                                      />
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
+                                  <p className="font-medium">
+                                    {t("booking.ownersTicket")}
+                                  </p>
+                                  <p>{t("booking.ownersTicketDescription")}</p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* Price Breakdown */}
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-primary" />
+                    {t("booking.priceBreakdown")}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span>
+                        {t("booking.ticketPrice", { count: totalTickets })}
+                      </span>
+                      <span>
+                        {numberFormat.format(baseTicketPrice)} {currency}
+                      </span>
+                    </div>
+                    {freeChildrenDiscount > 0 && (
+                      <div className="flex justify-between text-green-600 dark:text-green-400">
+                        <span>{t("booking.freeChildrenDiscount")}</span>
+                        <span>
+                          -{numberFormat.format(freeChildrenDiscount)}{" "}
+                          {currency}
+                        </span>
+                      </div>
+                    )}
+                    {vipDiscount > 0 && (
+                      <div className="flex justify-between text-yellow-600 dark:text-yellow-400">
+                        <span>{t("booking.vipDiscount")}</span>
+                        <span>
+                          -{numberFormat.format(vipDiscount)} {currency}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t("booking.vat")}</span>
+                      <span>
+                        {numberFormat.format(vatAmount)} {currency}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t("booking.cardCost")}</span>
+                      <span>
+                        {numberFormat.format(cardCost)} {currency}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t("booking.renewalCost")}</span>
+                      <span>
+                        {numberFormat.format(renewalCost)} {currency}
+                      </span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between font-semibold text-lg">
+                      <span>{t("booking.totalAmount")}</span>
+                      <span>
+                        {numberFormat.format(totalAmount)} {currency}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 pt-4">
+                    {hasIncompleteTickets && (
+                      <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
+                        Please complete all required fields for tickets before
+                        proceeding.
+                      </div>
+                    )}
+                    <Button
+                      variant="gradient"
+                      size="lg"
+                      className="w-full pt-1 pb-1"
+                      onClick={onConfirmPayment}
+                      disabled={hasIncompleteTickets}
+                    >
+                      <CreditCard className="h-5 w-5 mr-2 rtl:mr-0 rtl:ml-2" />
+                      {t("booking.completePayment")}
+                    </Button>
+
+                    <div className="bg-primary/10 rounded-lg p-3">
+                      <div className="flex items-start gap-2">
+                        <Store className="h-4 w-4 text-primary mt-1" />
+                        <div className="text-sm">
+                          <p className="font-medium">
+                            {t("booking.firstPurchaseNotice")}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {t("booking.nfcInstruction")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Payment Methods */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t("booking.paymentMethods")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        name="payment"
+                        id="card"
+                        defaultChecked
+                      />
+                      <label htmlFor="card" className="flex items-center gap-2">
+                        <CreditCard className="h-4 w-4" />
+                        {t("booking.creditDebit")}
+                      </label>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+export default Booking;

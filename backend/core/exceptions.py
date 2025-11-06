@@ -1,0 +1,124 @@
+"""
+Custom exception classes for consistent error handling.
+"""
+from rest_framework import status
+from rest_framework.exceptions import APIException
+from rest_framework.views import exception_handler
+
+
+def custom_exception_handler(exc, context):
+    """
+    Custom exception handler for consistent error responses.
+    """
+    # Call REST framework's default exception handler first
+    response = exception_handler(exc, context)
+    
+    # If response is None, use default Django exception handling
+    if response is not None:
+        # Customize the response data structure
+        if isinstance(exc, APIException):
+            # If it's already our custom exception, use its detail
+            if isinstance(exc.detail, dict) and 'error' in exc.detail:
+                custom_response_data = exc.detail
+            else:
+                # Convert standard DRF exceptions to our format
+                custom_response_data = {
+                    'error': {
+                        'code': exc.default_code.upper() if hasattr(exc, 'default_code') else 'ERROR',
+                        'message': str(exc.detail) if isinstance(exc.detail, (str, list)) else 'An error occurred',
+                        'details': exc.detail if isinstance(exc.detail, dict) else {}
+                    }
+                }
+            response.data = custom_response_data
+    
+    return response
+
+
+class ValidationError(APIException):
+    """
+    Custom validation error with consistent format.
+    """
+    status_code = status.HTTP_400_BAD_REQUEST
+    default_detail = 'Invalid input data.'
+    default_code = 'VALIDATION_ERROR'
+    
+    def __init__(self, detail=None, code=None, details=None):
+        if detail is None:
+            detail = self.default_detail
+        if code is None:
+            code = self.default_code
+        
+        self.detail = {
+            'error': {
+                'code': code,
+                'message': detail,
+                'details': details or {}
+            }
+        }
+
+
+class AuthenticationError(APIException):
+    """
+    Custom authentication error.
+    """
+    status_code = status.HTTP_401_UNAUTHORIZED
+    default_detail = 'Authentication credentials were not provided.'
+    default_code = 'AUTHENTICATION_ERROR'
+    
+    def __init__(self, detail=None, code=None):
+        if detail is None:
+            detail = self.default_detail
+        if code is None:
+            code = self.default_code
+        
+        self.detail = {
+            'error': {
+                'code': code,
+                'message': detail
+            }
+        }
+
+
+class PermissionDenied(APIException):
+    """
+    Custom permission denied error.
+    """
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = 'You do not have permission to perform this action.'
+    default_code = 'PERMISSION_DENIED'
+    
+    def __init__(self, detail=None, code=None):
+        if detail is None:
+            detail = self.default_detail
+        if code is None:
+            code = self.default_code
+        
+        self.detail = {
+            'error': {
+                'code': code,
+                'message': detail
+            }
+        }
+
+
+class NotFoundError(APIException):
+    """
+    Custom not found error.
+    """
+    status_code = status.HTTP_404_NOT_FOUND
+    default_detail = 'Resource not found.'
+    default_code = 'NOT_FOUND'
+    
+    def __init__(self, detail=None, code=None):
+        if detail is None:
+            detail = self.default_detail
+        if code is None:
+            code = self.default_code
+        
+        self.detail = {
+            'error': {
+                'code': code,
+                'message': detail
+            }
+        }
+

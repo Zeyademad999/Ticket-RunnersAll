@@ -1,0 +1,622 @@
+/**
+ * Admin API Service Layer
+ * Handles all API calls for the Admin Dashboard
+ */
+
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+
+// Get API base URL from environment variable or use default
+// In production, set VITE_API_BASE_URL in .env file
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
+// Create axios instance
+const adminApi: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 30000, // 30 seconds
+});
+
+// Request interceptor - Add token to all requests
+adminApi.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const token = localStorage.getItem('admin_access_token');
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error: AxiosError) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor - Handle errors and token refresh
+adminApi.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // Handle 401 Unauthorized - Try to refresh token
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      try {
+        const refreshToken = localStorage.getItem('admin_refresh_token');
+        if (refreshToken) {
+          const response = await axios.post(`${API_BASE_URL}/auth/refresh/`, {
+            refresh: refreshToken,
+          });
+
+          const { access } = response.data;
+          localStorage.setItem('admin_access_token', access);
+
+          // Retry original request with new token
+          if (originalRequest.headers) {
+            originalRequest.headers.Authorization = `Bearer ${access}`;
+          }
+          return adminApi(originalRequest);
+        }
+      } catch (refreshError) {
+        // Refresh failed - redirect to login
+        localStorage.removeItem('admin_access_token');
+        localStorage.removeItem('admin_refresh_token');
+        localStorage.removeItem('admin_user');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+// Authentication API
+export const authApi = {
+  /**
+   * Login with username and password
+   */
+  login: async (username: string, password: string) => {
+    const response = await adminApi.post('/auth/login/', {
+      username,
+      password,
+    });
+    return response.data;
+  },
+
+  /**
+   * Logout - blacklist refresh token
+   */
+  logout: async () => {
+    const refreshToken = localStorage.getItem('admin_refresh_token');
+    if (refreshToken) {
+      try {
+        await adminApi.post('/auth/logout/', {
+          refresh_token: refreshToken,
+        });
+      } catch (error) {
+        // Continue with logout even if API call fails
+        console.error('Logout API error:', error);
+      }
+    }
+    // Clear local storage
+    localStorage.removeItem('admin_access_token');
+    localStorage.removeItem('admin_refresh_token');
+    localStorage.removeItem('admin_user');
+  },
+
+  /**
+   * Get current user profile
+   */
+  getMe: async () => {
+    const response = await adminApi.get('/auth/me/');
+    return response.data;
+  },
+
+  /**
+   * Refresh access token
+   */
+  refreshToken: async () => {
+    const refreshToken = localStorage.getItem('admin_refresh_token');
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+    const response = await axios.post(`${API_BASE_URL}/auth/refresh/`, {
+      refresh: refreshToken,
+    });
+    return response.data;
+  },
+
+  /**
+   * Change password
+   */
+  changePassword: async (oldPassword: string, newPassword: string) => {
+    const response = await adminApi.put('/auth/change-password/', {
+      old_password: oldPassword,
+      new_password: newPassword,
+    });
+    return response.data;
+  },
+};
+
+// Dashboard API
+export const dashboardApi = {
+  /**
+   * Get dashboard statistics
+   */
+  getStats: async () => {
+    const response = await adminApi.get('/dashboard/stats/');
+    return response.data;
+  },
+
+  /**
+   * Get revenue analytics
+   */
+  getRevenueAnalytics: async (params?: { start_date?: string; end_date?: string }) => {
+    const response = await adminApi.get('/analytics/revenue/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get user growth analytics
+   */
+  getUserGrowthAnalytics: async (params?: { start_date?: string; end_date?: string }) => {
+    const response = await adminApi.get('/analytics/users/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get card status analytics
+   */
+  getCardStatusAnalytics: async () => {
+    const response = await adminApi.get('/analytics/cards/');
+    return response.data;
+  },
+
+  /**
+   * Get event categories analytics
+   */
+  getEventCategoriesAnalytics: async () => {
+    const response = await adminApi.get('/analytics/events/');
+    return response.data;
+  },
+};
+
+// Events API
+export const eventsApi = {
+  /**
+   * Get all events with filtering
+   */
+  getEvents: async (params?: {
+    search?: string;
+    status?: string;
+    organizer?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/events/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get event by ID
+   */
+  getEvent: async (id: string) => {
+    const response = await adminApi.get(`/events/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create new event
+   */
+  createEvent: async (data: any) => {
+    const response = await adminApi.post('/events/', data);
+    return response.data;
+  },
+
+  /**
+   * Update event
+   */
+  updateEvent: async (id: string, data: any) => {
+    const response = await adminApi.put(`/events/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete event
+   */
+  deleteEvent: async (id: string) => {
+    const response = await adminApi.delete(`/events/${id}/`);
+    return response.data;
+  },
+};
+
+// Tickets API
+export const ticketsApi = {
+  /**
+   * Get all tickets with filtering
+   */
+  getTickets: async (params?: {
+    search?: string;
+    event?: string;
+    customer?: string;
+    status?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/tickets/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get ticket by ID
+   */
+  getTicket: async (id: string) => {
+    const response = await adminApi.get(`/tickets/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Update ticket status
+   */
+  updateTicket: async (id: string, data: { status?: string; [key: string]: any }) => {
+    const response = await adminApi.put(`/tickets/${id}/`, data);
+    return response.data;
+  },
+};
+
+// Customers API
+export const customersApi = {
+  /**
+   * Get all customers with filtering
+   */
+  getCustomers: async (params?: {
+    search?: string;
+    status?: string;
+    is_recurrent?: boolean;
+    fees_paid?: boolean;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/customers/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get customer by ID
+   */
+  getCustomer: async (id: string) => {
+    const response = await adminApi.get(`/customers/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Update customer
+   */
+  updateCustomer: async (id: string, data: any) => {
+    const response = await adminApi.put(`/customers/${id}/`, data);
+    return response.data;
+  },
+};
+
+// NFC Cards API
+export const nfcCardsApi = {
+  /**
+   * Get all NFC cards with filtering
+   */
+  getCards: async (params?: {
+    search?: string;
+    customer?: string;
+    merchant?: string;
+    status?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/nfc-cards/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get card by ID
+   */
+  getCard: async (id: string) => {
+    const response = await adminApi.get(`/nfc-cards/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create new card
+   */
+  createCard: async (data: any) => {
+    const response = await adminApi.post('/nfc-cards/', data);
+    return response.data;
+  },
+
+  /**
+   * Update card
+   */
+  updateCard: async (id: string, data: any) => {
+    const response = await adminApi.put(`/nfc-cards/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Bulk operations
+   */
+  bulkOperation: async (data: { operation: string; card_ids: string[]; [key: string]: any }) => {
+    const response = await adminApi.post('/nfc-cards/bulk/', data);
+    return response.data;
+  },
+};
+
+// Users API (Organizers, Merchants, Ushers, Admins)
+export const usersApi = {
+  /**
+   * Get organizers
+   */
+  getOrganizers: async (params?: {
+    search?: string;
+    status?: string;
+    verified?: boolean;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/organizers/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get merchants
+   */
+  getMerchants: async (params?: {
+    search?: string;
+    status?: string;
+    verification_status?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/merchants/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get ushers
+   */
+  getUshers: async (params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/ushers/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get admin users
+   */
+  getAdmins: async (params?: {
+    search?: string;
+    role?: string;
+    is_active?: boolean;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/admins/', { params });
+    return response.data;
+  },
+
+  /**
+   * Create user (organizer, merchant, usher, or admin)
+   */
+  createUser: async (data: any) => {
+    const response = await adminApi.post('/users/', data);
+    return response.data;
+  },
+
+  /**
+   * Update user
+   */
+  updateUser: async (id: string, data: any) => {
+    const response = await adminApi.put(`/users/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete user
+   */
+  deleteUser: async (id: string) => {
+    const response = await adminApi.delete(`/users/${id}/`);
+    return response.data;
+  },
+};
+
+// Venues API
+export const venuesApi = {
+  /**
+   * Get all venues
+   */
+  getVenues: async (params?: {
+    search?: string;
+    city?: string;
+    status?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/venues/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get venue by ID
+   */
+  getVenue: async (id: string) => {
+    const response = await adminApi.get(`/venues/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create venue
+   */
+  createVenue: async (data: any) => {
+    const response = await adminApi.post('/venues/', data);
+    return response.data;
+  },
+
+  /**
+   * Update venue
+   */
+  updateVenue: async (id: string, data: any) => {
+    const response = await adminApi.put(`/venues/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete venue
+   */
+  deleteVenue: async (id: string) => {
+    const response = await adminApi.delete(`/venues/${id}/`);
+    return response.data;
+  },
+};
+
+// Financial API
+export const financesApi = {
+  /**
+   * Get expenses
+   */
+  getExpenses: async (params?: {
+    search?: string;
+    category?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/expenses/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get payouts
+   */
+  getPayouts: async (params?: {
+    search?: string;
+    status?: string;
+    organizer?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/payouts/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get company finances
+   */
+  getCompanyFinances: async (params?: { start_date?: string; end_date?: string }) => {
+    const response = await adminApi.get('/finances/company/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get profit share data
+   */
+  getProfitShare: async (params?: { start_date?: string; end_date?: string }) => {
+    const response = await adminApi.get('/finances/profit-share/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get settlements
+   */
+  getSettlements: async (params?: {
+    search?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/finances/settlements/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get deposits
+   */
+  getDeposits: async (params?: {
+    search?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/finances/deposits/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get profit withdrawals
+   */
+  getProfitWithdrawals: async (params?: {
+    search?: string;
+    status?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/finances/withdrawals/', { params });
+    return response.data;
+  },
+};
+
+// System Logs API
+export const systemLogsApi = {
+  /**
+   * Get system logs
+   */
+  getSystemLogs: async (params?: {
+    search?: string;
+    user?: string;
+    action?: string;
+    category?: string;
+    severity?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/logs/system/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get check-in logs
+   */
+  getCheckinLogs: async (params?: {
+    search?: string;
+    event?: string;
+    customer?: string;
+    device?: string;
+    operator?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/logs/checkin/', { params });
+    return response.data;
+  },
+};
+
+// Export default API instance for custom requests
+export default adminApi;
+

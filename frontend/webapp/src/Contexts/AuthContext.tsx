@@ -1,0 +1,952 @@
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import { toast } from "@/components/ui/use-toast";
+import { parseISO, isAfter, compareAsc } from "date-fns";
+import { useTranslation } from "react-i18next";
+import { AuthService } from "@/lib/api/services/auth";
+import {
+  setSecureUserData,
+  getSecureUserData,
+  clearSecureAuth,
+} from "@/lib/secureStorage";
+import { ValidationService } from "@/lib/validation";
+import { tokenManager } from "@/lib/tokenManager";
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+interface BookedEvent {
+  title: string;
+  date: string;
+  time: string;
+}
+
+export interface User {
+  id: string;
+  first_name: string;
+  last_name: string;
+  mobile_number: string;
+  email: string;
+  profile_image_id: string;
+  type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  // Legacy fields for backward compatibility
+  name?: string;
+  isVip?: boolean;
+  vipCardNumber?: string;
+  vipExpiryDate?: string;
+}
+
+type AuthContextType = {
+  isLoginOpen: boolean;
+  isSignupOpen: boolean;
+  openLogin: () => void;
+  openSignup: () => void;
+  closeLogin: () => void;
+  closeSignup: () => void;
+  switchToSignup: () => void;
+  switchToLogin: () => void;
+  login: (userData: User) => void;
+  loginWithCredentials: (login: string, password: string) => Promise<void>;
+  sendLoginOtp: (mobile?: string, email?: string) => Promise<void>;
+  loginWithOtp: (
+    mobile: string | undefined,
+    email: string | undefined,
+    otpCode: string
+  ) => Promise<void>;
+  requestPasswordResetOtp: (mobileNumber: string) => Promise<void>;
+  verifyPasswordResetOtp: (
+    mobileNumber: string,
+    otpCode: string
+  ) => Promise<{ password_reset_token: string; expires_in_seconds: number }>;
+  confirmPasswordReset: (
+    passwordResetToken: string,
+    password: string,
+    passwordConfirmation: string
+  ) => Promise<void>;
+  refreshAccessToken: () => Promise<string | null>;
+  logout: () => Promise<void>;
+  logoutAll: () => Promise<void>;
+  getCurrentUser: () => Promise<void>;
+  user: User | null;
+  isVip: boolean;
+  isLoading: boolean;
+};
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isSignupOpen, setIsSignupOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const { t } = useTranslation();
+
+  // Initialize user from secure storage on app start
+  useEffect(() => {
+    const initializeUser = async () => {
+      console.log("Initializing user from secure storage...");
+
+      // Check if we have valid tokens first
+      const isAuthenticated = await tokenManager.isAuthenticated();
+      console.log("User authentication status on init:", isAuthenticated);
+
+      if (isAuthenticated) {
+        const storedUser = await getSecureUserData();
+        if (storedUser) {
+          try {
+            const userData = JSON.parse(storedUser);
+            console.log("Restored user from storage:", userData.id);
+            setUser(userData);
+          } catch (error) {
+            console.error("Error parsing stored user data:", error);
+            clearSecureAuth();
+          }
+        } else {
+          // If we have valid tokens but no user data, try to fetch current user
+          console.log(
+            "Valid tokens found but no user data, fetching current user..."
+          );
+          try {
+            await getCurrentUser();
+          } catch (error) {
+            console.error("Failed to fetch current user:", error);
+            clearSecureAuth();
+          }
+        }
+      } else {
+        console.log("No valid authentication found, user will need to login");
+        // Clear any stale data
+        clearSecureAuth();
+      }
+    };
+
+    initializeUser();
+  }, []);
+
+  // Listen for auth-required events from API errors
+  useEffect(() => {
+    const handleAuthRequired = (event: CustomEvent) => {
+      console.log("Auth required event received:", event.detail?.reason);
+
+      // Clear user state and show login
+      setUser(null);
+      clearSecureAuth();
+      setIsLoginOpen(true);
+
+      toast({
+        title: t("auth.authenticationRequired"),
+        description: t("auth.authenticationRequiredMessage"),
+        variant: "destructive",
+      });
+    };
+
+    // Remove duplicate token refresh logic - let API interceptor handle it
+    // const handleTokenRefreshRequired = async (event: Event) => {
+    //   // This is now handled by the API interceptor to avoid race conditions
+    // };
+
+    window.addEventListener(
+      "auth-required",
+      handleAuthRequired as EventListener
+    );
+    // Removed token-refresh-required listener to avoid race conditions
+
+    return () => {
+      window.removeEventListener(
+        "auth-required",
+        handleAuthRequired as EventListener
+      );
+      // Removed token-refresh-required cleanup
+    };
+  }, [t]);
+
+  // Initialize token manager and check authentication status
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        // Check if user is authenticated using token manager
+        if (user && !(await tokenManager.isAuthenticated())) {
+          console.log("User exists but not authenticated, clearing session");
+          clearSecureAuth();
+          setUser(null);
+        }
+      } catch (error) {
+        console.error("Auth initialization failed:", error);
+        // Only clear auth if it's a genuine authentication error
+        if (error instanceof Error && error.message.includes("expired")) {
+          clearSecureAuth();
+          setUser(null);
+        }
+      }
+    };
+
+    // Only run auth check once on mount, not on every user change
+    if (user) {
+      initializeAuth();
+    }
+  }, []); // Remove user dependency to prevent loops
+
+  const login = async (userData: User) => {
+    await setSecureUserData(JSON.stringify(userData));
+    setUser(userData);
+    checkNextUpcomingEvent();
+  };
+
+  const loginWithCredentials = async (
+    loginIdentifier: string,
+    password: string
+  ) => {
+    setIsLoading(true);
+    try {
+      // Sanitize inputs
+      const sanitizedLogin = ValidationService.sanitizeInput(loginIdentifier);
+      const sanitizedPassword = ValidationService.sanitizeInput(password);
+
+      if (!sanitizedLogin || !sanitizedPassword) {
+        throw new Error(t("auth.invalidInput"));
+      }
+
+      const loginRequest = AuthService.createLoginRequest(
+        sanitizedLogin,
+        sanitizedPassword
+      );
+      const response = await AuthService.login(loginRequest);
+
+      // Note: Tokens are already stored by AuthService.login()
+      // No need to store them again here to avoid duplication
+
+      // Convert API user data to local User format
+      const customer = (response as any).customer || response.user;
+      const customerName =
+        customer.name ||
+        `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
+
+      const userData: User = {
+        id: customer.id,
+        first_name: customer.first_name || customer.name?.split(" ")[0] || "",
+        last_name:
+          customer.last_name ||
+          customer.name?.split(" ").slice(1).join(" ") ||
+          "",
+        mobile_number: customer.mobile_number || customer.phone || "",
+        email: customer.email,
+        profile_image_id:
+          customer.profile_image_id || customer.profileImage || "",
+        type:
+          customer.type === "vip" ||
+          customer.status === "vip" ||
+          customer.CardActive
+            ? "vip"
+            : "regular",
+        status: customer.status || "active",
+        created_at: customer.created_at || new Date().toISOString(),
+        updated_at: customer.updated_at || new Date().toISOString(),
+        // Legacy fields for backward compatibility
+        name: customerName,
+        isVip:
+          customer.type === "vip" ||
+          customer.status === "vip" ||
+          customer.CardActive ||
+          false,
+        vipCardNumber: undefined,
+        vipExpiryDate: undefined,
+      };
+
+      login(userData);
+
+      toast({
+        title: t("auth.loginSuccess"),
+        description: t("auth.welcomeBack", { name: userData.name }),
+      });
+    } catch (error: any) {
+      console.error("Login error:", error);
+
+      let errorMessage = error.message || t("auth.loginErrorMessage");
+      let errorTitle = t("auth.loginError");
+
+      // Handle specific error types
+      if (error.status === 429) {
+        errorTitle = t("auth.rateLimitError");
+        errorMessage = t("auth.rateLimitMessage");
+
+        setTimeout(() => {
+          toast({
+            title: t("auth.tryOtpLogin"),
+            description: t("auth.otpLoginSuggestion"),
+            variant: "default",
+          });
+        }, 2000);
+      } else if (error.status === 401) {
+        errorTitle = t("auth.invalidCredentials");
+        errorMessage = t("auth.invalidCredentialsMessage");
+      } else if (error.status === 403) {
+        errorTitle = t("auth.accountBlocked");
+        errorMessage = t("auth.accountBlockedMessage");
+      } else if (error.status >= 500) {
+        errorTitle = t("auth.serverError");
+        // Show more specific error messages for 500 errors
+        if (
+          error.message &&
+          error.message.includes("property") &&
+          error.message.includes("null")
+        ) {
+          errorMessage = t("auth.dataSyncError");
+        } else if (
+          error.message &&
+          (error.message.includes("database") ||
+            error.message.includes("connection"))
+        ) {
+          errorMessage = t("auth.serverUnavailableError");
+        } else {
+          errorMessage = t("auth.genericServerError");
+        }
+      } else if (
+        error.message &&
+        error.message.includes("Invalid response structure")
+      ) {
+        errorTitle = t("auth.apiError");
+        errorMessage = t("auth.apiErrorMessage");
+      }
+
+      toast({
+        title: errorTitle,
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const sendLoginOtp = async (mobile?: string, email?: string) => {
+    setIsLoading(true);
+    try {
+      if (!mobile && !email) {
+        throw new Error(t("auth.provideContactInfo"));
+      }
+
+      const response = await AuthService.sendLoginOtp({ mobile, email });
+
+      // Format the expiration time for display
+      const expiresAt = new Date(response.expires_at).toLocaleString();
+
+      toast({
+        title: t("auth.otpSent"),
+        description: `${t("auth.otpSentDescription")} ${t("auth.otpExpiresAt", {
+          time: expiresAt,
+        })}`,
+      });
+    } catch (error: any) {
+      console.error("Send OTP error:", error);
+      toast({
+        title: t("auth.otpSendError"),
+        description: error.message || t("auth.otpSendErrorMessage"),
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loginWithOtp = async (
+    mobile: string | undefined,
+    email: string | undefined,
+    otpCode: string
+  ) => {
+    setIsLoading(true);
+    try {
+      if (!mobile && !email) {
+        throw new Error(t("auth.provideContactInfo"));
+      }
+
+      // Sanitize inputs
+      const sanitizedMobile = mobile
+        ? ValidationService.sanitizeInput(mobile)
+        : undefined;
+      const sanitizedEmail = email
+        ? ValidationService.sanitizeInput(email)
+        : undefined;
+      const sanitizedOtp = ValidationService.sanitizeInput(otpCode);
+
+      if (!sanitizedOtp) {
+        throw new Error(t("auth.invalidOtp"));
+      }
+
+      const otpRequest = AuthService.createOtpLoginRequest(
+        sanitizedMobile,
+        sanitizedEmail,
+        sanitizedOtp
+      );
+      const response = await AuthService.loginWithOtp(otpRequest);
+
+      // Note: Tokens are already stored by AuthService.loginWithOtp()
+      // No need to store them again here to avoid duplication
+
+      // Convert API user data to local User format
+      const customer = (response as any).customer || response.user;
+      const customerName =
+        customer.name ||
+        `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
+
+      const userData: User = {
+        id: customer.id,
+        first_name: customer.first_name || customer.name?.split(" ")[0] || "",
+        last_name:
+          customer.last_name ||
+          customer.name?.split(" ").slice(1).join(" ") ||
+          "",
+        mobile_number: customer.mobile_number || customer.phone || "",
+        email: customer.email,
+        profile_image_id:
+          customer.profile_image_id || customer.profileImage || "",
+        type:
+          customer.type === "vip" ||
+          customer.status === "vip" ||
+          customer.CardActive
+            ? "vip"
+            : "regular",
+        status: customer.status || "active",
+        created_at: customer.created_at || new Date().toISOString(),
+        updated_at: customer.updated_at || new Date().toISOString(),
+        // Legacy fields for backward compatibility
+        name: customerName,
+        isVip:
+          customer.type === "vip" ||
+          customer.status === "vip" ||
+          customer.CardActive ||
+          false,
+        vipCardNumber: undefined,
+        vipExpiryDate: undefined,
+      };
+
+      login(userData);
+
+      toast({
+        title: t("auth.loginSuccess"),
+        description: t("auth.welcomeBack", { name: userData.name }),
+      });
+    } catch (error: any) {
+      console.error("OTP login error:", error);
+      toast({
+        title: t("auth.otpLoginError"),
+        description: error.message || t("auth.otpLoginErrorMessage"),
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const requestPasswordResetOtp = async (mobileNumber: string) => {
+    setIsLoading(true);
+    try {
+      if (!mobileNumber) {
+        throw new Error(t("auth.provideMobileNumber"));
+      }
+
+      const response = await AuthService.requestPasswordResetOtp(mobileNumber);
+
+      // Ensure response exists and has a message property
+      const message =
+        response?.message || t("auth.passwordResetOtpSentDescription");
+
+      toast({
+        title: t("auth.passwordResetOtpSent"),
+        description: message,
+      });
+    } catch (error: any) {
+      console.error("Password reset OTP request error:", error);
+
+      // Safely extract error message
+      const errorMessage =
+        error?.message || t("auth.passwordResetOtpErrorMessage");
+
+      toast({
+        title: t("auth.passwordResetOtpError"),
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const verifyPasswordResetOtp = async (
+    mobileNumber: string,
+    otpCode: string
+  ) => {
+    setIsLoading(true);
+    try {
+      if (!mobileNumber || !otpCode) {
+        throw new Error(t("auth.provideMobileAndOtp"));
+      }
+
+      const response = await AuthService.verifyPasswordResetOtp(
+        mobileNumber,
+        otpCode
+      );
+
+      // Safely extract response properties with fallbacks
+      const expiresInSeconds = response?.expires_in_seconds || 300; // Default to 5 minutes
+      const passwordResetToken = response?.password_reset_token;
+
+      if (!passwordResetToken) {
+        throw new Error("Password reset token not received from server");
+      }
+
+      toast({
+        title: t("auth.passwordResetOtpVerified"),
+        description: t("auth.passwordResetOtpVerifiedDescription", {
+          expiresIn: Math.floor(expiresInSeconds / 60),
+        }),
+      });
+
+      return {
+        password_reset_token: passwordResetToken,
+        expires_in_seconds: expiresInSeconds,
+      };
+    } catch (error: any) {
+      console.error("Password reset OTP verification error:", error);
+
+      // Safely extract error message
+      const errorMessage =
+        error?.message || t("auth.passwordResetOtpVerificationErrorMessage");
+
+      toast({
+        title: t("auth.passwordResetOtpVerificationError"),
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const confirmPasswordReset = async (
+    passwordResetToken: string,
+    password: string,
+    passwordConfirmation: string
+  ) => {
+    setIsLoading(true);
+    try {
+      if (!passwordResetToken || !password || !passwordConfirmation) {
+        throw new Error(t("auth.provideAllFields"));
+      }
+
+      if (password !== passwordConfirmation) {
+        throw new Error(t("auth.passwordsDoNotMatch"));
+      }
+
+      const response = await AuthService.confirmPasswordReset(
+        passwordResetToken,
+        password,
+        passwordConfirmation
+      );
+
+      // Safely extract response message
+      const message =
+        response?.message || t("auth.passwordResetSuccessDescription");
+
+      toast({
+        title: t("auth.passwordResetSuccess"),
+        description: message,
+      });
+    } catch (error: any) {
+      console.error("Password reset confirmation error:", error);
+
+      // Handle specific validation errors
+      let errorTitle = t("auth.passwordResetConfirmationError");
+      let errorMessage =
+        error.message || t("auth.passwordResetConfirmationErrorMessage");
+
+      if (error.message && error.message.includes("exceeds maximum length")) {
+        errorTitle = "Token Too Long";
+        errorMessage =
+          "The password reset token is too long. Please try the password reset process again.";
+      } else if (error.message && error.message.includes("500 characters")) {
+        errorTitle = "Token Validation Error";
+        errorMessage =
+          "The password reset token exceeds the maximum allowed length. Please restart the password reset process.";
+      } else if (
+        error.message &&
+        error.message.includes("Invalid or expired reset token")
+      ) {
+        errorTitle = "Token Invalid";
+        errorMessage =
+          "The password reset token is invalid or has expired. Please restart the password reset process.";
+
+        // Clear stored tokens when they're invalid
+        try {
+          const { secureStorage } = await import("@/lib/secureStorage");
+          localStorage.removeItem("passwordResetToken");
+          secureStorage.removeItem("passwordResetExpires");
+          console.log("Cleared invalid password reset tokens");
+        } catch (clearError) {
+          console.warn("Failed to clear invalid tokens:", clearError);
+        }
+      } else if (error.code === "TOKEN_INVALID") {
+        errorTitle = "Token Invalid";
+        errorMessage =
+          "The password reset token is invalid or has expired. Please restart the password reset process.";
+
+        // Clear stored tokens when they're invalid
+        try {
+          const { secureStorage } = await import("@/lib/secureStorage");
+          localStorage.removeItem("passwordResetToken");
+          secureStorage.removeItem("passwordResetExpires");
+          console.log("Cleared invalid password reset tokens");
+        } catch (clearError) {
+          console.warn("Failed to clear invalid tokens:", clearError);
+        }
+      }
+
+      toast({
+        title: errorTitle,
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshAccessToken = async () => {
+    try {
+      const newToken = await tokenManager.refreshAccessToken();
+
+      if (newToken) {
+        // Don't show toast for automatic token refresh to avoid spam
+        console.log("Token refreshed successfully in AuthContext");
+        return newToken;
+      } else {
+        // Token refresh failed, clear auth
+        console.warn(
+          "Token refresh failed in AuthContext, clearing authentication"
+        );
+        clearSecureAuth();
+        setUser(null);
+        return null;
+      }
+    } catch (error: any) {
+      console.error("Token refresh failed in AuthContext:", error);
+
+      // Check if it's a network error vs authentication error
+      if (isNetworkError(error)) {
+        console.warn("Network error during token refresh - will retry later");
+        return null; // Don't logout on network errors
+      }
+
+      // Only show error notification for non-network errors
+      if (!isNetworkError(error)) {
+        toast({
+          title: t("auth.tokenRefreshError"),
+          description: t("auth.tokenRefreshErrorMessage"),
+          variant: "destructive",
+        });
+      }
+
+      // Only logout if it's a genuine authentication error
+      if (error.status === 401 || error.status === 422) {
+        console.warn("Authentication error during refresh, logging out");
+        await logout();
+      }
+
+      return null;
+    }
+  };
+
+  // Helper method to identify network errors
+  const isNetworkError = (error: any): boolean => {
+    return (
+      error.code === "NETWORK_ERROR" ||
+      !navigator.onLine ||
+      error.message?.includes("network") ||
+      error.message?.includes("Network") ||
+      error.message?.includes("fetch") ||
+      error.message?.includes("timeout") ||
+      error.name === "NetworkError" ||
+      error.name === "TypeError"
+    );
+  };
+
+  const logout = async () => {
+    try {
+      // Call the logout API to invalidate tokens on server
+      const response = await AuthService.logout();
+
+      // Show success message
+      toast({
+        title: t("auth.logoutSuccess"),
+        description: response.message || t("auth.logoutSuccessMessage"),
+      });
+    } catch (error: any) {
+      console.error("Logout error:", error);
+      // Show error message but continue with local logout
+      toast({
+        title: t("auth.logoutError"),
+        description: t("auth.logoutErrorMessage"),
+        variant: "destructive",
+      });
+    } finally {
+      // Always clear secure storage and update state
+      clearSecureAuth();
+      setUser(null);
+    }
+  };
+
+  const logoutAll = async () => {
+    try {
+      // Call the logout all API to invalidate all sessions
+      const response = await AuthService.logoutAll();
+
+      // Show success message
+      toast({
+        title: t("auth.logoutAllSuccess"),
+        description: response.message || t("auth.logoutAllSuccessMessage"),
+      });
+    } catch (error: any) {
+      console.error("Logout all error:", error);
+      // Show error message but continue with local logout
+      toast({
+        title: t("auth.logoutAllError"),
+        description: t("auth.logoutAllErrorMessage"),
+        variant: "destructive",
+      });
+    } finally {
+      // Always clear secure storage and update state
+      clearSecureAuth();
+      setUser(null);
+    }
+  };
+
+  const getCurrentUser = async () => {
+    try {
+      // Check if we have valid tokens before making the request
+      const isAuthenticated = await tokenManager.isAuthenticated();
+      if (!isAuthenticated) {
+        console.log("User not authenticated, skipping getCurrentUser");
+        setUser(null);
+        return;
+      }
+
+      const response = await AuthService.getCurrentUser();
+
+      // Validate response structure
+      if (!response.customer) {
+        throw new Error("Invalid response structure: missing customer data");
+      }
+
+      const customer = response.customer;
+
+      // Validate required fields
+      if (!customer.id || !customer.email) {
+        throw new Error(
+          "Invalid response structure: missing required customer fields"
+        );
+      }
+
+      // Convert API user data to local User format
+      const userData: User = {
+        id: customer.id,
+        first_name: customer.first_name || "",
+        last_name: customer.last_name || "",
+        mobile_number: customer.mobile_number || "",
+        email: customer.email,
+        profile_image_id: customer.profile_image_id || "",
+        type: customer.type || "regular",
+        status: customer.status || "active",
+        created_at: customer.created_at || new Date().toISOString(),
+        updated_at: customer.updated_at || new Date().toISOString(),
+        // Legacy fields for backward compatibility
+        name: `${customer.first_name || ""} ${customer.last_name || ""}`.trim(),
+        isVip: customer.type === "vip" || customer.status === "vip",
+        vipCardNumber: undefined, // This would need to be fetched separately if needed
+        vipExpiryDate: undefined, // This would need to be fetched separately if needed
+      };
+
+      // Update user data in secure storage and state
+      setSecureUserData(JSON.stringify(userData));
+      setUser(userData);
+    } catch (error: any) {
+      console.error("Get current user error:", error);
+
+      // Handle specific error types
+      let errorTitle = t("auth.getUserError");
+      let errorMessage = t("auth.getUserErrorMessage");
+
+      if (error.status === 401) {
+        errorTitle = t("auth.unauthorized");
+        errorMessage = t("auth.unauthorizedMessage");
+        // Clear stored tokens if unauthorized
+        clearSecureAuth();
+        setUser(null);
+        // Don't show toast for 401 errors as they're handled by the API interceptor
+        return;
+      } else if (error.status === 403) {
+        errorTitle = t("auth.forbidden");
+        errorMessage = t("auth.forbiddenMessage");
+      } else if (error.status >= 500) {
+        errorTitle = t("auth.serverError");
+        // Show more specific error messages for 500 errors
+        if (
+          error.message &&
+          error.message.includes("property") &&
+          error.message.includes("null")
+        ) {
+          errorMessage = t("auth.dataSyncError");
+        } else if (
+          error.message &&
+          (error.message.includes("database") ||
+            error.message.includes("connection"))
+        ) {
+          errorMessage = t("auth.serverUnavailableError");
+        } else {
+          errorMessage = t("auth.genericServerError");
+        }
+      } else if (
+        error.message &&
+        error.message.includes("Invalid response structure")
+      ) {
+        errorTitle = t("auth.apiError");
+        errorMessage = t("auth.apiErrorMessage");
+      }
+
+      // Only show toast for non-401 errors
+      if (error.status !== 401) {
+        toast({
+          title: errorTitle,
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const switchToSignup = () => {
+    setIsLoginOpen(false);
+    setTimeout(() => setIsSignupOpen(true), 100); // allow modal transition
+  };
+
+  const switchToLogin = () => {
+    setIsSignupOpen(false);
+    setTimeout(() => setIsLoginOpen(true), 100);
+  };
+
+  const openLogin = () => setIsLoginOpen(true);
+  const openSignup = () => setIsSignupOpen(true);
+  const closeLogin = () => setIsLoginOpen(false);
+  const closeSignup = () => setIsSignupOpen(false);
+
+  const checkNextUpcomingEvent = () => {
+    const events = JSON.parse(localStorage.getItem("bookedEvents") || "[]");
+    const now = new Date();
+
+    const upcoming = (events as BookedEvent[])
+      .map((event) => ({
+        ...event,
+        eventDate: parseISO(event.date),
+      }))
+      .filter((event) => isAfter(event.eventDate, now))
+      .sort((a, b) => compareAsc(a.eventDate, b.eventDate));
+
+    const next = upcoming[0];
+
+    if (next) {
+      toast({
+        title: t("notifications.nextEventTitle"),
+        description: t("notifications.nextEventDescription", {
+          title: next.title,
+          date: next.date,
+          time: next.time,
+        }),
+      });
+    }
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        isLoginOpen,
+        isSignupOpen,
+        openLogin,
+        openSignup,
+        closeLogin,
+        closeSignup,
+        switchToLogin,
+        switchToSignup,
+        login,
+        loginWithCredentials,
+        sendLoginOtp,
+        loginWithOtp,
+        requestPasswordResetOtp,
+        verifyPasswordResetOtp,
+        confirmPasswordReset,
+        refreshAccessToken,
+        logout,
+        logoutAll,
+        getCurrentUser,
+        user,
+        isVip: user?.isVip || false,
+        isLoading,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthContextType {
+  const context = useContext(AuthContext);
+  if (!context) {
+    console.error("useAuth called outside of AuthProvider");
+    // During hot reload, this might happen temporarily
+    // Return a default context to prevent crashes
+    if (process.env.NODE_ENV === "development") {
+      console.warn("Returning default auth context during development");
+      return {
+        isLoginOpen: false,
+        isSignupOpen: false,
+        openLogin: () => {},
+        openSignup: () => {},
+        closeLogin: () => {},
+        closeSignup: () => {},
+        switchToLogin: () => {},
+        switchToSignup: () => {},
+        login: () => {},
+        loginWithCredentials: async () => {},
+        sendLoginOtp: async () => {},
+        loginWithOtp: async () => {},
+        requestPasswordResetOtp: async () => {},
+        verifyPasswordResetOtp: async () => ({
+          password_reset_token: "",
+          expires_in_seconds: 0,
+        }),
+        confirmPasswordReset: async () => {},
+        refreshAccessToken: async () => null,
+        logout: async () => {},
+        logoutAll: async () => {},
+        getCurrentUser: async () => {},
+        user: null,
+        isVip: false,
+        isLoading: false,
+      };
+    }
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+}
