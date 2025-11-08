@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { financesApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -84,9 +86,24 @@ const CompanyFinances = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [isAddOwnerDialogOpen, setIsAddOwnerDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
-  // Mock data for company finances
-  const companyFinancesData = [
+  // Fetch company finances from API
+  const { data: companyFinancesData, isLoading: financesLoading, error: financesError } = useQuery({
+    queryKey: ['companyFinances', dateFrom, dateTo],
+    queryFn: () => financesApi.getCompanyFinances({ start_date: dateFrom, end_date: dateTo }),
+  });
+
+  // Transform API data to match component interface
+  const transformedFinancesData = useMemo(() => {
+    if (!companyFinancesData) return [];
+    // API might return different structure, adapt as needed
+    return Array.isArray(companyFinancesData) ? companyFinancesData : [companyFinancesData];
+  }, [companyFinancesData]);
+
+  // Mock data for company finances (fallback if API doesn't return array)
+  const fallbackFinancesData = [
     {
       id: "1",
       period: "Q1 2024",

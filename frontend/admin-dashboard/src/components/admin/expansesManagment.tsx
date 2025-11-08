@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { financesApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -61,6 +63,8 @@ import {
   Tag,
   User,
   MoreHorizontal,
+  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { formatCurrencyForLocale, formatNumberForLocale } from "@/lib/utils";
@@ -111,16 +115,16 @@ const ExpensesManagement: React.FC = () => {
   const { t, i18n: i18nInstance } = useTranslation();
   const { isDark } = useTheme();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // State
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [categories, setCategories] = useState<ExpenseCategory[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [activeTab, setActiveTab] = useState("expenses");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -173,215 +177,111 @@ const ExpensesManagement: React.FC = () => {
     return format(date, "PPP", { locale: getDateLocale() });
   };
 
-  // Generate mock data
-  useEffect(() => {
-    const generateMockData = () => {
-      // Mock categories
-      const mockCategories: ExpenseCategory[] = [
-        {
-          id: "1",
-          name: "Office Supplies",
-          description: "Office equipment and supplies",
-          totalPayments: 45,
-          totalAmount: 12500,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-        {
-          id: "2",
-          name: "Marketing",
-          description: "Marketing and advertising expenses",
-          totalPayments: 32,
-          totalAmount: 45000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-        {
-          id: "3",
-          name: "Travel",
-          description: "Business travel expenses",
-          totalPayments: 18,
-          totalAmount: 28000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-        {
-          id: "4",
-          name: "Utilities",
-          description: "Electricity, water, internet, etc.",
-          totalPayments: 24,
-          totalAmount: 15000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-        {
-          id: "5",
-          name: "Software",
-          description: "Software licenses and subscriptions",
-          totalPayments: 12,
-          totalAmount: 8000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-      ];
-
-      // Mock payment methods
-      const mockPaymentMethods: PaymentMethod[] = [
-        {
-          id: "1",
-          name: "Bank Transfer",
-          description: "Direct bank transfers",
-          totalTransactions: 65,
-          totalAmount: 85000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-        {
-          id: "2",
-          name: "Credit Card",
-          description: "Credit card payments",
-          totalTransactions: 42,
-          totalAmount: 35000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-        {
-          id: "3",
-          name: "Cash",
-          description: "Cash payments",
-          totalTransactions: 28,
-          totalAmount: 12000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-        {
-          id: "4",
-          name: "PayPal",
-          description: "PayPal payments",
-          totalTransactions: 15,
-          totalAmount: 8000,
-          createdAt: "2024-01-01T00:00:00Z",
-          isActive: true,
-        },
-      ];
-
-      // Mock expenses
-      const mockExpenses: Expense[] = [
-        {
-          id: "1",
-          details: "Office printer and supplies",
-          amount: 2500,
-          categoryId: "1",
-          categoryName: "Office Supplies",
-          paidBy: "Admin User",
-          paymentMethodId: "1",
-          paymentMethodName: "Bank Transfer",
-          paymentDate: "2024-01-15T00:00:00Z",
-          createdAt: "2024-01-15T00:00:00Z",
-          updatedAt: "2024-01-15T00:00:00Z",
-          status: "paid",
-          notes: "Monthly office supplies",
-        },
-        {
-          id: "2",
-          details: "Facebook advertising campaign",
-          amount: 5000,
-          categoryId: "2",
-          categoryName: "Marketing",
-          paidBy: "Admin User",
-          paymentMethodId: "2",
-          paymentMethodName: "Credit Card",
-          paymentDate: "2024-01-20T00:00:00Z",
-          createdAt: "2024-01-20T00:00:00Z",
-          updatedAt: "2024-01-20T00:00:00Z",
-          status: "paid",
-          notes: "Q1 marketing campaign",
-        },
-        {
-          id: "3",
-          details: "Business trip to Cairo",
-          amount: 3500,
-          categoryId: "3",
-          categoryName: "Travel",
-          paidBy: "Admin User",
-          paymentMethodId: "1",
-          paymentMethodName: "Bank Transfer",
-          paymentDate: "2024-01-25T00:00:00Z",
-          createdAt: "2024-01-25T00:00:00Z",
-          updatedAt: "2024-01-25T00:00:00Z",
-          status: "paid",
-          notes: "Client meeting expenses",
-        },
-        {
-          id: "4",
-          details: "Internet and phone bills",
-          amount: 1200,
-          categoryId: "4",
-          categoryName: "Utilities",
-          paidBy: "Admin User",
-          paymentMethodId: "3",
-          paymentMethodName: "Cash",
-          paymentDate: "2024-02-01T00:00:00Z",
-          createdAt: "2024-02-01T00:00:00Z",
-          updatedAt: "2024-02-01T00:00:00Z",
-          status: "paid",
-          notes: "Monthly utilities",
-        },
-        {
-          id: "5",
-          details: "Adobe Creative Suite subscription",
-          amount: 1500,
-          categoryId: "5",
-          categoryName: "Software",
-          paidBy: "Admin User",
-          paymentMethodId: "2",
-          paymentMethodName: "Credit Card",
-          paymentDate: "2024-02-05T00:00:00Z",
-          createdAt: "2024-02-05T00:00:00Z",
-          updatedAt: "2024-02-05T00:00:00Z",
-          status: "paid",
-          notes: "Annual software license",
-        },
-      ];
-
-      setCategories(mockCategories);
-      setPaymentMethods(mockPaymentMethods);
-      setExpenses(mockExpenses);
-    };
-
-    generateMockData();
-  }, []);
-
-  // Filter expenses based on search and filters
-  const filteredExpenses = expenses.filter((expense) => {
-    const matchesSearch =
-      expense.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.paidBy.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.categoryName.toLowerCase().includes(searchTerm.toLowerCase());
-
-    const matchesCategory =
-      selectedCategory === "all" || expense.categoryId === selectedCategory;
-    const matchesPaymentMethod =
-      selectedPaymentMethod === "all" ||
-      expense.paymentMethodId === selectedPaymentMethod;
-    const matchesStatus =
-      selectedStatus === "all" || expense.status === selectedStatus;
-
-    return (
-      matchesSearch && matchesCategory && matchesPaymentMethod && matchesStatus
-    );
+  // Fetch expenses from API
+  const { data: expensesData, isLoading: expensesLoading, error: expensesError } = useQuery({
+    queryKey: ['expenses', searchTerm, selectedCategory, selectedStatus, dateFrom, dateTo, currentPage, expensesPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: expensesPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (selectedCategory !== 'all') params.category = selectedCategory;
+      if (selectedStatus !== 'all') params.status = selectedStatus;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      return await financesApi.getExpenses(params);
+    },
   });
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredExpenses.length / expensesPerPage);
-  const startIndex = (currentPage - 1) * expensesPerPage;
-  const endIndex = startIndex + expensesPerPage;
-  const paginatedExpenses = filteredExpenses.slice(startIndex, endIndex);
+  // Transform API expenses to match Expense interface
+  const expenses: Expense[] = useMemo(() => {
+    if (!expensesData?.results) return [];
+    return expensesData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      details: item.details || item.description || '',
+      amount: parseFloat(item.amount) || 0,
+      categoryId: item.category?.id?.toString() || item.category_id?.toString() || '',
+      categoryName: item.category?.name || item.category_name || '',
+      paidBy: item.paid_by || item.paidBy || '',
+      paymentMethodId: item.payment_method?.id?.toString() || item.payment_method_id?.toString() || '',
+      paymentMethodName: item.payment_method?.name || item.payment_method_name || '',
+      paymentDate: item.payment_date || item.paymentDate || item.created_at || '',
+      createdAt: item.created_at || item.createdAt || '',
+      updatedAt: item.updated_at || item.updatedAt || '',
+      status: (item.status || 'paid') as "paid" | "pending" | "cancelled",
+      receipt: item.receipt || undefined,
+      notes: item.notes || undefined,
+    }));
+  }, [expensesData]);
+
+  // Extract unique categories and payment methods from expenses
+  const categories: ExpenseCategory[] = useMemo(() => {
+    const categoryMap = new Map<string, ExpenseCategory>();
+    expenses.forEach((expense) => {
+      if (expense.categoryId && expense.categoryName) {
+        if (!categoryMap.has(expense.categoryId)) {
+          categoryMap.set(expense.categoryId, {
+            id: expense.categoryId,
+            name: expense.categoryName,
+            totalPayments: 0,
+            totalAmount: 0,
+            createdAt: expense.createdAt,
+            isActive: true,
+          });
+        }
+        const category = categoryMap.get(expense.categoryId)!;
+        category.totalPayments += 1;
+        category.totalAmount += expense.amount;
+      }
+    });
+    return Array.from(categoryMap.values());
+  }, [expenses]);
+
+  const paymentMethods: PaymentMethod[] = useMemo(() => {
+    const methodMap = new Map<string, PaymentMethod>();
+    expenses.forEach((expense) => {
+      if (expense.paymentMethodId && expense.paymentMethodName) {
+        if (!methodMap.has(expense.paymentMethodId)) {
+          methodMap.set(expense.paymentMethodId, {
+            id: expense.paymentMethodId,
+            name: expense.paymentMethodName,
+            totalTransactions: 0,
+            totalAmount: 0,
+            createdAt: expense.createdAt,
+            isActive: true,
+          });
+        }
+        const method = methodMap.get(expense.paymentMethodId)!;
+        method.totalTransactions += 1;
+        method.totalAmount += expense.amount;
+      }
+    });
+    return Array.from(methodMap.values());
+  }, [expenses]);
+
+  // Filtered expenses (API handles most filtering, but we filter payment method client-side if needed)
+  const filteredExpenses = useMemo(() => {
+    // API already handles search, category, status, and date filtering
+    // Only filter by payment method if needed
+    if (selectedPaymentMethod === 'all') {
+      return expenses;
+    }
+    return expenses.filter((expense) => expense.paymentMethodId === selectedPaymentMethod);
+  }, [expenses, selectedPaymentMethod]);
+
+  // Pagination - API handles pagination, so we use the data directly
+  const totalPages = expensesData?.total_pages || 1;
+  const startIndex = expensesData?.page ? (expensesData.page - 1) * expensesData.page_size : 0;
+  const endIndex = startIndex + (expensesData?.page_size || expensesPerPage);
+  const paginatedExpenses = filteredExpenses; // API already paginates
 
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCategory, selectedPaymentMethod, selectedStatus]);
+  }, [searchTerm, selectedCategory, selectedPaymentMethod, selectedStatus, dateFrom, dateTo]);
 
   // Calculate totals
   const totalExpenses = expenses.reduce(
@@ -445,7 +345,9 @@ const ExpensesManagement: React.FC = () => {
       notes: expenseForm.notes,
     };
 
-    setExpenses((prev) => [newExpense, ...prev]);
+    // Note: Expense creation would need API endpoint
+    // For now, invalidate query to refetch
+    queryClient.invalidateQueries({ queryKey: ['expenses'] });
     setExpenseForm({
       details: "",
       amount: "",
@@ -563,9 +465,9 @@ const ExpensesManagement: React.FC = () => {
       updatedAt: new Date().toISOString(),
     };
 
-    setExpenses((prev) =>
-      prev.map((exp) => (exp.id === selectedExpense.id ? updatedExpense : exp))
-    );
+    // Note: Expense update would need API endpoint
+    // For now, invalidate query to refetch
+    queryClient.invalidateQueries({ queryKey: ['expenses'] });
     setShowEditExpense(false);
     setSelectedExpense(null);
 
@@ -647,7 +549,9 @@ const ExpensesManagement: React.FC = () => {
 
   // Delete expense
   const handleDeleteExpense = (expenseId: string) => {
-    setExpenses((prev) => prev.filter((exp) => exp.id !== expenseId));
+    // Note: Expense deletion would need API endpoint
+    // For now, invalidate query to refetch
+    queryClient.invalidateQueries({ queryKey: ['expenses'] });
     toast({
       title: t("expenses.toast.expenseDeleted"),
       description: t("expenses.toast.expenseDeletedDesc"),
@@ -1100,7 +1004,31 @@ const ExpensesManagement: React.FC = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedExpenses.map((expense) => (
+                    {expensesLoading ? (
+                      <TableRow>
+                        <RTLTableCell colSpan={8} className="text-center py-12">
+                          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                          <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+                        </RTLTableCell>
+                      </TableRow>
+                    ) : expensesError ? (
+                      <TableRow>
+                        <RTLTableCell colSpan={8} className="text-center py-12">
+                          <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                          <span className="ml-2 text-red-500">
+                            {t("common.error")}: {expensesError instanceof Error ? expensesError.message : t("expenses.toast.error")}
+                          </span>
+                        </RTLTableCell>
+                      </TableRow>
+                    ) : paginatedExpenses.length === 0 ? (
+                      <TableRow>
+                        <RTLTableCell colSpan={8} className="text-center py-12">
+                          <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground">{t("expenses.noExpensesFound")}</p>
+                        </RTLTableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedExpenses.map((expense) => (
                       <TableRow key={expense.id}>
                         <RTLTableCell>
                           <div>
@@ -1162,7 +1090,8 @@ const ExpensesManagement: React.FC = () => {
                           </div>
                         </RTLTableCell>
                       </TableRow>
-                    ))}
+                    ))
+                    )}
                   </TableBody>
                 </RTLTable>
               </div>
@@ -1170,7 +1099,7 @@ const ExpensesManagement: React.FC = () => {
           </Card>
 
           {/* Pagination */}
-          {filteredExpenses.length > 0 && (
+          {!expensesLoading && !expensesError && (
             <ResponsivePagination
               currentPage={currentPage}
               totalPages={totalPages}
@@ -1178,15 +1107,15 @@ const ExpensesManagement: React.FC = () => {
               showInfo={true}
               infoText={`${t("expenses.pagination.showing")} ${
                 startIndex + 1
-              }-${Math.min(endIndex, filteredExpenses.length)} ${t(
+              }-${Math.min(endIndex, expensesData?.count || 0)} ${t(
                 "expenses.pagination.of"
               )} ${formatNumberForLocale(
-                filteredExpenses.length,
+                expensesData?.count || 0,
                 i18nInstance.language
               )} ${t("expenses.pagination.results")}`}
               startIndex={startIndex}
               endIndex={endIndex}
-              totalItems={filteredExpenses.length}
+              totalItems={expensesData?.count || 0}
               itemsPerPage={expensesPerPage}
               className="mt-4"
             />

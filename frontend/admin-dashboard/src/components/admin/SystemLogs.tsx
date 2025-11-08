@@ -5,6 +5,8 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { systemLogsApi } from "@/lib/api/adminApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,21 +217,12 @@ const SystemLogs: React.FC = () => {
   const { t, i18n: i18nInstance } = useTranslation();
   const { toast } = useToast();
 
-  // State for large-scale log management
-  const [logs, setLogs] = useState<SystemLog[]>([]);
-  const [loading, setLoading] = useState(false);
+  // State for log management
   const [selectedLog, setSelectedLog] = useState<SystemLog | null>(null);
   const [showLogDetails, setShowLogDetails] = useState(false);
 
-  // Performance optimizations
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreLogs, setHasMoreLogs] = useState(true);
-  const [loadedLogCount, setLoadedLogCount] = useState(0);
-  const logsPerChunk = 1000; // Load logs in chunks of 1000
-
   // Virtual scrolling
-  const tableRef = useRef<HTMLDivElement>(null);
-  const rowHeight = 80; // Approximate height of each table row
+  const containerHeight = 600; // Fixed container height
 
   // Filters with debounced search
   const [searchTerm, setSearchTerm] = useState("");
@@ -245,6 +238,8 @@ const SystemLogs: React.FC = () => {
   // Enhanced pagination for large datasets
   const [currentPage, setCurrentPage] = useState(1);
   const [logsPerPage, setLogsPerPage] = useState(50); // Configurable page size
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // Get date locale based on current language
   const getDateLocale = () => {
@@ -263,231 +258,14 @@ const SystemLogs: React.FC = () => {
     return format(dateObj, "HH:mm:ss", { locale: getDateLocale() });
   };
 
-  // Enhanced mock logs data for pagination testing
+  // Calculate date range from dateRange filter
   useEffect(() => {
-    const generateMockLogs = (count: number): SystemLog[] => {
-      const logs: SystemLog[] = [];
-      const users = [
-        { id: "ADMIN-001", name: "Ahmed Hassan", role: "super_admin" },
-        { id: "ADMIN-002", name: "Sarah Mohamed", role: "admin" },
-        { id: "ADMIN-003", name: "Mohamed Ali", role: "admin" },
-        { id: "USHER-001", name: "Fatima Ahmed", role: "usher" },
-        { id: "SUPPORT-001", name: "Hassan Omar", role: "support" },
-        { id: "CUSTOMER-001", name: "Omar Ali", role: "customer" },
-        { id: "CUSTOMER-002", name: "Layla Hassan", role: "customer" },
-        { id: "CUSTOMER-003", name: "Youssef Ahmed", role: "customer" },
-        { id: "ADMIN-004", name: "Nour El-Din", role: "admin" },
-        { id: "USHER-002", name: "Karim Mohamed", role: "usher" },
-      ];
-
-      const actions = [
-        "user_login",
-        "user_logout",
-        "user_created",
-        "user_updated",
-        "user_deleted",
-        "event_created",
-        "event_updated",
-        "event_deleted",
-        "event_published",
-        "ticket_purchased",
-        "ticket_refunded",
-        "ticket_transferred",
-        "venue_created",
-        "venue_updated",
-        "venue_deleted",
-        "nfc_card_issued",
-        "nfc_card_blocked",
-        "nfc_card_replaced",
-        "system_backup",
-        "system_restore",
-        "system_update",
-        "security_alert",
-        "failed_login_attempt",
-        "suspicious_activity",
-        "payment_processed",
-        "payment_failed",
-        "refund_processed",
-        "data_exported",
-        "data_imported",
-        "settings_updated",
-      ];
-
-      const categories = [
-        "authentication",
-        "user_management",
-        "event_management",
-        "ticket_management",
-        "nfc_management",
-        "venue_management",
-        "system",
-        "security",
-        "financial",
-        "data_export",
-        "settings",
-      ];
-
-      const severities = ["low", "medium", "high", "critical"];
-      const statuses = ["success", "failed", "pending", "cancelled"];
-      const locations = [
-        "Cairo, Egypt",
-        "Alexandria, Egypt",
-        "Giza, Egypt",
-        "Luxor, Egypt",
-        "Aswan, Egypt",
-        "Sharm El Sheikh, Egypt",
-        "Hurghada, Egypt",
-      ];
-
-      const devices = [
-        "Desktop - Chrome 120.0",
-        "Desktop - Firefox 119.0",
-        "Desktop - Safari 16.0",
-        "Mobile - Chrome Android 120.0",
-        "Mobile - Safari iOS 17.0",
-        "Tablet - Chrome Android 120.0",
-        "Tablet - Safari iOS 17.0",
-      ];
-
-      const descriptions = [
-        "User logged in successfully",
-        "User logged out",
-        "New user account created",
-        "User profile updated",
-        "User account deleted",
-        "Event created successfully",
-        "Event details updated",
-        "Event cancelled",
-        "Event published",
-        "Ticket purchased successfully",
-        "Ticket refund processed",
-        "Ticket transferred",
-        "Venue added to system",
-        "Venue information updated",
-        "Venue removed",
-        "NFC card issued to user",
-        "NFC card blocked due to suspicious activity",
-        "NFC card replaced",
-        "System backup completed",
-        "System restore initiated",
-        "System update installed",
-        "Security alert triggered",
-        "Failed login attempt",
-        "Suspicious activity detected",
-        "Payment processed successfully",
-        "Payment failed",
-        "Refund processed",
-        "Data exported successfully",
-        "Data imported successfully",
-        "System settings updated",
-      ];
-
-      for (let i = 1; i <= count; i++) {
-        const user = users[Math.floor(Math.random() * users.length)];
-        const action = actions[Math.floor(Math.random() * actions.length)];
-        const category =
-          categories[Math.floor(Math.random() * categories.length)];
-        const severity =
-          severities[Math.floor(Math.random() * severities.length)];
-        const status = statuses[Math.floor(Math.random() * statuses.length)];
-        const location =
-          locations[Math.floor(Math.random() * locations.length)];
-        const device = devices[Math.floor(Math.random() * devices.length)];
-        const description =
-          descriptions[Math.floor(Math.random() * descriptions.length)];
-
-        // Generate timestamp within last 30 days
-        const timestamp = new Date(
-          Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
-        ).toISOString();
-
-        // Generate IP address
-        const ipAddress = `192.168.${Math.floor(
-          Math.random() * 255
-        )}.${Math.floor(Math.random() * 255)}`;
-
-        logs.push({
-          id: `LOG-${i.toString().padStart(3, "0")}`,
-          timestamp,
-          userId: user.id,
-          userName: user.name,
-          userRole: user.role as any,
-          action,
-          category: category as any,
-          severity: severity as any,
-          description,
-          details: {
-            ipAddress,
-            userAgent:
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            location,
-            deviceInfo: device,
-            sessionId: `SESS-${i}-2025`,
-            affectedRecords: Math.floor(Math.random() * 10) + 1,
-            changes: ["Action performed", "Data updated", "System modified"],
-            metadata: {
-              sessionId: `SESS-${i}-2025`,
-              requestId: `REQ-${i}-2025`,
-              processingTime: Math.floor(Math.random() * 1000) + 50,
-            },
-          },
-          status: status as any,
-          sessionId: `SESS-${i}-2025`,
-          ipAddress,
-          userAgent:
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          location,
-          deviceInfo: device,
-        });
-      }
-
-      return logs;
-    };
-
-    // Generate 500 mock logs for pagination testing
-    const mockLogs = generateMockLogs(500);
-
-    setLogs(mockLogs);
-  }, []);
-
-  // Optimized filtering with memoization and debounced search
-  const filteredLogs = useMemo(() => {
-    let filtered = logs;
-
-    // Search filter with debounced term
-    if (debouncedSearchTerm) {
-      const searchLower = debouncedSearchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (log) =>
-          log.userName.toLowerCase().includes(searchLower) ||
-          log.action.toLowerCase().includes(searchLower) ||
-          log.description.toLowerCase().includes(searchLower) ||
-          log.category.toLowerCase().includes(searchLower)
-      );
+    if (dateRange === "all") {
+      setDateFrom("");
+      setDateTo("");
+      return;
     }
 
-    // Category filter
-    if (selectedCategory !== "all") {
-      filtered = filtered.filter((log) => log.category === selectedCategory);
-    }
-
-    // Severity filter
-    if (selectedSeverity !== "all") {
-      filtered = filtered.filter((log) => log.severity === selectedSeverity);
-    }
-
-    // User filter
-    if (selectedUser !== "all") {
-      filtered = filtered.filter((log) => log.userId === selectedUser);
-    }
-
-    // Status filter
-    if (selectedStatus !== "all") {
-      filtered = filtered.filter((log) => log.status === selectedStatus);
-    }
-
-    // Date range filter
-    if (dateRange !== "all") {
       const now = new Date();
       let startDate: Date;
 
@@ -509,10 +287,109 @@ const SystemLogs: React.FC = () => {
           startDate = new Date(0);
       }
 
-      filtered = filtered.filter((log) => new Date(log.timestamp) >= startDate);
+    setDateFrom(startDate.toISOString().split("T")[0]);
+    setDateTo(now.toISOString().split("T")[0]);
+  }, [dateRange]);
+
+  // Fetch system logs from API
+  const {
+    data: logsData,
+    isLoading: logsLoading,
+    error: logsError,
+  } = useQuery({
+    queryKey: [
+      "systemLogs",
+      debouncedSearchTerm,
+      selectedCategory,
+      selectedSeverity,
+      selectedUser,
+      selectedStatus,
+      dateFrom,
+      dateTo,
+      currentPage,
+      logsPerPage,
+    ],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: logsPerPage,
+      };
+
+      if (debouncedSearchTerm) params.search = debouncedSearchTerm;
+      if (selectedCategory !== "all") params.category = selectedCategory;
+      if (selectedSeverity !== "all") params.severity = selectedSeverity;
+      if (selectedUser !== "all") params.user = selectedUser;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+
+      return await systemLogsApi.getSystemLogs(params);
+    },
+  });
+
+  // Transform API logs to match SystemLog interface
+  const logs: SystemLog[] = useMemo(() => {
+    if (!logsData?.results) return [];
+    return logsData.results.map((item: any) => ({
+      id: item.id?.toString() || "",
+      timestamp: item.timestamp || item.created_at || "",
+      userId: item.user?.id?.toString() || item.user_id?.toString() || "",
+      userName: item.user?.name || item.user_name || item.user?.username || "",
+      userRole: (item.user?.role || item.user_role || "customer") as
+        | "super_admin"
+        | "admin"
+        | "usher"
+        | "support"
+        | "customer",
+      action: item.action || "",
+      category: (item.category || "system") as
+        | "authentication"
+        | "user_management"
+        | "event_management"
+        | "ticket_management"
+        | "nfc_management"
+        | "venue_management"
+        | "system"
+        | "security"
+        | "financial"
+        | "data_export"
+        | "settings",
+      severity: (item.severity || "low") as "low" | "medium" | "high" | "critical",
+      description: item.description || item.message || "",
+      details: {
+        before: item.details?.before,
+        after: item.details?.after,
+        ipAddress: item.ip_address || item.details?.ipAddress || "",
+        userAgent: item.user_agent || item.details?.userAgent || "",
+        location: item.location || item.details?.location || "",
+        deviceInfo: item.device_info || item.details?.deviceInfo || "",
+        sessionId: item.session_id || item.details?.sessionId || "",
+        affectedRecords: item.affected_records || item.details?.affectedRecords,
+        changes: item.changes || item.details?.changes || [],
+        metadata: item.metadata || item.details?.metadata || {},
+      },
+      status: (item.status || "success") as
+        | "success"
+        | "failed"
+        | "pending"
+        | "cancelled",
+      sessionId: item.session_id || item.details?.sessionId || "",
+      ipAddress: item.ip_address || item.details?.ipAddress || "",
+      userAgent: item.user_agent || item.details?.userAgent || "",
+      location: item.location || item.details?.location || "",
+      deviceInfo: item.device_info || item.details?.deviceInfo || "",
+    }));
+  }, [logsData]);
+
+  // Filtered logs - API handles most filtering, but we filter status client-side if needed
+  const filteredLogs = useMemo(() => {
+    let filtered = logs;
+
+    // Status filter (client-side if backend doesn't support it)
+    if (selectedStatus !== "all") {
+      filtered = filtered.filter((log) => log.status === selectedStatus);
     }
 
-    // Optimized sorting
+    // Client-side sorting (if backend doesn't support it)
     filtered.sort((a, b) => {
       let aValue: any = a[sortBy as keyof SystemLog];
       let bValue: any = b[sortBy as keyof SystemLog];
@@ -530,17 +407,11 @@ const SystemLogs: React.FC = () => {
     });
 
     return filtered;
-  }, [
-    logs,
-    debouncedSearchTerm, // Use debounced search term
-    selectedCategory,
-    selectedSeverity,
-    selectedUser,
-    selectedStatus,
-    dateRange,
-    sortBy,
-    sortOrder,
-  ]);
+  }, [logs, selectedStatus, sortBy, sortOrder]);
+
+  // Pagination - API handles pagination, so we use the data directly
+  const totalPages = logsData?.total_pages || 1;
+  const paginatedLogs = filteredLogs; // API already paginates
 
   // Optimized statistics calculation with memoization
   const stats: LogStats = useMemo(() => {
@@ -602,82 +473,8 @@ const SystemLogs: React.FC = () => {
     };
   }, [filteredLogs]);
 
-  // Lazy loading function
-  const loadMoreLogs = useCallback(async () => {
-    if (isLoadingMore || !hasMoreLogs) return;
-
-    setIsLoadingMore(true);
-    try {
-      // Simulate API call for more logs
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Generate more mock logs
-      const newLogs: SystemLog[] = [];
-      const startId = loadedLogCount + 1;
-
-      for (let i = 0; i < logsPerChunk; i++) {
-        const logId = startId + i;
-        newLogs.push({
-          id: `LOG-${logId.toString().padStart(3, "0")}`,
-          timestamp: new Date(
-            Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000
-          ).toISOString(),
-          userId: `USER-${Math.floor(Math.random() * 100)}`,
-          userName: `User ${logId}`,
-          userRole: ["super_admin", "admin", "usher", "support", "customer"][
-            Math.floor(Math.random() * 5)
-          ] as any,
-          action: `action_${Math.floor(Math.random() * 10)}`,
-          category: [
-            "authentication",
-            "user_management",
-            "event_management",
-            "ticket_management",
-            "nfc_management",
-            "venue_management",
-            "system",
-            "security",
-            "financial",
-            "data_export",
-            "settings",
-          ][Math.floor(Math.random() * 4)] as any,
-          severity: ["low", "medium", "high", "critical"][
-            Math.floor(Math.random() * 4)
-          ] as any,
-          description: `Log entry ${logId}`,
-          details: {
-            ipAddress: `192.168.1.${Math.floor(Math.random() * 255)}`,
-            userAgent:
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            location: "Cairo, Egypt",
-            deviceInfo: "Desktop - Chrome 120.0",
-            sessionId: `SESS-${logId}-2025`,
-          },
-          status: ["success", "failed", "pending", "cancelled"][
-            Math.floor(Math.random() * 4)
-          ] as any,
-          sessionId: `SESS-${logId}-2025`,
-          ipAddress: `192.168.1.${Math.floor(Math.random() * 255)}`,
-          userAgent:
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          location: "Cairo, Egypt",
-          deviceInfo: "Desktop - Chrome 120.0",
-        });
-      }
-
-      setLogs((prev) => [...prev, ...newLogs]);
-      setLoadedLogCount((prev) => prev + logsPerChunk);
-
-      // Stop loading more if we've reached a reasonable limit
-      if (loadedLogCount + logsPerChunk >= 100000) {
-        setHasMoreLogs(false);
-      }
-    } catch (error) {
-      console.error("Error loading more logs:", error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [isLoadingMore, hasMoreLogs, loadedLogCount, logsPerChunk]);
+  // Note: API handles pagination, so loadMoreLogs is not needed
+  // Users can navigate pages using the pagination component
 
   // Get severity color
   const getSeverityColor = (severity: string) => {
@@ -778,8 +575,6 @@ const SystemLogs: React.FC = () => {
   // Optimized export for large datasets
   const handleExportLogs = useCallback(async () => {
     try {
-      setLoading(true);
-
       // For very large datasets, export in chunks
       const chunkSize = 10000;
       const chunks = [];
@@ -827,24 +622,10 @@ const SystemLogs: React.FC = () => {
         description: t("admin.dashboard.logs.toast.exportErrorDesc"),
         variant: "destructive",
       });
-    } finally {
-      setLoading(false);
     }
   }, [filteredLogs, t, toast]);
 
-  // Memory management - cleanup old logs
-  const cleanupOldLogs = useCallback(() => {
-    const maxLogsToKeep = 50000; // Keep only 50k logs in memory
-    if (logs.length > maxLogsToKeep) {
-      setLogs((prev) => prev.slice(-maxLogsToKeep));
-    }
-  }, [logs.length]);
-
-  // Cleanup old logs periodically
-  useEffect(() => {
-    const cleanupInterval = setInterval(cleanupOldLogs, 60000); // Every minute
-    return () => clearInterval(cleanupInterval);
-  }, [cleanupOldLogs]);
+  // Note: No need for cleanup since React Query manages data lifecycle
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -883,42 +664,14 @@ const SystemLogs: React.FC = () => {
     });
   }, [logs]);
 
-  // Optimized pagination with virtual scrolling support
-  const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
-  const startIndex = (currentPage - 1) * logsPerPage;
-  const endIndex = startIndex + logsPerPage;
-  const currentLogs = filteredLogs.slice(startIndex, endIndex);
+  // Pagination is handled by API - use paginatedLogs directly
+  const currentLogs = paginatedLogs;
 
-  // Virtual scrolling for large datasets
-  const containerHeight = 600; // Fixed container height
   // Note: Virtual scrolling variables are available but not currently used
   // const { visibleItems, totalHeight, offsetY, setScrollTop } =
   //   useVirtualScrolling(currentLogs, rowHeight, containerHeight);
 
-  // Intersection Observer for infinite scrolling
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (loadMoreRef.current) {
-      observerRef.current = new IntersectionObserver(
-        (entries) => {
-          if (entries[0].isIntersecting && hasMoreLogs && !isLoadingMore) {
-            loadMoreLogs();
-          }
-        },
-        { threshold: 0.1 }
-      );
-
-      observerRef.current.observe(loadMoreRef.current);
-    }
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [hasMoreLogs, isLoadingMore, loadMoreLogs]);
+  // Note: Intersection Observer removed - API handles pagination
 
   return (
     <div
@@ -1293,11 +1046,8 @@ const SystemLogs: React.FC = () => {
                 )
               </span>
               <span className="text-muted-foreground rtl:text-right">
-                {loading && t("admin.dashboard.logs.loading.loading")}
-                {isLoadingMore && t("admin.dashboard.logs.loading.loadingMore")}
-                {!loading &&
-                  !isLoadingMore &&
-                  t("admin.dashboard.logs.loading.ready")}
+                {logsLoading && t("admin.dashboard.logs.loading.loading")}
+                {!logsLoading && t("admin.dashboard.logs.loading.ready")}
               </span>
             </div>
           </div>
@@ -1342,7 +1092,38 @@ const SystemLogs: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentLogs.map((log) => (
+                {logsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                      <span className="ml-2 text-muted-foreground">
+                        {t("admin.dashboard.logs.loading.loading")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : logsError ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                      <span className="ml-2 text-red-500">
+                        {t("common.error")}:{" "}
+                        {logsError instanceof Error
+                          ? logsError.message
+                          : t("admin.dashboard.logs.error")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : currentLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        {t("admin.dashboard.logs.noLogsFound")}
+                      </p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  currentLogs.map((log) => (
                   <TableRow key={log.id}>
                     <TableCell className="rtl:text-right">
                       <div className="flex flex-col rtl:text-right">
@@ -1456,81 +1237,66 @@ const SystemLogs: React.FC = () => {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                  ))
+                )}
               </TableBody>
             </Table>
 
-            {/* Infinite scrolling trigger */}
-            {hasMoreLogs && (
-              <div ref={loadMoreRef} className="py-4 text-center">
-                {isLoadingMore ? (
-                  <div className="flex items-center justify-center gap-2 rtl:flex-row-reverse">
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                    <span className="text-sm text-muted-foreground rtl:text-right">
-                      {t("admin.dashboard.logs.loading.loadingMore")}
-                    </span>
-                  </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadMoreLogs}
-                    className="flex items-center gap-2 rtl:flex-row-reverse"
-                  >
-                    <Download className="h-4 w-4" />
-                    {t("admin.dashboard.logs.actions.loadMore")}
-                  </Button>
-                )}
-              </div>
-            )}
+            {/* Note: Infinite scrolling removed - API handles pagination */}
           </div>
 
           {/* Enhanced Pagination */}
-          <div className="mt-4">
-            <ResponsivePagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              onPageChange={setCurrentPage}
-              startIndex={startIndex}
-              endIndex={Math.min(endIndex, filteredLogs.length)}
-              totalItems={filteredLogs.length}
-              itemsPerPage={logsPerPage}
-              infoText={`${t("admin.dashboard.logs.pagination.showing")} ${
-                startIndex + 1
-              }-${Math.min(endIndex, filteredLogs.length)} ${t(
-                "admin.dashboard.logs.pagination.of"
-              )} ${formatNumberForLocale(
-                filteredLogs.length,
-                i18nInstance.language
-              )} ${t("admin.dashboard.logs.pagination.results")}`}
-            />
+          {totalPages > 1 && (
+            <div className="mt-4">
+              <ResponsivePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                startIndex={(currentPage - 1) * logsPerPage + 1}
+                endIndex={Math.min(
+                  currentPage * logsPerPage,
+                  logsData?.count || filteredLogs.length
+                )}
+                totalItems={logsData?.count || filteredLogs.length}
+                itemsPerPage={logsPerPage}
+                infoText={`${t("admin.dashboard.logs.pagination.showing")} ${
+                  (currentPage - 1) * logsPerPage + 1
+                }-${Math.min(
+                  currentPage * logsPerPage,
+                  logsData?.count || filteredLogs.length
+                )} ${t("admin.dashboard.logs.pagination.of")} ${formatNumberForLocale(
+                  logsData?.count || filteredLogs.length,
+                  i18nInstance.language
+                )} ${t("admin.dashboard.logs.pagination.results")}`}
+              />
 
-            {/* Page size selector */}
-            <div className="flex items-center justify-center mt-4">
-              <div className="flex items-center gap-2 rtl:flex-row-reverse">
-                <span className="text-sm text-muted-foreground">
-                  {t("admin.dashboard.logs.pagination.perPage")}:
-                </span>
-                <Select
-                  value={logsPerPage.toString()}
-                  onValueChange={(value) => {
-                    setLogsPerPage(parseInt(value));
-                    setCurrentPage(1);
-                  }}
-                >
-                  <SelectTrigger className="w-20 h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                    <SelectItem value="200">200</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Page size selector */}
+              <div className="flex items-center justify-center mt-4">
+                <div className="flex items-center gap-2 rtl:flex-row-reverse">
+                  <span className="text-sm text-muted-foreground">
+                    {t("admin.dashboard.logs.pagination.perPage")}:
+                  </span>
+                  <Select
+                    value={logsPerPage.toString()}
+                    onValueChange={(value) => {
+                      setLogsPerPage(parseInt(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-20 h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="200">200</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
           </div>
+          )}
         </CardContent>
       </Card>
 

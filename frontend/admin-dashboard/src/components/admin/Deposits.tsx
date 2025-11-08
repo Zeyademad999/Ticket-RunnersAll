@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { financesApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -86,7 +88,6 @@ import {
   formatPercentageForLocale,
 } from "@/lib/utils";
 import { ExportDialog } from "@/components/ui/export-dialog";
-import i18n from "@/lib/i18n";
 
 // Types
 interface Deposit {
@@ -119,14 +120,13 @@ type Owner = {
 const Deposits = () => {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
-  const [deposits, setDeposits] = useState<Deposit[]>([]);
-  const [owners, setOwners] = useState<Owner[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -144,170 +144,112 @@ const Deposits = () => {
     notes: "",
   });
 
-  // Mock data - replace with actual API calls
-  useEffect(() => {
-    const mockDeposits: Deposit[] = [
-      {
-        id: "1",
-        ownerId: "owner1",
-        ownerName: "Ahmed Hassan",
-        amount: 50000,
-        paymentMethod: "bank_transfer",
-        depositDate: "2024-01-15",
-        notes: "Initial investment for Q1 2024",
-        status: "completed",
-        createdAt: "2024-01-15T10:30:00Z",
-        updatedAt: "2024-01-15T10:30:00Z",
-      },
-      {
-        id: "2",
-        ownerId: "owner2",
-        ownerName: "Sarah Johnson",
-        amount: 75000,
-        paymentMethod: "credit_card",
-        depositDate: "2024-01-20",
-        notes: "Additional capital for expansion",
-        status: "completed",
-        createdAt: "2024-01-20T14:15:00Z",
-        updatedAt: "2024-01-20T14:15:00Z",
-      },
-      {
-        id: "3",
-        ownerId: "owner3",
-        ownerName: "Mohammed Ali",
-        amount: 30000,
-        paymentMethod: "cash",
-        depositDate: "2024-01-25",
-        notes: "Emergency funding",
-        status: "pending",
-        createdAt: "2024-01-25T09:45:00Z",
-        updatedAt: "2024-01-25T09:45:00Z",
-      },
-      {
-        id: "4",
-        ownerId: "owner1",
-        ownerName: "Ahmed Hassan",
-        amount: 25000,
-        paymentMethod: "bank_transfer",
-        depositDate: "2024-02-01",
-        notes: "Monthly contribution",
-        status: "completed",
-        createdAt: "2024-02-01T11:20:00Z",
-        updatedAt: "2024-02-01T11:20:00Z",
-      },
-      {
-        id: "5",
-        ownerId: "owner4",
-        ownerName: "Fatima Zahra",
-        amount: 100000,
-        paymentMethod: "wire_transfer",
-        depositDate: "2024-02-05",
-        notes: "Major investment for new project",
-        status: "completed",
-        createdAt: "2024-02-05T16:30:00Z",
-        updatedAt: "2024-02-05T16:30:00Z",
-      },
-    ];
+  // Fetch deposits from API
+  const {
+    data: depositsData,
+    isLoading: depositsLoading,
+    error: depositsError,
+  } = useQuery({
+    queryKey: [
+      "deposits",
+      searchTerm,
+      dateFrom,
+      dateTo,
+      currentPage,
+      itemsPerPage,
+    ],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
 
-    const mockOwners: Owner[] = [
-      {
-        id: "owner1",
-        name: "Ahmed Hassan",
-        email: "ahmed@example.com",
-        phone: "+201234567890",
-        walletBalance: -75000,
-      },
-      {
-        id: "owner2",
-        name: "Sarah Johnson",
-        email: "sarah@example.com",
-        phone: "+201234567891",
-        walletBalance: -75000,
-      },
-      {
-        id: "owner3",
-        name: "Mohammed Ali",
-        email: "mohammed@example.com",
-        phone: "+201234567892",
-        walletBalance: -30000,
-      },
-      {
-        id: "owner4",
-        name: "Fatima Zahra",
-        email: "fatima@example.com",
-        phone: "+201234567893",
-        walletBalance: -100000,
-      },
-    ];
+      if (searchTerm) params.search = searchTerm;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
 
-    const mockPaymentMethods: PaymentMethod[] = [
-      { id: "bank_transfer", name: "Bank Transfer", icon: "🏦" },
-      { id: "credit_card", name: "Credit Card", icon: "💳" },
-      { id: "cash", name: "Cash", icon: "💵" },
-      { id: "wire_transfer", name: "Wire Transfer", icon: "🏛️" },
-      { id: "check", name: "Check", icon: "📄" },
-      { id: "digital_wallet", name: "Digital Wallet", icon: "📱" },
-    ];
+      return await financesApi.getDeposits(params);
+    },
+  });
 
-    setDeposits(mockDeposits);
-    setOwners(mockOwners);
-    setPaymentMethods(mockPaymentMethods);
-    setLoading(false);
-  }, []);
+  // Transform API deposits to match Deposit interface
+  const deposits: Deposit[] = useMemo(() => {
+    if (!depositsData?.results) return [];
+    return depositsData.results.map((item: any) => ({
+      id: item.id?.toString() || "",
+      ownerId: item.owner?.id?.toString() || item.owner_id?.toString() || "",
+      ownerName: item.owner?.name || item.owner_name || "",
+      amount: parseFloat(item.amount) || 0,
+      paymentMethod: item.payment_method || item.paymentMethod || "",
+      depositDate:
+        item.deposit_date || item.depositDate || item.created_at || "",
+      notes: item.notes || undefined,
+      status: (item.status || "completed") as
+        | "completed"
+        | "pending"
+        | "cancelled",
+      createdAt: item.created_at || item.createdAt || "",
+      updatedAt: item.updated_at || item.updatedAt || "",
+    }));
+  }, [depositsData]);
+
+  // Extract unique owners and payment methods from deposits
+  const owners: Owner[] = useMemo(() => {
+    const ownerMap = new Map<string, Owner>();
+    deposits.forEach((deposit) => {
+      if (deposit.ownerId && deposit.ownerName) {
+        if (!ownerMap.has(deposit.ownerId)) {
+          ownerMap.set(deposit.ownerId, {
+            id: deposit.ownerId,
+            name: deposit.ownerName,
+            email: "",
+            phone: "",
+            walletBalance: 0,
+          });
+        }
+        const owner = ownerMap.get(deposit.ownerId)!;
+        owner.walletBalance += deposit.amount;
+      }
+    });
+    return Array.from(ownerMap.values());
+  }, [deposits]);
+
+  const paymentMethods: PaymentMethod[] = useMemo(() => {
+    const methodMap = new Map<string, PaymentMethod>();
+    deposits.forEach((deposit) => {
+      if (deposit.paymentMethod && !methodMap.has(deposit.paymentMethod)) {
+        methodMap.set(deposit.paymentMethod, {
+          id: deposit.paymentMethod,
+          name: deposit.paymentMethod,
+          icon: "",
+        });
+      }
+    });
+    return Array.from(methodMap.values());
+  }, [deposits]);
 
   // Filtered and paginated data
+  // Filtered deposits (API handles most filtering, but we filter status/payment method client-side if needed)
   const filteredDeposits = useMemo(() => {
+    // API already handles search and date filtering
+    // Filter by status and payment method client-side
     return deposits.filter((deposit) => {
-      const matchesSearch =
-        deposit.ownerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        deposit.id.toLowerCase().includes(searchTerm.toLowerCase());
-
       const matchesStatus =
         statusFilter === "all" || deposit.status === statusFilter;
       const matchesPaymentMethod =
         paymentMethodFilter === "all" ||
         deposit.paymentMethod === paymentMethodFilter;
-
-      let matchesDate = true;
-      if (dateFilter !== "all") {
-        const depositDate = new Date(deposit.depositDate);
-        const today = new Date();
-
-        switch (dateFilter) {
-          case "today":
-            matchesDate = depositDate.toDateString() === today.toDateString();
-            break;
-          case "week":
-            const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-            matchesDate = depositDate >= weekAgo;
-            break;
-          case "month":
-            const monthAgo = new Date(
-              today.getTime() - 30 * 24 * 60 * 60 * 1000
-            );
-            matchesDate = depositDate >= monthAgo;
-            break;
-          case "year":
-            const yearAgo = new Date(
-              today.getTime() - 365 * 24 * 60 * 60 * 1000
-            );
-            matchesDate = depositDate >= yearAgo;
-            break;
-        }
-      }
-
-      return (
-        matchesSearch && matchesStatus && matchesPaymentMethod && matchesDate
-      );
+      return matchesStatus && matchesPaymentMethod;
     });
-  }, [deposits, searchTerm, statusFilter, paymentMethodFilter, dateFilter]);
+  }, [deposits, statusFilter, paymentMethodFilter]);
 
-  const paginatedDeposits = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredDeposits.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredDeposits, currentPage, itemsPerPage]);
-
-  const totalPages = Math.ceil(filteredDeposits.length / itemsPerPage);
+  // Pagination - API handles pagination, so we use the data directly
+  const totalPages = depositsData?.total_pages || 1;
+  const startIndex = depositsData?.page
+    ? (depositsData.page - 1) * depositsData.page_size
+    : 0;
+  const endIndex = startIndex + (depositsData?.page_size || itemsPerPage);
+  const paginatedDeposits = filteredDeposits; // API already paginates
 
   // Statistics
   const stats = useMemo(() => {
@@ -360,7 +302,9 @@ const Deposits = () => {
   };
 
   const handleDeleteDeposit = (deposit: Deposit) => {
-    setDeposits((prev) => prev.filter((d) => d.id !== deposit.id));
+    // TODO: Implement API delete call when backend supports it
+    // For now, just invalidate the query to refetch
+    queryClient.invalidateQueries({ queryKey: ["deposits"] });
     toast({
       title: t("admin.deposits.actions.deleteSuccess"),
       description: t("admin.deposits.actions.deleteSuccessDescription"),
@@ -392,45 +336,17 @@ const Deposits = () => {
       return;
     }
 
+    // TODO: Implement API create/update calls when backend supports it
+    // For now, just invalidate the query to refetch
+    queryClient.invalidateQueries({ queryKey: ["deposits"] });
+
     if (isEdit && selectedDeposit) {
-      // Update existing deposit
-      setDeposits((prev) =>
-        prev.map((d) =>
-          d.id === selectedDeposit.id
-            ? {
-                ...d,
-                ownerId: formData.ownerId,
-                ownerName: owner.name,
-                amount: parseFloat(formData.amount),
-                paymentMethod: formData.paymentMethod,
-                depositDate: formData.depositDate,
-                notes: formData.notes,
-                updatedAt: new Date().toISOString(),
-              }
-            : d
-        )
-      );
       toast({
         title: t("admin.deposits.actions.updateSuccess"),
         description: t("admin.deposits.actions.updateSuccessDescription"),
       });
       setIsEditDialogOpen(false);
     } else {
-      // Add new deposit
-      const newDeposit: Deposit = {
-        id: Date.now().toString(),
-        ownerId: formData.ownerId,
-        ownerName: owner.name,
-        amount: parseFloat(formData.amount),
-        paymentMethod: formData.paymentMethod,
-        depositDate: formData.depositDate,
-        notes: formData.notes,
-        status: "completed",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      setDeposits((prev) => [newDeposit, ...prev]);
       toast({
         title: t("admin.deposits.actions.addSuccess"),
         description: t("admin.deposits.actions.addSuccessDescription"),
@@ -503,7 +419,7 @@ const Deposits = () => {
     { header: t("admin.deposits.table.notes"), key: "notes" },
   ];
 
-  if (loading) {
+  if (depositsLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-center py-12">
@@ -776,87 +692,121 @@ const Deposits = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {paginatedDeposits.map((deposit) => (
-                      <TableRow key={deposit.id}>
-                        <TableCell className="font-mono text-sm">
-                          #{deposit.id}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-muted-foreground" />
-                            {deposit.ownerName}
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {formatCurrencyForLocale(
-                            deposit.amount,
-                            i18n.language
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <span>
-                              {getPaymentMethodIcon(deposit.paymentMethod)}
-                            </span>
-                            {getPaymentMethodName(deposit.paymentMethod)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {format(parseISO(deposit.depositDate), "PPP", {
-                            locale: i18n.language === "ar" ? ar : enUS,
-                          })}
-                        </TableCell>
-                        <TableCell>{getStatusBadge(deposit.status)}</TableCell>
-                        <TableCell>
-                          {deposit.notes ? (
-                            <span className="text-sm text-muted-foreground">
-                              {deposit.notes.length > 50
-                                ? `${deposit.notes.substring(0, 50)}...`
-                                : deposit.notes}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">
-                              {t("admin.deposits.table.noNotes")}
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>
-                                {t("admin.deposits.actions.actions")}
-                              </DropdownMenuLabel>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => handleViewDeposit(deposit)}
-                              >
-                                <Eye className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                                {t("admin.deposits.actions.viewDetails")}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleEditDeposit(deposit)}
-                              >
-                                <Edit className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                                {t("admin.deposits.actions.editDeposit")}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => handleDeleteDeposit(deposit)}
-                                className="text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                                {t("admin.deposits.actions.deleteDeposit")}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                    {depositsLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-12">
+                          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                          <span className="ml-2 text-muted-foreground">
+                            {t("common.loading")}
+                          </span>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : depositsError ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-12">
+                          <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                          <span className="ml-2 text-red-500">
+                            {t("common.error")}:{" "}
+                            {depositsError instanceof Error
+                              ? depositsError.message
+                              : t("admin.deposits.error")}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ) : paginatedDeposits.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-12">
+                          <PiggyBank className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground">
+                            {t("admin.deposits.noDepositsFound")}
+                          </p>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedDeposits.map((deposit) => (
+                        <TableRow key={deposit.id}>
+                          <TableCell className="font-mono text-sm">
+                            #{deposit.id}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-muted-foreground" />
+                              {deposit.ownerName}
+                            </div>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {formatCurrencyForLocale(
+                              deposit.amount,
+                              i18n.language
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span>
+                                {getPaymentMethodIcon(deposit.paymentMethod)}
+                              </span>
+                              {getPaymentMethodName(deposit.paymentMethod)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {format(parseISO(deposit.depositDate), "PPP", {
+                              locale: i18n.language === "ar" ? ar : enUS,
+                            })}
+                          </TableCell>
+                          <TableCell>
+                            {getStatusBadge(deposit.status)}
+                          </TableCell>
+                          <TableCell>
+                            {deposit.notes ? (
+                              <span className="text-sm text-muted-foreground">
+                                {deposit.notes.length > 50
+                                  ? `${deposit.notes.substring(0, 50)}...`
+                                  : deposit.notes}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                {t("admin.deposits.table.noNotes")}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>
+                                  {t("admin.deposits.actions.actions")}
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => handleViewDeposit(deposit)}
+                                >
+                                  <Eye className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                                  {t("admin.deposits.actions.viewDetails")}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleEditDeposit(deposit)}
+                                >
+                                  <Edit className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                                  {t("admin.deposits.actions.editDeposit")}
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteDeposit(deposit)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                                  {t("admin.deposits.actions.deleteDeposit")}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -882,7 +832,7 @@ const Deposits = () => {
                       currentPage * itemsPerPage,
                       filteredDeposits.length
                     )}
-                    totalItems={filteredDeposits.length}
+                    totalItems={depositsData?.count || 0}
                     itemsPerPage={itemsPerPage}
                     className="justify-center"
                   />

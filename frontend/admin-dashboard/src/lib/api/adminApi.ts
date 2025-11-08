@@ -264,7 +264,20 @@ export const ticketsApi = {
   /**
    * Update ticket status
    */
+  updateTicketStatus: async (id: string, status: string) => {
+    const response = await adminApi.put(`/tickets/${id}/status/`, { status });
+    return response.data;
+  },
+
+  /**
+   * Update ticket (general update - may not be supported by backend)
+   */
   updateTicket: async (id: string, data: { status?: string; [key: string]: any }) => {
+    // If status is provided, use the status endpoint
+    if (data.status) {
+      return await ticketsApi.updateTicketStatus(id, data.status);
+    }
+    // Otherwise try PUT to base endpoint (may not work for ReadOnlyModelViewSet)
     const response = await adminApi.put(`/tickets/${id}/`, data);
     return response.data;
   },
@@ -412,26 +425,98 @@ export const usersApi = {
   },
 
   /**
-   * Create user (organizer, merchant, usher, or admin)
+   * Create organizer
    */
-  createUser: async (data: any) => {
-    const response = await adminApi.post('/users/', data);
+  createOrganizer: async (data: any) => {
+    const response = await adminApi.post('/organizers/', data);
     return response.data;
   },
 
   /**
-   * Update user
+   * Update organizer
    */
-  updateUser: async (id: string, data: any) => {
-    const response = await adminApi.put(`/users/${id}/`, data);
+  updateOrganizer: async (id: string, data: any) => {
+    const response = await adminApi.put(`/organizers/${id}/`, data);
     return response.data;
   },
 
   /**
-   * Delete user
+   * Delete organizer
    */
-  deleteUser: async (id: string) => {
-    const response = await adminApi.delete(`/users/${id}/`);
+  deleteOrganizer: async (id: string) => {
+    const response = await adminApi.delete(`/organizers/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create merchant
+   */
+  createMerchant: async (data: any) => {
+    const response = await adminApi.post('/merchants/', data);
+    return response.data;
+  },
+
+  /**
+   * Update merchant
+   */
+  updateMerchant: async (id: string, data: any) => {
+    const response = await adminApi.put(`/merchants/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete merchant
+   */
+  deleteMerchant: async (id: string) => {
+    const response = await adminApi.delete(`/merchants/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create usher
+   */
+  createUsher: async (data: any) => {
+    const response = await adminApi.post('/ushers/', data);
+    return response.data;
+  },
+
+  /**
+   * Update usher
+   */
+  updateUsher: async (id: string, data: any) => {
+    const response = await adminApi.put(`/ushers/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete usher
+   */
+  deleteUsher: async (id: string) => {
+    const response = await adminApi.delete(`/ushers/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create admin user
+   */
+  createAdmin: async (data: any) => {
+    const response = await adminApi.post('/admins/', data);
+    return response.data;
+  },
+
+  /**
+   * Update admin user
+   */
+  updateAdmin: async (id: string, data: any) => {
+    const response = await adminApi.put(`/admins/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete admin user
+   */
+  deleteAdmin: async (id: string) => {
+    const response = await adminApi.delete(`/admins/${id}/`);
     return response.data;
   },
 };

@@ -5,6 +5,8 @@ import React, {
   useCallback,
   useRef,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { systemLogsApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -268,18 +270,10 @@ const CheckInLogs: React.FC = () => {
   const { toast } = useToast();
 
   // State for real-time monitoring
-  const [checkInLogs, setCheckInLogs] = useState<CheckInLog[]>([]);
-  const [loading, setLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<CheckInLog | null>(null);
   const [showLogDetails, setShowLogDetails] = useState(false);
   const [isRealTimeEnabled, setIsRealTimeEnabled] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-
-  // Performance optimizations
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMoreLogs, setHasMoreLogs] = useState(true);
-  const [loadedLogCount, setLoadedLogCount] = useState(0);
-  const logsPerChunk = 1000;
 
   // Filters with debounced search
   const [searchTerm, setSearchTerm] = useState("");
@@ -296,9 +290,10 @@ const CheckInLogs: React.FC = () => {
   // Enhanced pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [logsPerPage, setLogsPerPage] = useState(50);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
-  // Real-time updates
-  const realTimeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Note: Real-time updates handled by React Query refetchInterval
 
   // Get date locale based on current language
   const getDateLocale = () => {
@@ -317,7 +312,160 @@ const CheckInLogs: React.FC = () => {
     return format(dateObj, "HH:mm:ss", { locale: getDateLocale() });
   };
 
-  // Generate mock check-in logs data
+  // Calculate date range from dateRange filter
+  useEffect(() => {
+    if (dateRange === "all") {
+      setDateFrom("");
+      setDateTo("");
+      return;
+    }
+
+    const now = new Date();
+    let startDate: Date;
+
+    switch (dateRange) {
+      case "today":
+        startDate = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate()
+        );
+        break;
+      case "week":
+        startDate = subDays(now, 7);
+        break;
+      case "month":
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      default:
+        startDate = new Date(0);
+    }
+
+    setDateFrom(startDate.toISOString().split("T")[0]);
+    setDateTo(now.toISOString().split("T")[0]);
+  }, [dateRange]);
+
+  // Fetch check-in logs from API
+  const {
+    data: checkInLogsData,
+    isLoading: checkInLogsLoading,
+    error: checkInLogsError,
+  } = useQuery({
+    queryKey: [
+      "checkInLogs",
+      debouncedSearchTerm,
+      selectedEvent,
+      selectedScanResult,
+      selectedDevice,
+      selectedOperator,
+      dateFrom,
+      dateTo,
+      currentPage,
+      logsPerPage,
+    ],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: logsPerPage,
+      };
+
+      if (debouncedSearchTerm) params.search = debouncedSearchTerm;
+      if (selectedEvent !== "all") params.event = selectedEvent;
+      if (selectedScanResult !== "all") params.scan_result = selectedScanResult;
+      if (selectedDevice !== "all") params.device = selectedDevice;
+      if (selectedOperator !== "all") params.operator = selectedOperator;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+
+      return await systemLogsApi.getCheckinLogs(params);
+    },
+    refetchInterval: isRealTimeEnabled ? 5000 : false, // Refetch every 5 seconds if real-time enabled
+  });
+
+  // Transform API check-in logs to match CheckInLog interface
+  const checkInLogs: CheckInLog[] = useMemo(() => {
+    if (!checkInLogsData?.results) return [];
+    return checkInLogsData.results.map((item: any) => ({
+      id: item.id?.toString() || "",
+      timestamp: item.timestamp || item.created_at || item.check_in_time || "",
+      eventId: item.event?.id?.toString() || item.event_id?.toString() || "",
+      eventTitle: item.event?.title || item.event_title || "",
+      eventDate: item.event?.date || item.event_date || "",
+      eventTime: item.event?.time || item.event_time || "",
+      venueName: item.venue?.name || item.venue_name || item.event?.venue_name || "",
+      entryPoint: item.entry_point || item.scan_location || "",
+      customerId: item.customer?.id?.toString() || item.customer_id?.toString() || "",
+      customerName: item.customer?.name || item.customer_name || "",
+      customerEmail: item.customer?.email || item.customer_email || "",
+      customerPhone: item.customer?.phone || item.customer_phone || "",
+      nfcCardId: item.nfc_card?.id?.toString() || item.nfc_card_id?.toString() || "",
+      nfcSerialNumber: item.nfc_card?.serial_number || item.nfc_serial_number || "",
+      cardStatus: (item.card_status || item.nfc_card?.status || "active") as
+        | "active"
+        | "inactive"
+        | "expired"
+        | "blocked",
+      scanResult: (item.scan_result || item.status || "valid") as
+        | "valid"
+        | "invalid"
+        | "expired"
+        | "blocked"
+        | "duplicate"
+        | "unauthorized",
+      scanType: (item.scan_type || "entry") as "entry" | "exit" | "reentry" | "transfer",
+      scanLocation: item.scan_location || item.location || "",
+      deviceId: item.device?.id?.toString() || item.device_id?.toString() || "",
+      deviceType: (item.device?.type || item.device_type || "nfc_reader") as
+        | "nfc_reader"
+        | "qr_scanner"
+        | "mobile_app"
+        | "tablet"
+        | "kiosk",
+      deviceName: item.device?.name || item.device_name || "",
+      operatorId: item.operator?.id?.toString() || item.operator_id?.toString() || "",
+      operatorName: item.operator?.name || item.operator_name || "",
+      operatorRole: (item.operator?.role || item.operator_role || "usher") as
+        | "usher"
+        | "security"
+        | "admin"
+        | "volunteer",
+      processingTime: item.processing_time || 0,
+      signalStrength: (item.signal_strength || "good") as
+        | "excellent"
+        | "good"
+        | "fair"
+        | "poor",
+      batteryLevel: item.battery_level || 100,
+      networkStatus: (item.network_status || "connected") as
+        | "connected"
+        | "disconnected"
+        | "offline"
+        | "syncing",
+      notes: item.notes || undefined,
+      metadata: {
+        sessionId: item.session_id || item.metadata?.sessionId || "",
+        requestId: item.request_id || item.metadata?.requestId || "",
+        ipAddress: item.ip_address || item.metadata?.ipAddress || "",
+        userAgent: item.user_agent || item.metadata?.userAgent || "",
+        location: item.location || item.metadata?.location || "",
+        deviceInfo: item.device_info || item.metadata?.deviceInfo || "",
+        affectedRecords: item.affected_records || item.metadata?.affectedRecords,
+        changes: item.changes || item.metadata?.changes || [],
+        additionalData: item.additional_data || item.metadata?.additionalData || {},
+      },
+    }));
+  }, [checkInLogsData]);
+
+  // Update lastUpdate when data changes
+  useEffect(() => {
+    if (checkInLogsData) {
+      setLastUpdate(new Date());
+    }
+  }, [checkInLogsData]);
+
+  // Note: Mock data generation removed - using API now
+  // Old mock data generation code removed
+  /*
   useEffect(() => {
     const generateMockCheckInLogs = (count: number): CheckInLog[] => {
       const logs: CheckInLog[] = [];
@@ -559,150 +707,21 @@ const CheckInLogs: React.FC = () => {
     const mockLogs = generateMockCheckInLogs(200);
     setCheckInLogs(mockLogs);
   }, []);
+  */
 
-  // Real-time updates simulation
-  useEffect(() => {
-    if (!isRealTimeEnabled) {
-      if (realTimeIntervalRef.current) {
-        clearInterval(realTimeIntervalRef.current);
-        realTimeIntervalRef.current = null;
-      }
-      return;
-    }
+  // Note: Real-time updates are handled by React Query's refetchInterval
+  // No need for manual setInterval - React Query handles it automatically
 
-    realTimeIntervalRef.current = setInterval(() => {
-      // Simulate new check-in log every 5-15 seconds
-      const newLog: CheckInLog = {
-        id: `CHECKIN-REALTIME-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        eventId: "EVENT-001",
-        eventTitle: "Cairo Music Festival",
-        eventDate: "2025-01-15",
-        eventTime: "19:00",
-        venueName: "Cairo Opera House",
-        entryPoint: "Main Gate",
-        customerId: "CUST-REALTIME",
-        customerName: "Real-time Customer",
-        customerEmail: "realtime@email.com",
-        customerPhone: "+201234567890",
-        nfcCardId: "NFC-REALTIME",
-        nfcSerialNumber: "NFC001234567890",
-        cardStatus: "active",
-        scanResult: "valid",
-        scanType: "entry",
-        scanLocation: "Cairo Opera House - Main Gate",
-        deviceId: "DEV-REALTIME",
-        deviceType: "nfc_reader",
-        deviceName: "NFC Reader Main Gate",
-        operatorId: "OP-REALTIME",
-        operatorName: "Real-time Operator",
-        operatorRole: "usher",
-        processingTime: Math.floor(Math.random() * 1000) + 100,
-        signalStrength: "excellent",
-        batteryLevel: Math.floor(Math.random() * 100) + 1,
-        networkStatus: "connected",
-        metadata: {
-          sessionId: `SESS-REALTIME-${Date.now()}`,
-          requestId: `REQ-REALTIME-${Date.now()}`,
-          ipAddress: "192.168.1.100",
-          userAgent: "TicketRunners-NFC-Scanner/1.0",
-          location: "Cairo Opera House, Egypt",
-          deviceInfo: "NFC Reader Main Gate (nfc_reader)",
-          affectedRecords: 1,
-          changes: ["Real-time check-in recorded"],
-          additionalData: {
-            sessionId: `SESS-REALTIME-${Date.now()}`,
-            requestId: `REQ-REALTIME-${Date.now()}`,
-            processingTime: Math.floor(Math.random() * 1000) + 100,
-            signalQuality: "excellent",
-            batteryStatus: Math.floor(Math.random() * 100) + 1,
-            networkQuality: "connected",
-          },
-        },
-      };
-
-      setCheckInLogs((prev) => [newLog, ...prev.slice(0, 999)]); // Keep only 1000 logs
-      setLastUpdate(new Date());
-    }, Math.random() * 10000 + 5000); // Random interval between 5-15 seconds
-
-    return () => {
-      if (realTimeIntervalRef.current) {
-        clearInterval(realTimeIntervalRef.current);
-      }
-    };
-  }, [isRealTimeEnabled]);
-
-  // Optimized filtering with memoization and debounced search
+  // Filtered logs - API handles most filtering, but we filter venue client-side if needed
   const filteredLogs = useMemo(() => {
     let filtered = checkInLogs;
 
-    // Search filter with debounced term
-    if (debouncedSearchTerm) {
-      const searchLower = debouncedSearchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (log) =>
-          log.customerName.toLowerCase().includes(searchLower) ||
-          log.eventTitle.toLowerCase().includes(searchLower) ||
-          log.venueName.toLowerCase().includes(searchLower) ||
-          log.nfcSerialNumber.toLowerCase().includes(searchLower) ||
-          log.operatorName.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Event filter
-    if (selectedEvent !== "all") {
-      filtered = filtered.filter((log) => log.eventId === selectedEvent);
-    }
-
-    // Scan result filter
-    if (selectedScanResult !== "all") {
-      filtered = filtered.filter(
-        (log) => log.scanResult === selectedScanResult
-      );
-    }
-
-    // Device filter
-    if (selectedDevice !== "all") {
-      filtered = filtered.filter((log) => log.deviceId === selectedDevice);
-    }
-
-    // Operator filter
-    if (selectedOperator !== "all") {
-      filtered = filtered.filter((log) => log.operatorId === selectedOperator);
-    }
-
-    // Venue filter
+    // Venue filter (client-side if backend doesn't support it)
     if (selectedVenue !== "all") {
       filtered = filtered.filter((log) => log.venueName === selectedVenue);
     }
 
-    // Date range filter
-    if (dateRange !== "all") {
-      const now = new Date();
-      let startDate: Date;
-
-      switch (dateRange) {
-        case "today":
-          startDate = new Date(
-            now.getFullYear(),
-            now.getMonth(),
-            now.getDate()
-          );
-          break;
-        case "week":
-          startDate = subDays(now, 7);
-          break;
-        case "month":
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          break;
-        default:
-          startDate = new Date(0);
-      }
-
-      filtered = filtered.filter((log) => new Date(log.timestamp) >= startDate);
-    }
-
-    // Optimized sorting
+    // Client-side sorting (if backend doesn't support it)
     filtered.sort((a, b) => {
       let aValue: any = a[sortBy as keyof CheckInLog];
       let bValue: any = b[sortBy as keyof CheckInLog];
@@ -720,18 +739,11 @@ const CheckInLogs: React.FC = () => {
     });
 
     return filtered;
-  }, [
-    checkInLogs,
-    debouncedSearchTerm,
-    selectedEvent,
-    selectedScanResult,
-    selectedDevice,
-    selectedOperator,
-    selectedVenue,
-    dateRange,
-    sortBy,
-    sortOrder,
-  ]);
+  }, [checkInLogs, selectedVenue, sortBy, sortOrder]);
+
+  // Pagination - API handles pagination, so we use the data directly
+  const totalPages = checkInLogsData?.total_pages || 1;
+  const paginatedLogs = filteredLogs; // API already paginates
 
   // Optimized statistics calculation with memoization
   const stats: CheckInStats = useMemo(() => {
@@ -935,10 +947,8 @@ const CheckInLogs: React.FC = () => {
   }, [checkInLogs]);
 
   // Optimized pagination
-  const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
-  const startIndex = (currentPage - 1) * logsPerPage;
-  const endIndex = startIndex + logsPerPage;
-  const currentLogs = filteredLogs.slice(startIndex, endIndex);
+  // Pagination is handled by API - use paginatedLogs directly
+  const currentLogs = paginatedLogs;
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -1588,7 +1598,38 @@ const CheckInLogs: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentLogs.map((log) => (
+                {checkInLogsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="text-center py-12">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                      <span className="ml-2 text-muted-foreground">
+                        {t("admin.dashboard.logs.loading.loading")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : checkInLogsError ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="text-center py-12">
+                      <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                      <span className="ml-2 text-red-500">
+                        {t("common.error")}:{" "}
+                        {checkInLogsError instanceof Error
+                          ? checkInLogsError.message
+                          : t("admin.dashboard.logs.error")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : currentLogs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="text-center py-12">
+                      <QrCode className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        {t("admin.dashboard.logs.noCheckInLogsFound")}
+                      </p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  currentLogs.map((log) => (
                   <TableRow key={log.id}>
                     <TableCell className="rtl:text-right">
                       <div className="flex flex-col rtl:text-right">
@@ -1712,31 +1753,38 @@ const CheckInLogs: React.FC = () => {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
 
           {/* Pagination */}
+          {totalPages > 1 && (
           <ResponsivePagination
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={setCurrentPage}
             showInfo={true}
             infoText={`${t("admin.tickets.checkInLogs.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredLogs.length)} ${t(
-              "admin.tickets.checkInLogs.pagination.of"
-            )} ${formatNumberForLocale(
-              filteredLogs.length,
+                (currentPage - 1) * logsPerPage + 1
+              }-${Math.min(
+                currentPage * logsPerPage,
+                checkInLogsData?.count || filteredLogs.length
+              )} ${t("admin.tickets.checkInLogs.pagination.of")} ${formatNumberForLocale(
+                checkInLogsData?.count || filteredLogs.length,
               i18nInstance.language
             )} ${t("admin.tickets.checkInLogs.pagination.results")}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredLogs.length}
+              startIndex={(currentPage - 1) * logsPerPage + 1}
+              endIndex={Math.min(
+                currentPage * logsPerPage,
+                checkInLogsData?.count || filteredLogs.length
+              )}
+              totalItems={checkInLogsData?.count || filteredLogs.length}
             itemsPerPage={logsPerPage}
             className="mt-4"
           />
+          )}
         </CardContent>
       </Card>
 

@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { financesApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -41,9 +43,31 @@ interface Owner {
 
 const ProfitShareManagement = () => {
   const { t } = useTranslation();
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
-  // Sample data - in real app this would come from API
-  const [owners, setOwners] = useState<Owner[]>([
+  // Fetch profit share data from API
+  const { data: profitShareData, isLoading: profitShareLoading, error: profitShareError } = useQuery({
+    queryKey: ['profitShare', dateFrom, dateTo],
+    queryFn: () => financesApi.getProfitShare({ start_date: dateFrom, end_date: dateTo }),
+  });
+
+  // Transform API data to match Owner interface
+  const owners: Owner[] = useMemo(() => {
+    if (!profitShareData?.owners && !profitShareData?.results) return [];
+    const ownersData = profitShareData.owners || profitShareData.results || [];
+    return ownersData.map((item: any) => ({
+      id: item.id?.toString() || '',
+      name: item.name || item.owner_name || '',
+      email: item.email || item.owner_email || '',
+      profitShare: parseFloat(item.profit_share || item.profitShare || 0),
+      currentBalance: parseFloat(item.current_balance || item.currentBalance || 0),
+      isActive: item.is_active !== false,
+    }));
+  }, [profitShareData]);
+
+  // Sample data - fallback if API doesn't return data
+  const fallbackOwners: Owner[] = [
     {
       id: "1",
       name: "Ahmed Hassan",
@@ -76,7 +100,10 @@ const ProfitShareManagement = () => {
       currentBalance: -90000,
       isActive: true,
     },
-  ]);
+  ];
+
+  // Use API data if available, otherwise use fallback
+  const ownersToUse = owners.length > 0 ? owners : fallbackOwners;
 
   const [editingOwner, setEditingOwner] = useState<string | null>(null);
   const [newOwnerName, setNewOwnerName] = useState("");
@@ -85,9 +112,9 @@ const ProfitShareManagement = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [validationError, setValidationError] = useState("");
 
-  const totalProfit = 1800000;
-  const totalShareholders = owners.filter((owner) => owner.isActive).length;
-  const totalDistributed = owners.reduce(
+  const totalProfit = profitShareData?.total_profit || profitShareData?.totalProfit || 1800000;
+  const totalShareholders = ownersToUse.filter((owner) => owner.isActive).length;
+  const totalDistributed = ownersToUse.reduce(
     (sum, owner) => sum + owner.currentBalance,
     0
   );
@@ -95,7 +122,7 @@ const ProfitShareManagement = () => {
     totalShareholders > 0 ? totalDistributed / totalShareholders : 0;
 
   // Calculate total profit share percentage
-  const totalProfitShare = owners.reduce(
+  const totalProfitShare = ownersToUse.reduce(
     (sum, owner) => sum + owner.profitShare,
     0
   );
@@ -423,7 +450,7 @@ const ProfitShareManagement = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {owners.map((owner) => (
+            {ownersToUse.map((owner) => (
               <div
                 key={owner.id}
                 className="flex items-center justify-between p-4 border rounded-lg"

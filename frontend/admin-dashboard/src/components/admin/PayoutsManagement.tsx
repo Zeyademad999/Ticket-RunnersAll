@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { financesApi, usersApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -57,6 +59,7 @@ import {
   Banknote,
   CreditCard,
   Wallet,
+  RefreshCw,
 } from "lucide-react";
 
 // Types
@@ -97,8 +100,7 @@ interface Payout {
 const PayoutsManagement: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
-  const [organizers, setOrganizers] = useState<Organizer[]>([]);
-  const [payouts, setPayouts] = useState<Payout[]>([]);
+  const queryClient = useQueryClient();
   const [selectedOrganizer, setSelectedOrganizer] = useState<string>("");
   const [payoutAmount, setPayoutAmount] = useState<number>(0);
   const [payoutNotes, setPayoutNotes] = useState<string>("");
@@ -110,12 +112,81 @@ const PayoutsManagement: React.FC = () => {
     organizer: "all",
     dateRange: "all",
   });
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // Mock data
+  // Fetch payouts from API
+  const { data: payoutsData, isLoading: payoutsLoading, error: payoutsError } = useQuery({
+    queryKey: ['payouts', filters.status, filters.organizer, dateFrom, dateTo, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
+      
+      if (filters.status !== 'all') params.status = filters.status;
+      if (filters.organizer !== 'all') params.organizer = filters.organizer;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      return await financesApi.getPayouts(params);
+    },
+  });
+
+  // Fetch organizers for filter dropdown
+  const { data: organizersData } = useQuery({
+    queryKey: ['organizers', 'all'],
+    queryFn: () => usersApi.getOrganizers({ page_size: 1000 }),
+  });
+
+  // Transform API payouts to match Payout interface
+  const payouts: Payout[] = useMemo(() => {
+    if (!payoutsData?.results) return [];
+    return payoutsData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      organizerId: item.organizer?.id?.toString() || item.organizer_id?.toString() || '',
+      organizerName: item.organizer?.organization_name || item.organizer_name || '',
+      amount: parseFloat(item.amount) || 0,
+      status: (item.status || 'pending') as "pending" | "processing" | "completed" | "failed",
+      method: (item.method || item.payment_method || 'bank_transfer') as "bank_transfer" | "paypal" | "stripe",
+      reference: item.reference || item.reference_number || '',
+      createdAt: item.created_at || item.createdAt || '',
+      processedAt: item.processed_at || item.processedAt || undefined,
+      notes: item.notes || undefined,
+      dueAmount: parseFloat(item.due_amount || item.amount) || 0,
+      eventsIncluded: item.events_included || item.events || [],
+    }));
+  }, [payoutsData]);
+
+  // Transform API organizers to match Organizer interface
+  const organizers: Organizer[] = useMemo(() => {
+    if (!organizersData?.results) return [];
+    return organizersData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      name: item.organization_name || item.user?.username || '',
+      email: item.contact_email || item.user?.email || '',
+      phone: item.contact_mobile || '',
+      status: (item.user?.is_active ? 'active' : 'inactive') as "active" | "inactive",
+      totalEvents: item.total_events || 0,
+      totalRevenue: parseFloat(item.total_revenue) || 0,
+      pendingPayout: parseFloat(item.pending_payout) || 0,
+      completedPayouts: parseFloat(item.completed_payouts) || 0,
+      lastPayoutDate: item.last_payout_date || undefined,
+      bankInfo: item.bank_info ? {
+        accountName: item.bank_info.account_name || '',
+        accountNumber: item.bank_info.account_number || '',
+        bankName: item.bank_info.bank_name || '',
+        swiftCode: item.bank_info.swift_code || undefined,
+      } : undefined,
+    }));
+  }, [organizersData]);
+
+  // Mock data (removed - using API now)
+  /*
   useEffect(() => {
     const mockOrganizers: Organizer[] = [
       {
@@ -588,6 +659,7 @@ const PayoutsManagement: React.FC = () => {
     setOrganizers(mockOrganizers);
     setPayouts(mockPayouts);
   }, []);
+  */
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -662,16 +734,10 @@ const PayoutsManagement: React.FC = () => {
       notes: payoutNotes,
     };
 
-    setPayouts([newPayout, ...payouts]);
-
-    // Update organizer's pending payout
-    setOrganizers(
-      organizers.map((org) =>
-        org.id === selectedOrganizer
-          ? { ...org, pendingPayout: org.pendingPayout - payoutAmount }
-          : org
-      )
-    );
+    // Note: Payout creation would need API endpoint
+    // For now, invalidate query to refetch
+    queryClient.invalidateQueries({ queryKey: ['payouts'] });
+    queryClient.invalidateQueries({ queryKey: ['organizers'] });
 
     setIsCreatePayoutOpen(false);
     setSelectedOrganizer("");
@@ -689,24 +755,26 @@ const PayoutsManagement: React.FC = () => {
     setIsViewPayoutOpen(true);
   };
 
-  const filteredPayouts = payouts.filter((payout) => {
-    if (filters.status !== "all" && payout.status !== filters.status)
-      return false;
-    if (filters.organizer !== "all" && payout.organizerId !== filters.organizer)
-      return false;
-    return true;
-  });
+  // Filtered payouts (API handles most filtering, but we filter organizer client-side if needed)
+  const filteredPayouts = useMemo(() => {
+    // API already handles status and date filtering
+    // Only filter by organizer if needed
+    if (filters.organizer === 'all') {
+      return payouts;
+    }
+    return payouts.filter((payout) => payout.organizerId === filters.organizer);
+  }, [payouts, filters.organizer]);
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredPayouts.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedPayouts = filteredPayouts.slice(startIndex, endIndex);
+  // Pagination - API handles pagination, so we use the data directly
+  const totalPages = payoutsData?.total_pages || 1;
+  const startIndex = payoutsData?.page ? (payoutsData.page - 1) * payoutsData.page_size : 0;
+  const endIndex = startIndex + (payoutsData?.page_size || itemsPerPage);
+  const paginatedPayouts = filteredPayouts; // API already paginates
 
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters.status, filters.organizer]);
+  }, [filters.status, filters.organizer, dateFrom, dateTo]);
 
   const totalPendingPayouts = organizers.reduce(
     (sum, org) => sum + org.pendingPayout,
@@ -1010,7 +1078,31 @@ const PayoutsManagement: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedPayouts.map((payout) => (
+                {payoutsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                      <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+                    </TableCell>
+                  </TableRow>
+                ) : payoutsError ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                      <span className="ml-2 text-red-500">
+                        {t("common.error")}: {payoutsError instanceof Error ? payoutsError.message : t("admin.payouts.errors.error")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedPayouts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <Banknote className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">{t("admin.payouts.noPayoutsFound")}</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedPayouts.map((payout) => (
                   <TableRow key={payout.id}>
                     <TableCell className="font-medium">
                       {payout.reference}
@@ -1043,30 +1135,33 @@ const PayoutsManagement: React.FC = () => {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                ))
+                )}
               </TableBody>
             </Table>
           </div>
 
           {/* Pagination */}
-          <ResponsivePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            showInfo={true}
-            infoText={`${t("admin.payouts.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredPayouts.length)} ${t(
-              "admin.payouts.pagination.of"
-            )} ${filteredPayouts.length} ${t(
-              "admin.payouts.pagination.results"
-            )}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredPayouts.length}
-            itemsPerPage={itemsPerPage}
-            className="mt-4"
-          />
+          {!payoutsLoading && !payoutsError && (
+            <ResponsivePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              showInfo={true}
+              infoText={`${t("admin.payouts.pagination.showing")} ${
+                startIndex + 1
+              }-${Math.min(endIndex, payoutsData?.count || 0)} ${t(
+                "admin.payouts.pagination.of"
+              )} ${payoutsData?.count || 0} ${t(
+                "admin.payouts.pagination.results"
+              )}`}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={payoutsData?.count || 0}
+              itemsPerPage={itemsPerPage}
+              className="mt-4"
+            />
+          )}
         </CardContent>
       </Card>
 

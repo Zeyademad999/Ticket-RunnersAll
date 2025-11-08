@@ -129,6 +129,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatNumberForLocale, formatPhoneNumberForLocale } from "@/lib/utils";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { usersApi } from "@/lib/api/adminApi";
 
 type Organizer = {
   id: string;
@@ -260,7 +262,87 @@ const OrganizersManagement: React.FC = () => {
     ticketTransferEnabled: false,
     ticketLimit: 1,
   });
-  const [organizers, setOrganizers] = useState<Organizer[]>([
+  const queryClient = useQueryClient();
+
+  // Fetch organizers from API
+  const {
+    data: organizersData,
+    isLoading: organizersLoading,
+    error: organizersError,
+  } = useQuery({
+    queryKey: [
+      "organizers",
+      searchTerm,
+      statusFilter,
+      categoryFilter,
+      currentPage,
+      itemsPerPage,
+    ],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== "all") params.status = statusFilter;
+      if (categoryFilter !== "all") params.category = categoryFilter;
+
+      return await usersApi.getOrganizers(params);
+    },
+  });
+
+  // Transform API organizers to match Organizer interface
+  const organizers: Organizer[] = useMemo(() => {
+    if (!organizersData?.results) return [];
+    return organizersData.results.map((item: any) => ({
+      id: item.id?.toString() || "",
+      name: item.name || "",
+      email: item.email || "",
+      phone: item.phone || item.contact_mobile || "",
+      website: item.website || "",
+      status: (item.status || "active") as
+        | "active"
+        | "inactive"
+        | "suspended"
+        | "pending",
+      registrationDate: item.registration_date || item.created_at || "",
+      lastLogin: item.last_login || "",
+      totalEvents: item.total_events || 0,
+      totalRevenue: parseFloat(item.total_revenue || 0),
+      commissionRate: parseFloat(item.commission_rate || 0) * 100, // Convert to percentage
+      rating: parseFloat(item.rating || 0),
+      verified: item.verified || false,
+      category: (
+        item.category || "other"
+      ).toLowerCase() as Organizer["category"],
+      location: item.location || "",
+      description: item.about || item.description || "",
+      profileImage: item.profile_image || "/public/Portrait_Placeholder.png",
+      contactPerson: item.name || "",
+      businessLicense: item.commercial_registration || "",
+      taxId: item.tax_id || "",
+      bankAccount: item.bank_account || "",
+      payoutMethod: "bank" as "bank" | "paypal" | "stripe",
+      payoutEmail: item.email || "",
+      minimumPayout: 0,
+      totalPayouts: 0,
+      pendingPayout: 0,
+      eventsThisMonth: 0,
+      eventsLastMonth: 0,
+      averageRating: parseFloat(item.rating || 0),
+      totalReviews: 0,
+      responseRate: 0,
+      responseTime: 0,
+      cancellationRate: 0,
+      refundRate: 0,
+      customerSatisfaction: 0,
+      repeatCustomers: 0,
+      socialMedia: {},
+    }));
+  }, [organizersData]);
+
+  // Mock organizers data (fallback - will be removed once API is fully integrated)
+  const mockOrganizers: Organizer[] = [
     {
       id: "ORG001",
       name: "Cairo Events Pro",
@@ -468,7 +550,7 @@ const OrganizersManagement: React.FC = () => {
         twitter: "foodfestivalmasters",
       },
     },
-  ]);
+  ];
 
   // Mock organizer activity data
   const organizerActivities: OrganizerActivity[] = [
@@ -583,29 +665,17 @@ const OrganizersManagement: React.FC = () => {
     },
   ]);
 
-  // Filter organizers based on search and filters
+  // API handles filtering, so we use organizers directly
+  // Client-side filtering only for fields not supported by API
   const filteredOrganizers = useMemo(() => {
-    return organizers.filter((organizer) => {
-      const matchesSearch =
-        organizer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        organizer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        organizer.contactPerson
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase());
-      const matchesStatus =
-        statusFilter === "all" || organizer.status === statusFilter;
-      const matchesCategory =
-        categoryFilter === "all" || organizer.category === categoryFilter;
+    // API handles search, status, and category filtering
+    // Only apply client-side filtering if needed for additional fields
+    return organizers;
+  }, [organizers]);
 
-      return matchesSearch && matchesStatus && matchesCategory;
-    });
-  }, [organizers, searchTerm, statusFilter, categoryFilter]);
-
-  // Pagination logic
-  const totalPages = Math.ceil(filteredOrganizers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedOrganizers = filteredOrganizers.slice(startIndex, endIndex);
+  // Pagination - use API pagination
+  const totalPages = organizersData?.total_pages || 1;
+  const paginatedOrganizers = filteredOrganizers; // API already paginates
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -717,14 +787,32 @@ const OrganizersManagement: React.FC = () => {
     setShowOrganizerDetails(true);
   };
 
+  // Delete organizer mutation
+  const deleteOrganizerMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await usersApi.deleteOrganizer(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organizers"] });
+      toast({
+        title: t("admin.organizers.toast.organizerDeleted"),
+        description: t("admin.organizers.toast.organizerDeletedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description:
+          error?.response?.data?.error?.message ||
+          error?.message ||
+          "Failed to delete organizer",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDeleteOrganizer = (organizerId: string) => {
-    setOrganizers((prevOrganizers) =>
-      prevOrganizers.filter((organizer) => organizer.id !== organizerId)
-    );
-    toast({
-      title: t("admin.organizers.toast.organizerDeleted"),
-      description: t("admin.organizers.toast.organizerDeletedDesc"),
-    });
+    deleteOrganizerMutation.mutate(organizerId);
   };
 
   const handleExportOrganizers = () => {
@@ -734,46 +822,67 @@ const OrganizersManagement: React.FC = () => {
     });
   };
 
+  // Update organizer mutation
+  const updateOrganizerMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return await usersApi.updateOrganizer(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organizers"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description:
+          error?.response?.data?.error?.message ||
+          error?.message ||
+          "Failed to update organizer",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSuspendOrganizer = (organizerId: string) => {
-    setOrganizers((prevOrganizers) =>
-      prevOrganizers.map((organizer) =>
-        organizer.id === organizerId
-          ? { ...organizer, status: "suspended" as const }
-          : organizer
-      )
+    updateOrganizerMutation.mutate(
+      { id: organizerId, data: { status: "suspended" } },
+      {
+        onSuccess: () => {
+          toast({
+            title: t("admin.organizers.toast.organizerSuspended"),
+            description: t("admin.organizers.toast.organizerSuspendedDesc"),
+          });
+        },
+      }
     );
-    toast({
-      title: t("admin.organizers.toast.organizerSuspended"),
-      description: t("admin.organizers.toast.organizerSuspendedDesc"),
-    });
   };
 
   const handleActivateOrganizer = (organizerId: string) => {
-    setOrganizers((prevOrganizers) =>
-      prevOrganizers.map((organizer) =>
-        organizer.id === organizerId
-          ? { ...organizer, status: "active" as const }
-          : organizer
-      )
+    updateOrganizerMutation.mutate(
+      { id: organizerId, data: { status: "active" } },
+      {
+        onSuccess: () => {
+          toast({
+            title: t("admin.organizers.toast.organizerActivated"),
+            description: t("admin.organizers.toast.organizerActivatedDesc"),
+          });
+        },
+      }
     );
-    toast({
-      title: t("admin.organizers.toast.organizerActivated"),
-      description: t("admin.organizers.toast.organizerActivatedDesc"),
-    });
   };
 
   const handleVerifyOrganizer = (organizerId: string) => {
-    setOrganizers((prevOrganizers) =>
-      prevOrganizers.map((organizer) =>
-        organizer.id === organizerId
-          ? { ...organizer, verified: true }
-          : organizer
-      )
+    // Use the verify endpoint if available, otherwise update
+    updateOrganizerMutation.mutate(
+      { id: organizerId, data: { verified: true } },
+      {
+        onSuccess: () => {
+          toast({
+            title: t("admin.organizers.toast.organizerVerified"),
+            description: t("admin.organizers.toast.organizerVerifiedDesc"),
+          });
+        },
+      }
     );
-    toast({
-      title: t("admin.organizers.toast.organizerVerified"),
-      description: t("admin.organizers.toast.organizerVerifiedDesc"),
-    });
   };
 
   const handleViewActivity = (organizerId: string) => {
@@ -792,63 +901,86 @@ const OrganizersManagement: React.FC = () => {
     }
   };
 
+  // Create organizer mutation
+  const createOrganizerMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await usersApi.createOrganizer(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["organizers"] });
+      toast({
+        title: t("admin.organizers.toast.organizerAdded"),
+        description: t("admin.organizers.toast.organizerAddedDesc"),
+      });
+      setIsAddDialogOpen(false);
+      setNewOrganizer({});
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description:
+          error?.response?.data?.error?.message ||
+          error?.message ||
+          "Failed to create organizer",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleAddOrganizer = () => {
-    // Create a simple new organizer with basic info
-    const newId = `ORG${String(organizers.length + 1).padStart(3, "0")}`;
-    const newOrganizer: Organizer = {
-      id: newId,
-      name: "New Organizer",
-      email: "new@organizer.com",
-      phone: "+20 10 0000 0000",
-      status: "pending",
-      registrationDate: new Date().toISOString().split("T")[0],
-      lastLogin: new Date().toISOString(),
-      totalEvents: 0,
-      totalRevenue: 0,
-      commissionRate: 10,
-      rating: 0,
-      verified: false,
-      category: "other",
-      location: "Egypt",
-      description: "New organizer account",
-      contactPerson: "Contact Person",
-      payoutMethod: "bank",
-      minimumPayout: 1000,
-      totalPayouts: 0,
-      pendingPayout: 0,
-      eventsThisMonth: 0,
-      eventsLastMonth: 0,
-      averageRating: 0,
-      totalReviews: 0,
-      responseRate: 0,
-      responseTime: 24,
-      cancellationRate: 0,
-      refundRate: 0,
-      customerSatisfaction: 0,
-      repeatCustomers: 0,
+    if (!newOrganizer.name || !newOrganizer.email || !newOrganizer.phone) {
+      toast({
+        title: t("admin.organizers.toast.validationError"),
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const organizerData = {
+      name: newOrganizer.name,
+      email: newOrganizer.email,
+      phone: newOrganizer.phone,
+      category: newOrganizer.category || "other",
+      location: newOrganizer.location || "",
+      about: newOrganizer.description || "",
+      status: newOrganizer.status || "pending",
+      contact_mobile: newOrganizer.phone,
     };
 
-    setOrganizers((prevOrganizers) => [...prevOrganizers, newOrganizer]);
-    toast({
-      title: t("admin.organizers.toast.organizerAdded"),
-      description: t("admin.organizers.toast.organizerAddedDesc"),
-    });
-    setIsAddDialogOpen(false);
+    createOrganizerMutation.mutate(organizerData);
   };
 
   const handleSaveOrganizerChanges = () => {
     if (editingOrganizer) {
-      setOrganizers((prevOrganizers) =>
-        prevOrganizers.map((organizer) =>
-          organizer.id === editingOrganizer.id ? editingOrganizer : organizer
-        )
+      const organizerData = {
+        name: editingOrganizer.name,
+        email: editingOrganizer.email,
+        phone: editingOrganizer.phone,
+        category: editingOrganizer.category,
+        location: editingOrganizer.location,
+        about: editingOrganizer.description,
+        status: editingOrganizer.status,
+        verified: editingOrganizer.verified,
+        commission_rate: editingOrganizer.commissionRate / 100, // Convert percentage to decimal
+        contact_mobile: editingOrganizer.phone,
+        tax_id: editingOrganizer.taxId,
+        commercial_registration: editingOrganizer.businessLicense,
+      };
+
+      updateOrganizerMutation.mutate(
+        { id: editingOrganizer.id, data: organizerData },
+        {
+          onSuccess: () => {
+            toast({
+              title: t("admin.organizers.toast.organizerUpdated"),
+              description: t("admin.organizers.toast.organizerUpdatedDesc"),
+            });
+            setEditingOrganizer(null);
+            setIsEditDialogOpen(false);
+          },
+        }
       );
-      toast({
-        title: t("admin.organizers.toast.organizerUpdated"),
-        description: t("admin.organizers.toast.organizerUpdatedDesc"),
-      });
-      setEditingOrganizer(null);
-      setIsEditDialogOpen(false);
     }
   };
 
@@ -1044,14 +1176,27 @@ const OrganizersManagement: React.FC = () => {
         <CardHeader>
           <CardTitle className="rtl:text-right ltr:text-left">
             {t("admin.organizers.table.organizer")} (
-            {formatNumberForLocale(filteredOrganizers.length, i18n.language)})
+            {formatNumberForLocale(
+              organizersData?.count || paginatedOrganizers.length,
+              i18n.language
+            )}
+            )
           </CardTitle>
           <div className="flex items-center gap-2 rtl:flex-row-reverse">
             <span className="text-sm text-muted-foreground">
-              {t("admin.organizers.pagination.showing")} {startIndex + 1}-
-              {Math.min(endIndex, filteredOrganizers.length)}{" "}
-              {t("admin.organizers.pagination.of")} {filteredOrganizers.length}{" "}
-              {t("admin.organizers.pagination.results")}
+              {organizersLoading
+                ? t("common.loading")
+                : `${t("admin.organizers.pagination.showing")} ${
+                    (currentPage - 1) * itemsPerPage + 1
+                  }-${Math.min(
+                    currentPage * itemsPerPage,
+                    organizersData?.count || paginatedOrganizers.length
+                  )} ${t(
+                    "admin.organizers.pagination.of"
+                  )} ${formatNumberForLocale(
+                    organizersData?.count || paginatedOrganizers.length,
+                    i18n.language
+                  )} ${t("admin.organizers.pagination.results")}`}
             </span>
             <Select
               value={itemsPerPage.toString()}
@@ -1101,187 +1246,229 @@ const OrganizersManagement: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedOrganizers.map((organizer) => (
-                  <TableRow key={organizer.id}>
-                    <TableCell>
-                      <div className="flex items-center space-x-3 rtl:space-x-reverse">
-                        <img
-                          src={
-                            organizer.profileImage ||
-                            "/public/Portrait_Placeholder.png"
-                          }
-                          alt={organizer.name}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                        <div className="rtl:text-right ltr:text-left">
-                          <div className="flex items-center gap-2 rtl:flex-row-reverse">
-                            <p className="font-medium">{organizer.name}</p>
-                            {organizer.verified && (
-                              <Badge variant="outline" className="text-xs">
-                                <CheckCircle className="h-3 w-3 mr-1 rtl:ml-1 rtl:mr-0" />
-                                {t("admin.organizers.verified")}
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            {organizer.location}
-                          </p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="rtl:text-right ltr:text-left">
-                        <p className="text-sm">{organizer.email}</p>
-                        <p className="text-sm text-muted-foreground" dir="ltr">
-                          {formatPhone(organizer.phone)}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getCategoryColor(organizer.category)}>
-                        <div className="flex items-center gap-1 rtl:flex-row-reverse">
-                          {getCategoryIcon(organizer.category)}
-                          {getCategoryText(organizer.category)}
-                        </div>
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(organizer.status)}>
-                        {getStatusText(organizer.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm rtl:text-right ltr:text-left">
-                        {formatNumberForLocale(
-                          organizer.totalEvents,
-                          i18n.language
-                        )}
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm rtl:text-right ltr:text-left">
-                        {formatNumberForLocale(
-                          organizer.totalRevenue,
-                          i18n.language
-                        )}{" "}
-                        EGP
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1 rtl:flex-row-reverse">
-                        <Star className="h-4 w-4 text-yellow-500" />
-                        <span className="text-sm">{organizer.rating}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          align="end"
-                          className="rtl:text-right ltr:text-left"
-                        >
-                          <DropdownMenuLabel>
-                            {t("admin.organizers.table.actions")}
-                          </DropdownMenuLabel>
-                          <DropdownMenuItem
-                            onClick={() => handleViewOrganizer(organizer)}
-                          >
-                            <Eye className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                            {t("admin.organizers.actions.viewDetails")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleEditOrganizer(organizer)}
-                          >
-                            <Edit className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                            {t("admin.organizers.actions.editOrganizer")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleViewEvents(organizer.id)}
-                          >
-                            <Calendar className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                            {t("admin.organizers.actions.viewEvents")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleViewActivity(organizer.id)}
-                          >
-                            <Activity className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                            {t("admin.organizers.actions.viewActivity")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {!organizer.verified && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleVerifyOrganizer(organizer.id)
-                              }
-                              className="text-green-600"
-                            >
-                              <CheckCircle className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                              {t("admin.organizers.actions.verify")}
-                            </DropdownMenuItem>
-                          )}
-                          {organizer.status === "active" && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleSuspendOrganizer(organizer.id)
-                              }
-                              className="text-yellow-600"
-                            >
-                              <UserX className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                              {t("admin.organizers.actions.suspend")}
-                            </DropdownMenuItem>
-                          )}
-                          {organizer.status === "suspended" && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleActivateOrganizer(organizer.id)
-                              }
-                              className="text-green-600"
-                            >
-                              <UserCheck className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                              {t("admin.organizers.actions.activate")}
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteOrganizer(organizer.id)}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                            {t("admin.organizers.actions.deleteOrganizer")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                {organizersLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-12">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                      <span className="ml-2 text-muted-foreground">
+                        {t("common.loading")}
+                      </span>
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : organizersError ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="text-center py-12 text-red-500"
+                    >
+                      <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+                      {t("common.errorLoadingData")}
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedOrganizers.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={8}
+                      className="text-center py-12 text-muted-foreground"
+                    >
+                      {t("admin.organizers.noOrganizers")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedOrganizers.map((organizer) => (
+                    <TableRow key={organizer.id}>
+                      <TableCell>
+                        <div className="flex items-center space-x-3 rtl:space-x-reverse">
+                          <img
+                            src={
+                              organizer.profileImage ||
+                              "/public/Portrait_Placeholder.png"
+                            }
+                            alt={organizer.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                          <div className="rtl:text-right ltr:text-left">
+                            <div className="flex items-center gap-2 rtl:flex-row-reverse">
+                              <p className="font-medium">{organizer.name}</p>
+                              {organizer.verified && (
+                                <Badge variant="outline" className="text-xs">
+                                  <CheckCircle className="h-3 w-3 mr-1 rtl:ml-1 rtl:mr-0" />
+                                  {t("admin.organizers.verified")}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {organizer.location}
+                            </p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="rtl:text-right ltr:text-left">
+                          <p className="text-sm">{organizer.email}</p>
+                          <p
+                            className="text-sm text-muted-foreground"
+                            dir="ltr"
+                          >
+                            {formatPhone(organizer.phone)}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getCategoryColor(organizer.category)}>
+                          <div className="flex items-center gap-1 rtl:flex-row-reverse">
+                            {getCategoryIcon(organizer.category)}
+                            {getCategoryText(organizer.category)}
+                          </div>
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusColor(organizer.status)}>
+                          {getStatusText(organizer.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm rtl:text-right ltr:text-left">
+                          {formatNumberForLocale(
+                            organizer.totalEvents,
+                            i18n.language
+                          )}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <p className="text-sm rtl:text-right ltr:text-left">
+                          {formatNumberForLocale(
+                            organizer.totalRevenue,
+                            i18n.language
+                          )}{" "}
+                          EGP
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 rtl:flex-row-reverse">
+                          <Star className="h-4 w-4 text-yellow-500" />
+                          <span className="text-sm">{organizer.rating}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="rtl:text-right ltr:text-left"
+                          >
+                            <DropdownMenuLabel>
+                              {t("admin.organizers.table.actions")}
+                            </DropdownMenuLabel>
+                            <DropdownMenuItem
+                              onClick={() => handleViewOrganizer(organizer)}
+                            >
+                              <Eye className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                              {t("admin.organizers.actions.viewDetails")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleEditOrganizer(organizer)}
+                            >
+                              <Edit className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                              {t("admin.organizers.actions.editOrganizer")}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleViewEvents(organizer.id)}
+                            >
+                              <Calendar className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                              {t("admin.organizers.actions.viewEvents")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleViewActivity(organizer.id)}
+                            >
+                              <Activity className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                              {t("admin.organizers.actions.viewActivity")}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            {!organizer.verified && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleVerifyOrganizer(organizer.id)
+                                }
+                                className="text-green-600"
+                              >
+                                <CheckCircle className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                                {t("admin.organizers.actions.verify")}
+                              </DropdownMenuItem>
+                            )}
+                            {organizer.status === "active" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleSuspendOrganizer(organizer.id)
+                                }
+                                className="text-yellow-600"
+                              >
+                                <UserX className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                                {t("admin.organizers.actions.suspend")}
+                              </DropdownMenuItem>
+                            )}
+                            {organizer.status === "suspended" && (
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  handleActivateOrganizer(organizer.id)
+                                }
+                                className="text-green-600"
+                              >
+                                <UserCheck className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                                {t("admin.organizers.actions.activate")}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() =>
+                                handleDeleteOrganizer(organizer.id)
+                              }
+                              className="text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                              {t("admin.organizers.actions.deleteOrganizer")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
 
           {/* Pagination */}
-          <ResponsivePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            showInfo={true}
-            infoText={`${t("admin.organizers.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredOrganizers.length)} ${t(
-              "admin.organizers.pagination.of"
-            )} ${filteredOrganizers.length} ${t(
-              "admin.organizers.pagination.results"
-            )}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredOrganizers.length}
-            itemsPerPage={itemsPerPage}
-            className="mt-4"
-          />
+          {totalPages > 1 && (
+            <ResponsivePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              showInfo={true}
+              infoText={`${t("admin.organizers.pagination.showing")} ${
+                (currentPage - 1) * itemsPerPage + 1
+              }-${Math.min(
+                currentPage * itemsPerPage,
+                organizersData?.count || paginatedOrganizers.length
+              )} ${t("admin.organizers.pagination.of")} ${formatNumberForLocale(
+                organizersData?.count || paginatedOrganizers.length,
+                i18n.language
+              )} ${t("admin.organizers.pagination.results")}`}
+              startIndex={(currentPage - 1) * itemsPerPage + 1}
+              endIndex={Math.min(
+                currentPage * itemsPerPage,
+                organizersData?.count || paginatedOrganizers.length
+              )}
+              totalItems={organizersData?.count || paginatedOrganizers.length}
+              itemsPerPage={itemsPerPage}
+              className="mt-4"
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -1830,57 +2017,7 @@ const OrganizersManagement: React.FC = () => {
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
               {t("admin.organizers.add.cancel")}
             </Button>
-            <Button
-              onClick={() => {
-                const newId = `ORG${String(organizers.length + 1).padStart(
-                  3,
-                  "0"
-                )}`;
-                const organizerToAdd: Organizer = {
-                  id: newId,
-                  name: newOrganizer.name || "New Organizer",
-                  email: newOrganizer.email || "new@organizer.com",
-                  phone: newOrganizer.phone || "+20 10 0000 0000",
-                  status: newOrganizer.status || "pending",
-                  registrationDate: new Date().toISOString().split("T")[0],
-                  lastLogin: new Date().toISOString(),
-                  totalEvents: 0,
-                  totalRevenue: 0,
-                  commissionRate: 10,
-                  rating: 0,
-                  verified: false,
-                  category: newOrganizer.category || "other",
-                  location: newOrganizer.location || "Egypt",
-                  description:
-                    newOrganizer.description || "New organizer account",
-                  contactPerson: "Contact Person",
-                  payoutMethod: "bank",
-                  minimumPayout: 1000,
-                  totalPayouts: 0,
-                  pendingPayout: 0,
-                  eventsThisMonth: 0,
-                  eventsLastMonth: 0,
-                  averageRating: 0,
-                  totalReviews: 0,
-                  responseRate: 0,
-                  responseTime: 24,
-                  cancellationRate: 0,
-                  refundRate: 0,
-                  customerSatisfaction: 0,
-                  repeatCustomers: 0,
-                };
-                setOrganizers((prevOrganizers) => [
-                  ...prevOrganizers,
-                  organizerToAdd,
-                ]);
-                toast({
-                  title: t("admin.organizers.toast.organizerAdded"),
-                  description: t("admin.organizers.toast.organizerAddedDesc"),
-                });
-                setIsAddDialogOpen(false);
-                setNewOrganizer({});
-              }}
-            >
+            <Button onClick={handleAddOrganizer}>
               {t("admin.organizers.add.save")}
             </Button>
           </DialogFooter>
@@ -2217,8 +2354,8 @@ const OrganizersManagement: React.FC = () => {
                       setNewEvent({
                         ...newEvent,
                         commissionRate: {
-                          ...newEvent.commissionRate,
                           type: value as "percentage" | "flat",
+                          value: newEvent.commissionRate?.value || 10,
                         },
                       })
                     }
@@ -2243,7 +2380,7 @@ const OrganizersManagement: React.FC = () => {
                       setNewEvent({
                         ...newEvent,
                         commissionRate: {
-                          ...newEvent.commissionRate,
+                          type: newEvent.commissionRate?.type || "percentage",
                           value: parseFloat(e.target.value) || 0,
                         },
                       })
@@ -2294,8 +2431,8 @@ const OrganizersManagement: React.FC = () => {
                       setNewEvent({
                         ...newEvent,
                         transferFee: {
-                          ...newEvent.transferFee,
                           type: value as "percentage" | "flat",
+                          value: newEvent.transferFee?.value || 5,
                         },
                       })
                     }
@@ -2320,7 +2457,7 @@ const OrganizersManagement: React.FC = () => {
                       setNewEvent({
                         ...newEvent,
                         transferFee: {
-                          ...newEvent.transferFee,
+                          type: newEvent.transferFee?.type || "percentage",
                           value: parseFloat(e.target.value) || 0,
                         },
                       })
@@ -2691,6 +2828,7 @@ const OrganizersManagement: React.FC = () => {
             </Button>
             <Button
               onClick={() => {
+                if (!editingEvent) return;
                 setOrganizerEvents((prevEvents) =>
                   prevEvents.map((event) =>
                     event.id === editingEvent.id ? editingEvent : event

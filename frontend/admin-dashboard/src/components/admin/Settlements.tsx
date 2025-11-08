@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { financesApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -125,11 +127,9 @@ type Settlement = {
 const Settlements = () => {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   // State
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
-  const [owners, setOwners] = useState<Owner[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOwner, setSelectedOwner] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
@@ -140,6 +140,84 @@ const Settlements = () => {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [settlementsPerPage, setSettlementsPerPage] = useState(25);
+
+  // Fetch settlements from API
+  const { data: settlementsData, isLoading: settlementsLoading, error: settlementsError } = useQuery({
+    queryKey: ['settlements', searchTerm, dateFrom, dateTo, currentPage, settlementsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: settlementsPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      return await financesApi.getSettlements(params);
+    },
+  });
+
+  // Transform API settlements to match Settlement interface
+  const settlements: Settlement[] = useMemo(() => {
+    if (!settlementsData?.results) return [];
+    return settlementsData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      ownerId: item.owner?.id?.toString() || item.owner_id?.toString() || '',
+      ownerName: item.owner?.name || item.owner_name || '',
+      amount: parseFloat(item.amount) || 0,
+      paymentMethodId: item.payment_method?.id?.toString() || item.payment_method_id?.toString() || '',
+      paymentMethodName: item.payment_method?.name || item.payment_method_name || '',
+      date: item.date || item.settlement_date || item.created_at || '',
+      notes: item.notes || undefined,
+      status: (item.status || 'completed') as "completed" | "pending" | "cancelled",
+      referenceNumber: item.reference_number || item.reference || '',
+      createdAt: item.created_at || item.createdAt || '',
+      updatedAt: item.updated_at || item.updatedAt || '',
+    }));
+  }, [settlementsData]);
+
+  // Extract unique owners and payment methods from settlements
+  const owners: Owner[] = useMemo(() => {
+    const ownerMap = new Map<string, Owner>();
+    settlements.forEach((settlement) => {
+      if (settlement.ownerId && settlement.ownerName) {
+        if (!ownerMap.has(settlement.ownerId)) {
+          ownerMap.set(settlement.ownerId, {
+            id: settlement.ownerId,
+            name: settlement.ownerName,
+            email: '',
+            phone: '',
+            currentBalance: 0,
+            owedAmount: 0,
+            totalDeposits: 0,
+            totalSettlements: 0,
+            status: 'active',
+          });
+        }
+        const owner = ownerMap.get(settlement.ownerId)!;
+        owner.totalSettlements += settlement.amount;
+      }
+    });
+    return Array.from(ownerMap.values());
+  }, [settlements]);
+
+  const paymentMethods: PaymentMethod[] = useMemo(() => {
+    const methodMap = new Map<string, PaymentMethod>();
+    settlements.forEach((settlement) => {
+      if (settlement.paymentMethodId && settlement.paymentMethodName) {
+        if (!methodMap.has(settlement.paymentMethodId)) {
+          methodMap.set(settlement.paymentMethodId, {
+            id: settlement.paymentMethodId,
+            name: settlement.paymentMethodName,
+            description: '',
+            isActive: true,
+          });
+        }
+      }
+    });
+    return Array.from(methodMap.values());
+  }, [settlements]);
 
   // Dialog states
   const [showAddSettlement, setShowAddSettlement] = useState(false);
@@ -328,16 +406,11 @@ const Settlements = () => {
     generateMockData();
   }, []);
 
-  // Filter settlements based on search and filters
+  // Filtered settlements (API handles most filtering, but we filter owner/status/payment method client-side if needed)
   const filteredSettlements = useMemo(() => {
+    // API already handles search and date filtering
+    // Filter by owner, status, and payment method client-side
     return settlements.filter((settlement) => {
-      const matchesSearch =
-        settlement.ownerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        settlement.referenceNumber
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        settlement.notes?.toLowerCase().includes(searchTerm.toLowerCase());
-
       const matchesOwner =
         selectedOwner === "all" || settlement.ownerId === selectedOwner;
       const matchesStatus =
@@ -346,33 +419,15 @@ const Settlements = () => {
         selectedPaymentMethod === "all" ||
         settlement.paymentMethodId === selectedPaymentMethod;
 
-      const matchesDateRange =
-        (!dateFrom || settlement.date >= dateFrom) &&
-        (!dateTo || settlement.date <= dateTo);
-
-      return (
-        matchesSearch &&
-        matchesOwner &&
-        matchesStatus &&
-        matchesPaymentMethod &&
-        matchesDateRange
-      );
+      return matchesOwner && matchesStatus && matchesPaymentMethod;
     });
-  }, [
-    settlements,
-    searchTerm,
-    selectedOwner,
-    selectedStatus,
-    selectedPaymentMethod,
-    dateFrom,
-    dateTo,
-  ]);
+  }, [settlements, selectedOwner, selectedStatus, selectedPaymentMethod]);
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredSettlements.length / settlementsPerPage);
-  const startIndex = (currentPage - 1) * settlementsPerPage;
-  const endIndex = startIndex + settlementsPerPage;
-  const paginatedSettlements = filteredSettlements.slice(startIndex, endIndex);
+  // Pagination - API handles pagination, so we use the data directly
+  const totalPages = settlementsData?.total_pages || 1;
+  const startIndex = settlementsData?.page ? (settlementsData.page - 1) * settlementsData.page_size : 0;
+  const endIndex = startIndex + (settlementsData?.page_size || settlementsPerPage);
+  const paginatedSettlements = filteredSettlements; // API already paginates
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -485,7 +540,9 @@ const Settlements = () => {
     };
 
     // Add settlement
-    setSettlements((prev) => [newSettlement, ...prev]);
+    // Note: Settlement creation would need API endpoint
+    // For now, invalidate query to refetch
+    queryClient.invalidateQueries({ queryKey: ['settlements'] });
 
     // Update owner's owed amount and company wallet
     if (owner) {
@@ -543,7 +600,9 @@ const Settlements = () => {
       );
     }
 
-    setSettlements((prev) => prev.filter((s) => s.id !== settlementId));
+    // Note: Settlement deletion would need API endpoint
+    // For now, invalidate query to refetch
+    queryClient.invalidateQueries({ queryKey: ['settlements'] });
     toast({
       title: t("admin.settlements.settlementDeleted"),
       description: t("admin.settlements.settlementDeletedDesc"),
@@ -1071,13 +1130,13 @@ const Settlements = () => {
           </div>
 
           {/* Pagination */}
-          {totalPages > 1 && (
+          {!settlementsLoading && !settlementsError && totalPages > 1 && (
             <div className="flex items-center justify-between space-x-2 py-4 rtl:space-x-reverse">
               <div className="text-sm text-muted-foreground rtl:text-right">
                 {t("admin.settlements.pagination.showing")} {startIndex + 1}-
-                {Math.min(endIndex, filteredSettlements.length)}{" "}
+                {Math.min(endIndex, settlementsData?.count || 0)}{" "}
                 {t("admin.settlements.pagination.of")}{" "}
-                {filteredSettlements.length}{" "}
+                {settlementsData?.count || 0}{" "}
                 {t("admin.settlements.pagination.results")}
               </div>
               <Pagination>

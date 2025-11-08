@@ -60,6 +60,8 @@ import {
   UserCheck,
   UserX,
   CalendarX,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { format, parseISO, isAfter } from "date-fns";
@@ -68,6 +70,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrencyForLocale } from "@/lib/utils";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { nfcCardsApi, customersApi } from "@/lib/api/adminApi";
 
 type NFCCard = {
   id: string;
@@ -123,12 +127,51 @@ const NFCCardManagement: React.FC = () => {
     serialEnd: "",
   });
 
+  const queryClient = useQueryClient();
+
   // Get date locale based on current language
   const getDateLocale = () => {
     return i18n.language === "ar" ? ar : enUS;
   };
 
-  // Mock NFC cards data - now as state to make it mutable
+  // Fetch NFC cards from API
+  const { data: cardsData, isLoading: cardsLoading, error: cardsError } = useQuery({
+    queryKey: ['nfcCards', searchTerm, statusFilter, customerFilter, currentPage, cardsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: cardsPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (customerFilter !== 'all') params.customer = customerFilter;
+      
+      const response = await nfcCardsApi.getCards(params);
+      return response;
+    },
+  });
+
+  // Transform API cards to match NFCCard interface
+  const nfcCards: NFCCard[] = useMemo(() => {
+    if (!cardsData?.results) return [];
+    return cardsData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      serialNumber: item.serial_number || '',
+      customerId: item.customer?.id?.toString() || item.customer_id?.toString() || '',
+      customerName: item.customer_name || item.customer?.name || '',
+      status: item.status as "active" | "inactive" | "expired",
+      issueDate: item.issue_date || '',
+      expiryDate: item.expiry_date || '',
+      balance: parseFloat(item.balance) || 0,
+      lastUsed: item.last_used || '',
+      usageCount: item.usage_count || 0,
+      cardType: item.card_type as "standard" | "premium" | "vip" || "standard",
+    }));
+  }, [cardsData]);
+
+  // Mock NFC cards data (removed - using API now)
+  /*
   const [nfcCards, setNfcCards] = useState<NFCCard[]>([
     {
       id: "1",
@@ -326,88 +369,56 @@ const NFCCardManagement: React.FC = () => {
       cardType: "vip",
     },
   ]);
+  */
 
-  // Mock customers data
-  const customers = useMemo(
-    (): Customer[] => [
-      {
-        id: "C001",
-        name: t("admin.tickets.nfc.mock.customer.ahmedHassan"),
-        email: "ahmed@example.com",
-        phone: "+20 10 1234 5678",
-        hasCard: true,
-      },
-      {
-        id: "C002",
-        name: t("admin.tickets.nfc.mock.customer.sarahMohamed"),
-        email: "sarah@example.com",
-        phone: "+20 10 2345 6789",
-        hasCard: true,
-      },
-      {
-        id: "C003",
-        name: t("admin.tickets.nfc.mock.customer.omarAli"),
-        email: "omar@example.com",
-        phone: "+20 10 3456 7890",
-        hasCard: true,
-      },
-      {
-        id: "C004",
-        name: t("admin.tickets.nfc.mock.customer.fatimaAhmed"),
-        email: "fatima@example.com",
-        phone: "+20 10 4567 8901",
-        hasCard: true,
-      },
-      {
-        id: "C005",
-        name: t("admin.tickets.nfc.mock.customer.youssefIbrahim"),
-        email: "youssef@example.com",
-        phone: "+20 10 5678 9012",
-        hasCard: true,
-      },
-      {
-        id: "C006",
-        name: t("admin.tickets.nfc.mock.customer.nourHassan"),
-        email: "nour@example.com",
-        phone: "+20 10 6789 0123",
-        hasCard: false,
-      },
-      {
-        id: "C007",
-        name: t("admin.tickets.nfc.mock.customer.mariamAli"),
-        email: "mariam@example.com",
-        phone: "+20 10 7890 1234",
-        hasCard: false,
-      },
-    ],
-    [t]
-  );
+  // Fetch customers for assign dialog
+  const { data: customersData } = useQuery({
+    queryKey: ['customers', 'all'],
+    queryFn: async () => {
+      const response = await customersApi.getCustomers({ page_size: 1000 });
+      return response;
+    },
+  });
 
-  // Filter cards based on search and filters
+  // Transform customers for assign dialog
+  const customers: Customer[] = useMemo(() => {
+    if (!customersData?.results) return [];
+    return customersData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      name: item.name || '',
+      email: item.email || '',
+      phone: item.phone || item.mobile_number || '',
+      hasCard: item.nfc_cards?.length > 0 || false,
+    }));
+  }, [customersData]);
+
+  // Filtered cards (API handles most filtering, but we keep client-side filtering for compatibility)
   const filteredCards = useMemo(() => {
-    return nfcCards.filter((card) => {
-      const matchesSearch =
-        card.serialNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        card.customerName.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus =
-        statusFilter === "all" || card.status === statusFilter;
-      const matchesCustomer =
-        customerFilter === "all" || card.customerId === customerFilter;
+    return nfcCards; // API handles filtering
+  }, [nfcCards]);
 
-      return matchesSearch && matchesStatus && matchesCustomer;
-    });
-  }, [nfcCards, searchTerm, statusFilter, customerFilter]);
-
-  // Get unique customers for filter
+  // Get unique customers for filter from cards data
   const uniqueCustomers = useMemo(() => {
-    return customers.filter((customer) => customer.hasCard);
-  }, [customers]);
+    if (!cardsData?.results) return [];
+    const customerMap = new Map();
+    cardsData.results.forEach((card: any) => {
+      const customerId = card.customer?.id?.toString() || card.customer_id?.toString();
+      const customerName = card.customer_name || card.customer?.name;
+      if (customerId && customerName && !customerMap.has(customerId)) {
+        customerMap.set(customerId, {
+          id: customerId,
+          name: customerName,
+        });
+      }
+    });
+    return Array.from(customerMap.values());
+  }, [cardsData]);
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredCards.length / cardsPerPage);
-  const startIndex = (currentPage - 1) * cardsPerPage;
-  const endIndex = startIndex + cardsPerPage;
-  const paginatedCards = filteredCards.slice(startIndex, endIndex);
+  // Pagination from API response
+  const totalPages = cardsData?.total_pages || 1;
+  const startIndex = cardsData?.page ? (cardsData.page - 1) * cardsData.page_size : 0;
+  const endIndex = startIndex + (cardsData?.page_size || cardsPerPage);
+  const paginatedCards = filteredCards;
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -557,17 +568,79 @@ const NFCCardManagement: React.FC = () => {
     return { valid: true, range };
   };
 
+  // Create card mutation
+  const createCardMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await nfcCardsApi.createCard(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nfcCards'] });
+      toast({
+        title: t("admin.tickets.nfc.toast.cardAdded"),
+        description: t("admin.tickets.nfc.toast.cardAddedDesc"),
+      });
+      setIsAssignDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.tickets.nfc.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update card mutation
+  const updateCardMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return await nfcCardsApi.updateCard(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nfcCards'] });
+      toast({
+        title: t("admin.tickets.nfc.toast.cardUpdated"),
+        description: t("admin.tickets.nfc.toast.cardUpdatedDesc"),
+      });
+      setIsEditDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.tickets.nfc.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Bulk operation mutation
+  const bulkOperationMutation = useMutation({
+    mutationFn: async (data: { operation: string; card_ids: string[] }) => {
+      return await nfcCardsApi.bulkOperation(data);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['nfcCards'] });
+      toast({
+        title: t("admin.tickets.nfc.toast.bulkOperationSuccess"),
+        description: `${data.count || 0} cards updated`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.tickets.nfc.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleEditCard = (card: NFCCard) => {
     setSelectedCard(card);
     setIsEditDialogOpen(true);
   };
 
   const handleDeleteCard = (cardId: string) => {
-    setNfcCards((prevCards) => prevCards.filter((card) => card.id !== cardId));
-    toast({
-      title: t("admin.tickets.nfc.toast.cardDeleted"),
-      description: t("admin.tickets.nfc.toast.cardDeletedDesc"),
-    });
+    // Note: Backend may not support DELETE, so we deactivate instead
+    updateCardMutation.mutate({ id: cardId, data: { status: 'inactive' } });
   };
 
   const handleExportCards = () => {
@@ -586,38 +659,30 @@ const NFCCardManagement: React.FC = () => {
   };
 
   const handleDeactivateCard = (cardId: string) => {
-    setNfcCards((prevCards) =>
-      prevCards.map((card) =>
-        card.id === cardId ? { ...card, status: "inactive" as const } : card
-      )
-    );
-    toast({
-      title: t("admin.tickets.nfc.toast.cardDeactivated"),
-      description: t("admin.tickets.nfc.toast.cardDeactivatedDesc"),
-    });
+    updateCardMutation.mutate({ id: cardId, data: { status: 'inactive' } });
   };
 
   const handleReactivateCard = (cardId: string) => {
-    setNfcCards((prevCards) =>
-      prevCards.map((card) =>
-        card.id === cardId ? { ...card, status: "active" as const } : card
-      )
-    );
-    toast({
-      title: t("admin.tickets.nfc.toast.cardReactivated"),
-      description: t("admin.tickets.nfc.toast.cardReactivatedDesc"),
-    });
+    updateCardMutation.mutate({ id: cardId, data: { status: 'active' } });
   };
 
   const handleAssignCard = () => {
-    toast({
-      title: t("admin.tickets.nfc.toast.cardAdded"),
-      description: t("admin.tickets.nfc.toast.cardAddedDesc"),
-    });
-    setIsAssignDialogOpen(false);
+    // Create card with customer assignment
+    const cardData = {
+      serial_number: newCardForm.startSerialNumber || `NFC-${Date.now()}`,
+      customer_id: customerFilter !== 'all' ? customerFilter : null,
+      status: 'active',
+      card_type: 'standard',
+      expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    };
+    
+    createCardMutation.mutate(cardData);
+    setNewCardForm({ quantity: 1, startSerialNumber: "" });
   };
 
   const handleAssignCardBySerial = () => {
+    // Find card by serial number and assign to customer
+    // This would require finding the card first, then updating it
     toast({
       title: t("admin.tickets.nfc.toast.cardAssignedBySerial"),
       description: t("admin.tickets.nfc.toast.cardAssignedBySerialDesc"),
@@ -656,55 +721,40 @@ const NFCCardManagement: React.FC = () => {
       return;
     }
 
-    // Check if any serial numbers already exist
-    const existingSerialNumbers = serialNumbers.filter((serialNumber) =>
-      nfcCards.some((card) => card.serialNumber === serialNumber)
-    );
-
-    if (existingSerialNumbers.length > 0) {
-      toast({
-        title: t("admin.tickets.nfc.toast.error"),
-        description: `Some serial numbers already exist: ${existingSerialNumbers
-          .slice(0, 3)
-          .join(", ")}${existingSerialNumbers.length > 3 ? "..." : ""}`,
-        variant: "destructive",
+    // Create cards via API (bulk create)
+    const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    
+    // Create cards one by one (or use bulk endpoint if available)
+    Promise.all(
+      serialNumbers.map((serialNumber) =>
+        nfcCardsApi.createCard({
+          serial_number: serialNumber,
+          status: 'inactive',
+          card_type: 'standard',
+          expiry_date: expiryDate,
+        })
+      )
+    )
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ['nfcCards'] });
+        setIsAddByRangeDialogOpen(false);
+        setAddByRangeForm({ serialStart: "", serialEnd: "" });
+        toast({
+          title: t("admin.tickets.nfc.toast.cardsAddedByRange"),
+          description: t("admin.tickets.nfc.toast.cardsAddedByRangeDesc", {
+            count: serialNumbers.length,
+            start: addByRangeForm.serialStart,
+            end: addByRangeForm.serialEnd,
+          }),
+        });
+      })
+      .catch((error) => {
+        toast({
+          title: t("common.error"),
+          description: error.response?.data?.error?.message || error.message || t("admin.tickets.nfc.toast.error"),
+          variant: "destructive",
+        });
       });
-      return;
-    }
-
-    // Create new cards locally
-    const newCards: NFCCard[] = serialNumbers.map((serialNumber, index) => ({
-      id: (nfcCards.length + index + 1).toString(),
-      serialNumber: serialNumber,
-      customerId: "", // Unassigned
-      customerName: "", // Unassigned
-      status: "inactive" as const, // Unassigned cards are inactive
-      issueDate: new Date().toISOString().split("T")[0],
-      expiryDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0], // 1 year from now
-      balance: 0,
-      lastUsed: "",
-      usageCount: 0,
-      cardType: "standard" as const, // Default card type
-    }));
-
-    // Add cards to local state
-    setNfcCards((prevCards) => [...prevCards, ...newCards]);
-
-    // Close dialog and reset form
-    setIsAddByRangeDialogOpen(false);
-    setAddByRangeForm({ serialStart: "", serialEnd: "" });
-
-    // Show success toast
-    toast({
-      title: t("admin.tickets.nfc.toast.cardsAddedByRange"),
-      description: t("admin.tickets.nfc.toast.cardsAddedByRangeDesc", {
-        count: serialNumbers.length,
-        start: addByRangeForm.serialStart,
-        end: addByRangeForm.serialEnd,
-      }),
-    });
   };
 
   const handleCopyKey = () => {
@@ -716,11 +766,18 @@ const NFCCardManagement: React.FC = () => {
   };
 
   const handleSaveCardChanges = () => {
-    toast({
-      title: t("admin.tickets.nfc.toast.cardUpdated"),
-      description: t("admin.tickets.nfc.toast.cardUpdatedDesc"),
-    });
-    setIsEditDialogOpen(false);
+    if (!selectedCard) return;
+    
+    const formData = {
+      serial_number: selectedCard.serialNumber,
+      status: selectedCard.status,
+      card_type: selectedCard.cardType,
+      expiry_date: selectedCard.expiryDate,
+      balance: selectedCard.balance,
+      // Add other fields as needed
+    };
+    
+    updateCardMutation.mutate({ id: selectedCard.id, data: formData });
   };
 
   return (
@@ -922,7 +979,31 @@ const NFCCardManagement: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedCards.map((card) => (
+                {cardsLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                      <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+                    </TableCell>
+                  </TableRow>
+                ) : cardsError ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                      <span className="ml-2 text-red-500">
+                        {t("common.error")}: {cardsError instanceof Error ? cardsError.message : t("admin.tickets.nfc.toast.error")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedCards.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">{t("admin.tickets.nfc.noCardsFound")}</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedCards.map((card) => (
                   <TableRow key={card.id}>
                     <TableCell>
                       <div className="rtl:text-right">
@@ -1039,30 +1120,33 @@ const NFCCardManagement: React.FC = () => {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                ))
+                )}
               </TableBody>
             </Table>
           </div>
 
           {/* Pagination */}
-          <ResponsivePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            showInfo={true}
-            infoText={`${t("admin.tickets.nfc.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredCards.length)} ${t(
-              "admin.tickets.nfc.pagination.of"
-            )} ${filteredCards.length} ${t(
-              "admin.tickets.nfc.pagination.results"
-            )}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredCards.length}
-            itemsPerPage={cardsPerPage}
-            className="mt-4"
-          />
+          {!cardsLoading && !cardsError && (
+            <ResponsivePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              showInfo={true}
+              infoText={`${t("admin.tickets.nfc.pagination.showing")} ${
+                startIndex + 1
+              }-${Math.min(endIndex, cardsData?.count || 0)} ${t(
+                "admin.tickets.nfc.pagination.of"
+              )} ${cardsData?.count || 0} ${t(
+                "admin.tickets.nfc.pagination.results"
+              )}`}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={cardsData?.count || 0}
+              itemsPerPage={cardsPerPage}
+              className="mt-4"
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -1076,7 +1160,7 @@ const NFCCardManagement: React.FC = () => {
             <CreditCard className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           </CardHeader>
           <CardContent className="rtl:text-right">
-            <div className="text-2xl font-bold">{nfcCards.length}</div>
+            <div className="text-2xl font-bold">{cardsData?.count || 0}</div>
           </CardContent>
         </Card>
 
@@ -1089,7 +1173,7 @@ const NFCCardManagement: React.FC = () => {
           </CardHeader>
           <CardContent className="rtl:text-right">
             <div className="text-2xl font-bold text-green-600">
-              {nfcCards.filter((card) => card.status === "active").length}
+              {cardsData?.results?.filter((card: any) => card.status === "active").length || 0}
             </div>
           </CardContent>
         </Card>
@@ -1103,7 +1187,7 @@ const NFCCardManagement: React.FC = () => {
           </CardHeader>
           <CardContent className="rtl:text-right">
             <div className="text-2xl font-bold text-yellow-600">
-              {nfcCards.filter((card) => card.status === "inactive").length}
+              {cardsData?.results?.filter((card: any) => card.status === "inactive").length || 0}
             </div>
           </CardContent>
         </Card>
@@ -1117,7 +1201,7 @@ const NFCCardManagement: React.FC = () => {
           </CardHeader>
           <CardContent className="rtl:text-right">
             <div className="text-2xl font-bold text-red-600">
-              {nfcCards.filter((card) => card.status === "expired").length}
+              {cardsData?.results?.filter((card: any) => card.status === "expired").length || 0}
             </div>
           </CardContent>
         </Card>

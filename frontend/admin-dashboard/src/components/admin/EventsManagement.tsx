@@ -70,7 +70,7 @@ import { useTranslation } from "react-i18next";
 import { format, parseISO } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { eventsApi } from "@/lib/api/adminApi";
+import { eventsApi, usersApi, venuesApi } from "@/lib/api/adminApi";
 import { formatNumberForLocale, formatCurrencyForLocale } from "@/lib/utils";
 import i18n from "@/lib/i18n";
 import { ExportDialog } from "@/components/ui/export-dialog";
@@ -359,6 +359,29 @@ const EventsManagement: React.FC = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const queryClient = useQueryClient();
 
+  // Fetch organizers and venues for form dropdowns
+  const { data: organizersData, isLoading: organizersLoading } = useQuery({
+    queryKey: ['organizers'],
+    queryFn: () => usersApi.getOrganizers({ page_size: 1000 }),
+  });
+
+  const { data: venuesData, isLoading: venuesLoading } = useQuery({
+    queryKey: ['venues'],
+    queryFn: () => venuesApi.getVenues({ page_size: 1000 }),
+  });
+
+  // Debug: Log organizers and venues data
+  useEffect(() => {
+    if (organizersData) {
+      console.log('Organizers data:', organizersData);
+      console.log('Organizers list:', organizersData?.results || organizersData);
+    }
+    if (venuesData) {
+      console.log('Venues data:', venuesData);
+      console.log('Venues list:', venuesData?.results || venuesData);
+    }
+  }, [organizersData, venuesData]);
+
   // Fetch events from API
   const { data: eventsData, isLoading: eventsLoading, error: eventsError } = useQuery({
     queryKey: ['events', searchTerm, statusFilter, categoryFilter, locationFilter, organizerFilter, currentPage],
@@ -427,9 +450,51 @@ const EventsManagement: React.FC = () => {
       setIsAddDialogOpen(false);
     },
     onError: (error: any) => {
+      console.error('Event creation error:', error);
+      console.error('Error response:', error?.response);
+      console.error('Error response data:', error?.response?.data);
+      
+      // Extract validation errors from Django REST Framework format
+      let errorMessage = 'Failed to create event';
+      const errorData = error?.response?.data;
+      
+      if (errorData) {
+        // Check for DRF validation errors
+        if (errorData.error?.message) {
+          errorMessage = errorData.error.message;
+        } else if (errorData.error?.details) {
+          // Format validation errors
+          const details = errorData.error.details;
+          const errorList = Object.entries(details).map(([field, messages]: [string, any]) => {
+            const msg = Array.isArray(messages) ? messages.join(', ') : messages;
+            return `${field}: ${msg}`;
+          });
+          errorMessage = errorList.join('; ');
+        } else if (typeof errorData === 'object') {
+          // Check for field-level errors (DRF format)
+          const fieldErrors = Object.entries(errorData)
+            .filter(([key]) => key !== 'error')
+            .map(([field, messages]: [string, any]) => {
+              const msg = Array.isArray(messages) ? messages.join(', ') : messages;
+              return `${field}: ${msg}`;
+            });
+          if (fieldErrors.length > 0) {
+            errorMessage = fieldErrors.join('; ');
+          } else {
+            errorMessage = JSON.stringify(errorData);
+          }
+        } else if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        }
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
+      console.error('Formatted error message:', errorMessage);
+      
       toast({
         title: t("common.error"),
-        description: error.response?.data?.error?.message || error.message || t("admin.events.toast.error"),
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -1735,12 +1800,22 @@ const EventsManagement: React.FC = () => {
   };
 
   const handleSaveNewEvent = () => {
+    // Check if organizers are available
+    const organizersList = organizersData?.results || organizersData || [];
+    if (organizersList.length === 0) {
+      toast({
+        title: t("admin.events.toast.validationError"),
+        description: "No organizers available. Please create an organizer first.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Validate required fields
     if (
       !newEvent.title ||
       !newEvent.organizer ||
-      !newEvent.date ||
-      !newEvent.category
+      !newEvent.date
     ) {
       toast({
         title: t("admin.events.toast.validationError"),
@@ -1750,19 +1825,73 @@ const EventsManagement: React.FC = () => {
       return;
     }
 
-    // Prepare data for API
+    // Validate organizer is not the placeholder value
+    if (newEvent.organizer === "no-organizers") {
+      toast({
+        title: t("admin.events.toast.validationError"),
+        description: "Please select a valid organizer.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate total tickets
+    if (!newEvent.totalTickets || newEvent.totalTickets < 1) {
+      toast({
+        title: t("admin.events.toast.validationError"),
+        description: "Total tickets must be at least 1",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate ticket limit
+    if (!newEvent.ticketLimit || newEvent.ticketLimit < 1) {
+      toast({
+        title: t("admin.events.toast.validationError"),
+        description: "Ticket limit must be at least 1",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prepare data for API - ensure IDs are used
+    const organizerId = newEvent.organizer ? parseInt(newEvent.organizer) : null;
+    if (!organizerId || isNaN(organizerId)) {
+      toast({
+        title: t("admin.events.toast.validationError"),
+        description: t("admin.events.toast.invalidOrganizer"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const venueId = newEvent.location && newEvent.location !== "none" ? parseInt(newEvent.location) : null;
+    const categoryId = newEvent.category ? parseInt(newEvent.category) : null;
+
+    // Ensure time format is correct (HH:MM:SS)
+    let timeValue = newEvent.time || "00:00:00";
+    if (timeValue.length === 5) {
+      // If format is HH:MM, add :00
+      timeValue = timeValue + ":00";
+    }
+
     const eventData: any = {
-      title: newEvent.title,
-      description: newEvent.description,
-      organizer: newEvent.organizer, // Should be organizer ID
-      venue: newEvent.location, // Should be venue ID
+      title: newEvent.title.trim(),
+      description: (newEvent.description || '').trim(),
+      organizer: organizerId,
+      venue: venueId && !isNaN(venueId) ? venueId : null,
       date: newEvent.date,
-      time: newEvent.time || "00:00",
-      category: newEvent.category, // Should be category ID
+      time: timeValue,
+      category: categoryId && !isNaN(categoryId) ? categoryId : null,
       total_tickets: newEvent.totalTickets,
       ticket_limit: newEvent.ticketLimit,
       ticket_transfer_enabled: newEvent.ticketTransferEnabled,
     };
+
+    // Log the data being sent for debugging
+    console.log('Creating event with data:', eventData);
+    console.log('Raw form data:', newEvent);
 
     createEventMutation.mutate(eventData);
 
@@ -4309,13 +4438,31 @@ For questions about this event, please contact the organizer.`;
                 <label className="text-sm font-medium rtl:text-right">
                   {t("admin.events.form.organizer")} *
                 </label>
-                <Input
+                <Select
                   value={newEvent.organizer}
-                  onChange={(e) =>
-                    handleNewEventChange("organizer", e.target.value)
+                  onValueChange={(value) =>
+                    handleNewEventChange("organizer", value)
                   }
-                  placeholder={t("admin.events.form.enterOrganizerName")}
-                />
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={t("admin.events.form.selectOrganizer")}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(organizersData?.results || organizersData || []).length === 0 ? (
+                      <SelectItem value="no-organizers" disabled>
+                        No organizers available. Please create an organizer first.
+                      </SelectItem>
+                    ) : (
+                      (organizersData?.results || organizersData || []).map((organizer: any) => (
+                        <SelectItem key={organizer.id} value={organizer.id.toString()}>
+                          {organizer.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right">
@@ -4371,15 +4518,28 @@ For questions about this event, please contact the organizer.`;
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">
-                  {t("admin.events.form.location")} *
+                  {t("admin.events.form.location")}
                 </label>
-                <Input
+                <Select
                   value={newEvent.location}
-                  onChange={(e) =>
-                    handleNewEventChange("location", e.target.value)
+                  onValueChange={(value) =>
+                    handleNewEventChange("location", value)
                   }
-                  placeholder={t("admin.events.form.enterEventLocation")}
-                />
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={t("admin.events.form.selectVenue")}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">{t("admin.events.form.noVenue")}</SelectItem>
+                    {(venuesData?.results || venuesData || []).map((venue: any) => (
+                      <SelectItem key={venue.id} value={venue.id.toString()}>
+                        {venue.name} - {venue.city}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">

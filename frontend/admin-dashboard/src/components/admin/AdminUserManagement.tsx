@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { usersApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -130,9 +132,13 @@ type UserActivity = {
   status: "success" | "failed" | "warning";
 };
 
+type UserType = "admins" | "organizers" | "merchants" | "ushers";
+
 const AdminUserManagement: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [userType, setUserType] = useState<UserType>("admins");
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -153,6 +159,232 @@ const AdminUserManagement: React.FC = () => {
   >([]);
   const [editingRoleName, setEditingRoleName] = useState("");
   const [editingRoleDescription, setEditingRoleDescription] = useState("");
+
+  // Build query params based on userType and filters
+  const getQueryParams = () => {
+    const params: any = {
+      page: currentPage,
+      page_size: itemsPerPage,
+    };
+    
+    if (searchTerm) params.search = searchTerm;
+    if (statusFilter !== 'all') {
+      if (userType === 'admins') {
+        params.is_active = statusFilter === 'active';
+      } else {
+        params.status = statusFilter;
+      }
+    }
+    if (userType === 'admins' && roleFilter !== 'all') {
+      params.role = roleFilter.toUpperCase().replace('_', '_');
+    }
+    if (userType === 'organizers' && roleFilter !== 'all') {
+      params.verified = roleFilter === 'verified';
+    }
+    if (userType === 'merchants' && roleFilter !== 'all') {
+      params.verification_status = roleFilter;
+    }
+    return params;
+  };
+
+  // Fetch users based on userType - using separate queries
+  const adminsQuery = useQuery({
+    queryKey: ['admins', searchTerm, roleFilter, statusFilter, currentPage, itemsPerPage],
+    queryFn: () => usersApi.getAdmins(getQueryParams()),
+    enabled: userType === 'admins',
+  });
+
+  const organizersQuery = useQuery({
+    queryKey: ['organizers', searchTerm, roleFilter, statusFilter, currentPage, itemsPerPage],
+    queryFn: () => usersApi.getOrganizers(getQueryParams()),
+    enabled: userType === 'organizers',
+  });
+
+  const merchantsQuery = useQuery({
+    queryKey: ['merchants', searchTerm, roleFilter, statusFilter, currentPage, itemsPerPage],
+    queryFn: () => usersApi.getMerchants(getQueryParams()),
+    enabled: userType === 'merchants',
+  });
+
+  const ushersQuery = useQuery({
+    queryKey: ['ushers', searchTerm, roleFilter, statusFilter, currentPage, itemsPerPage],
+    queryFn: () => usersApi.getUshers(getQueryParams()),
+    enabled: userType === 'ushers',
+  });
+
+  // Get the active query based on userType
+  const usersData = userType === 'admins' ? adminsQuery.data 
+    : userType === 'organizers' ? organizersQuery.data
+    : userType === 'merchants' ? merchantsQuery.data
+    : ushersQuery.data;
+  
+  const usersLoading = userType === 'admins' ? adminsQuery.isLoading
+    : userType === 'organizers' ? organizersQuery.isLoading
+    : userType === 'merchants' ? merchantsQuery.isLoading
+    : ushersQuery.isLoading;
+  
+  const usersError = userType === 'admins' ? adminsQuery.error
+    : userType === 'organizers' ? organizersQuery.error
+    : userType === 'merchants' ? merchantsQuery.error
+    : ushersQuery.error;
+
+  // Transform API users to match AdminUser interface
+  const adminUsers: AdminUser[] = useMemo(() => {
+    if (!usersData?.results) return [];
+    
+    return usersData.results.map((item: any) => {
+      // Transform based on user type
+      if (userType === 'admins') {
+        return {
+          id: item.id?.toString() || '',
+          username: item.username || '',
+          email: item.email || '',
+          fullName: `${item.first_name || ''} ${item.last_name || ''}`.trim() || item.username,
+          role: (item.role?.toLowerCase() || 'admin') as "super_admin" | "admin" | "usher" | "support",
+          status: (item.is_active ? 'active' : 'inactive') as "active" | "inactive",
+          lastLogin: item.last_login || '',
+          permissions: [], // Permissions not in API response
+          createdAt: item.date_joined || item.created_at || '',
+          phone: item.phone || undefined,
+        };
+      } else if (userType === 'organizers') {
+        return {
+          id: item.id?.toString() || '',
+          username: item.user?.username || item.contact_mobile || '',
+          email: item.user?.email || item.contact_email || '',
+          fullName: item.organization_name || item.user?.first_name || '',
+          role: 'admin' as const, // Organizers shown as admin role
+          status: (item.user?.is_active ? 'active' : 'inactive') as "active" | "inactive",
+          lastLogin: item.user?.last_login || '',
+          permissions: [],
+          createdAt: item.created_at || item.user?.date_joined || '',
+          phone: item.contact_mobile || undefined,
+        };
+      } else if (userType === 'merchants') {
+        return {
+          id: item.id?.toString() || '',
+          username: item.user?.username || item.mobile_number || '',
+          email: item.user?.email || '',
+          fullName: item.store_name || item.user?.first_name || '',
+          role: 'admin' as const,
+          status: (item.user?.is_active ? 'active' : 'inactive') as "active" | "inactive",
+          lastLogin: item.user?.last_login || '',
+          permissions: [],
+          createdAt: item.created_at || item.user?.date_joined || '',
+          phone: item.mobile_number || undefined,
+        };
+      } else { // ushers
+        return {
+          id: item.id?.toString() || '',
+          username: item.user?.username || item.phone_number || '',
+          email: item.user?.email || '',
+          fullName: `${item.user?.first_name || ''} ${item.user?.last_name || ''}`.trim() || item.user?.username || '',
+          role: 'usher' as const,
+          status: (item.user?.is_active ? 'active' : 'inactive') as "active" | "inactive",
+          lastLogin: item.user?.last_login || '',
+          permissions: [],
+          createdAt: item.created_at || item.user?.date_joined || '',
+          phone: item.phone_number || undefined,
+        };
+      }
+    });
+  }, [usersData, userType]);
+
+  // Mutations
+  const createUserMutation = useMutation({
+    mutationFn: async (data: any) => {
+      switch (userType) {
+        case 'admins':
+          return await usersApi.createAdmin(data);
+        case 'organizers':
+          return await usersApi.createOrganizer(data);
+        case 'merchants':
+          return await usersApi.createMerchant(data);
+        case 'ushers':
+          return await usersApi.createUsher(data);
+        default:
+          throw new Error('Invalid user type');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [userType] });
+      toast({
+        title: t("admin.users.toast.userAdded"),
+        description: t("admin.users.toast.userAddedDesc"),
+      });
+      setIsAddDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.users.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      switch (userType) {
+        case 'admins':
+          return await usersApi.updateAdmin(id, data);
+        case 'organizers':
+          return await usersApi.updateOrganizer(id, data);
+        case 'merchants':
+          return await usersApi.updateMerchant(id, data);
+        case 'ushers':
+          return await usersApi.updateUsher(id, data);
+        default:
+          throw new Error('Invalid user type');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [userType] });
+      toast({
+        title: t("admin.users.toast.userUpdated"),
+        description: t("admin.users.toast.userUpdatedDesc"),
+      });
+      setIsEditDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.users.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: async (id: string) => {
+      switch (userType) {
+        case 'admins':
+          return await usersApi.deleteAdmin(id);
+        case 'organizers':
+          return await usersApi.deleteOrganizer(id);
+        case 'merchants':
+          return await usersApi.deleteMerchant(id);
+        case 'ushers':
+          return await usersApi.deleteUsher(id);
+        default:
+          throw new Error('Invalid user type');
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [userType] });
+      toast({
+        title: t("admin.users.toast.userDeleted"),
+        description: t("admin.users.toast.userDeletedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.users.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
 
   // Mock user activity data
   const userActivities: UserActivity[] = [
@@ -212,7 +444,8 @@ const AdminUserManagement: React.FC = () => {
     },
   ];
 
-  // Mock admin users data
+  // Mock admin users data (removed - using API now)
+  /*
   const adminUsers: AdminUser[] = [
     {
       id: "A001",
@@ -428,6 +661,7 @@ const AdminUserManagement: React.FC = () => {
       phone: "+20 10 3456 7890",
     },
   ];
+  */
 
   // Mock roles data
   const roles: Role[] = [
@@ -512,31 +746,30 @@ const AdminUserManagement: React.FC = () => {
     },
   ];
 
-  // Filter users based on search and filters
+  // Filtered users (API handles most filtering, but we filter role client-side if needed)
   const filteredUsers = useMemo(() => {
+    // API already handles search and status filtering
+    // Only filter by role if needed (for admins, role is already filtered by API)
+    if (userType === 'admins' || roleFilter === 'all') {
+      return adminUsers;
+    }
+    // For other user types, role filter might be client-side
     return adminUsers.filter((user) => {
-      const matchesSearch =
-        user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.fullName.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesRole = roleFilter === "all" || user.role === roleFilter;
-      const matchesStatus =
-        statusFilter === "all" || user.status === statusFilter;
-
-      return matchesSearch && matchesRole && matchesStatus;
+      return matchesRole;
     });
-  }, [adminUsers, searchTerm, roleFilter, statusFilter]);
+  }, [adminUsers, roleFilter, userType]);
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedUsers = filteredUsers.slice(startIndex, endIndex);
+  // Pagination - API handles pagination, so we use the data directly
+  const totalPages = usersData?.total_pages || 1;
+  const startIndex = usersData?.page ? (usersData.page - 1) * usersData.page_size : 0;
+  const endIndex = startIndex + (usersData?.page_size || itemsPerPage);
+  const paginatedUsers = filteredUsers; // API already paginates
 
-  // Reset to first page when filters change
+  // Reset to first page when filters or userType change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, roleFilter, statusFilter]);
+  }, [searchTerm, roleFilter, statusFilter, userType]);
 
   const getRoleColor = (role: string) => {
     switch (role) {
@@ -601,10 +834,7 @@ const AdminUserManagement: React.FC = () => {
   };
 
   const handleDeleteUser = (userId: string) => {
-    toast({
-      title: t("admin.users.toast.userDeleted"),
-      description: t("admin.users.toast.userDeletedDesc"),
-    });
+    deleteUserMutation.mutate(userId);
   };
 
   const handleExportUsers = () => {
@@ -653,11 +883,9 @@ const AdminUserManagement: React.FC = () => {
   };
 
   const handleAddUser = () => {
-    toast({
-      title: t("admin.users.toast.userAdded"),
-      description: t("admin.users.toast.userAddedDesc"),
-    });
-    setIsAddDialogOpen(false);
+    // This will be handled by the form in the dialog
+    // The form should call createUserMutation.mutate() with the form data
+    // For now, we'll keep the dialog open and let the form handle submission
   };
 
   const handleEditRoles = () => {
@@ -722,11 +950,22 @@ const AdminUserManagement: React.FC = () => {
   };
 
   const handleSaveUserChanges = () => {
-    toast({
-      title: t("admin.users.toast.userUpdated"),
-      description: t("admin.users.toast.userUpdatedDesc"),
-    });
-    setIsEditDialogOpen(false);
+    if (!selectedUser) return;
+    
+    const formData: any = {
+      username: selectedUser.username,
+      email: selectedUser.email,
+    };
+    
+    // Add type-specific fields
+    if (userType === 'admins') {
+      formData.role = selectedUser.role.toUpperCase().replace('_', '_');
+      formData.is_active = selectedUser.status === 'active';
+    } else {
+      formData.status = selectedUser.status;
+    }
+    
+    updateUserMutation.mutate({ id: selectedUser.id, data: formData });
   };
 
   const getPermissionsForRole = (roleId: string) => {
@@ -874,6 +1113,46 @@ const AdminUserManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* User Type Selector */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={userType === "admins" ? "default" : "outline"}
+              onClick={() => setUserType("admins")}
+              className="text-xs sm:text-sm"
+            >
+              <Shield className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+              {t("admin.users.types.admins")}
+            </Button>
+            <Button
+              variant={userType === "organizers" ? "default" : "outline"}
+              onClick={() => setUserType("organizers")}
+              className="text-xs sm:text-sm"
+            >
+              <Users className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+              {t("admin.users.types.organizers")}
+            </Button>
+            <Button
+              variant={userType === "merchants" ? "default" : "outline"}
+              onClick={() => setUserType("merchants")}
+              className="text-xs sm:text-sm"
+            >
+              <User className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+              {t("admin.users.types.merchants")}
+            </Button>
+            <Button
+              variant={userType === "ushers" ? "default" : "outline"}
+              onClick={() => setUserType("ushers")}
+              className="text-xs sm:text-sm"
+            >
+              <UserCheck className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
+              {t("admin.users.types.ushers")}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Filters */}
       <Card>
         <CardHeader>
@@ -942,13 +1221,13 @@ const AdminUserManagement: React.FC = () => {
         <CardHeader>
           <CardTitle className="rtl:text-right ltr:text-left">
             {t("admin.users.table.user")} (
-            {formatNumberForLocale(filteredUsers.length, i18n.language)})
+            {formatNumberForLocale(usersData?.count || 0, i18n.language)})
           </CardTitle>
           <div className="flex items-center gap-2 rtl:flex-row-reverse">
             <span className="text-sm text-muted-foreground">
               {t("admin.users.pagination.showing")} {startIndex + 1}-
-              {Math.min(endIndex, filteredUsers.length)}{" "}
-              {t("admin.users.pagination.of")} {filteredUsers.length}{" "}
+              {Math.min(endIndex, usersData?.count || 0)}{" "}
+              {t("admin.users.pagination.of")} {usersData?.count || 0}{" "}
               {t("admin.users.pagination.results")}
             </span>
             <Select
@@ -996,7 +1275,31 @@ const AdminUserManagement: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedUsers.map((user) => (
+                {usersLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                      <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+                    </TableCell>
+                  </TableRow>
+                ) : usersError ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                      <span className="ml-2 text-red-500">
+                        {t("common.error")}: {usersError instanceof Error ? usersError.message : t("admin.users.toast.error")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <User className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">{t("admin.users.noUsersFound")}</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedUsers.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell>
                       <div className="flex items-center space-x-3 rtl:space-x-reverse">
@@ -1128,28 +1431,33 @@ const AdminUserManagement: React.FC = () => {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                ))
+                )}
               </TableBody>
             </Table>
           </div>
 
           {/* Pagination */}
-          <ResponsivePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            showInfo={true}
-            infoText={`${t("admin.users.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredUsers.length)} ${t(
-              "admin.users.pagination.of"
-            )} ${filteredUsers.length} ${t("admin.users.pagination.results")}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredUsers.length}
-            itemsPerPage={itemsPerPage}
-            className="mt-4"
-          />
+          {!usersLoading && !usersError && (
+            <ResponsivePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              showInfo={true}
+              infoText={`${t("admin.users.pagination.showing")} ${
+                startIndex + 1
+              }-${Math.min(endIndex, usersData?.count || 0)} ${t(
+                "admin.users.pagination.of"
+              )} ${usersData?.count || 0} ${t(
+                "admin.users.pagination.results"
+              )}`}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={usersData?.count || 0}
+              itemsPerPage={itemsPerPage}
+              className="mt-4"
+            />
+          )}
         </CardContent>
       </Card>
 

@@ -102,6 +102,8 @@ import {
 } from "@/lib/utils";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { customersApi } from "@/lib/api/adminApi";
 
 type CustomerLabel = {
   id: string;
@@ -250,7 +252,51 @@ const CustomerManagement: React.FC = () => {
     return formatPhoneNumberForLocale(phoneNumber, i18n.language);
   };
 
-  // Mock customers data
+  const queryClient = useQueryClient();
+
+  // Fetch customers from API
+  const { data: customersData, isLoading: customersLoading, error: customersError } = useQuery({
+    queryKey: ['customers', searchTerm, statusFilter, vipFilter, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (vipFilter === 'recurrent') params.is_recurrent = true;
+      if (vipFilter === 'non-recurrent') params.is_recurrent = false;
+      
+      const response = await customersApi.getCustomers(params);
+      return response;
+    },
+  });
+
+  // Transform API customers to match Customer interface
+  const customers: Customer[] = useMemo(() => {
+    if (!customersData?.results) return [];
+    return customersData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      name: item.name || '',
+      email: item.email || '',
+      phone: item.phone || item.mobile_number || '',
+      status: item.status as "active" | "inactive" | "banned",
+      registrationDate: item.registration_date || item.created_at || '',
+      lastLogin: item.last_login || '',
+      totalBookings: item.total_bookings || 0,
+      totalSpent: parseFloat(item.total_spent) || 0,
+      nfcCardId: item.nfc_card_id || undefined,
+      attendedEvents: item.attended_events || 0,
+      recurrentUser: item.is_recurrent || false,
+      location: '', // Not in backend model
+      profileImage: undefined, // Not in backend model
+      labels: [], // Labels are not in backend API yet
+    }));
+  }, [customersData]);
+
+  // Mock customers data (removed - using API now)
+  /*
   const [customers, setCustomers] = useState<Customer[]>([
     {
       id: "C001",
@@ -599,39 +645,25 @@ const CustomerManagement: React.FC = () => {
       amount: 500,
     },
   ];
+  */
 
-  // Filter customers based on search and filters
+  // Filtered customers (API handles most filtering, but we filter location client-side if needed)
   const filteredCustomers = useMemo(() => {
-    return customers.filter((customer) => {
-      const matchesSearch =
-        customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.phone.includes(searchTerm);
-      const matchesStatus =
-        statusFilter === "all" || customer.status === statusFilter;
-      const matchesLocation =
-        locationFilter === "all" || customer.location.includes(locationFilter);
-      const matchesVIP =
-        vipFilter === "all" ||
-        (vipFilter === "vip" &&
-          customer.labels.some((label) => label.name === "VIP")) ||
-        (vipFilter === "non-vip" &&
-          !customer.labels.some((label) => label.name === "VIP"));
+    let filtered = customers;
+    
+    // Client-side location filter (if backend doesn't support it)
+    if (locationFilter !== "all") {
+      filtered = filtered.filter((customer) => customer.location.includes(locationFilter));
+    }
+    
+    return filtered;
+  }, [customers, locationFilter]);
 
-      return matchesSearch && matchesStatus && matchesLocation && matchesVIP;
-    });
-  }, [customers, searchTerm, statusFilter, locationFilter, vipFilter]);
-
-  // Get unique locations for filter
-  const uniqueLocations = useMemo(() => {
-    return [...new Set(customers.map((customer) => customer.location))];
-  }, [customers]);
-
-  // Pagination logic
-  const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedCustomers = filteredCustomers.slice(startIndex, endIndex);
+  // Pagination from API response
+  const totalPages = customersData?.total_pages || 1;
+  const startIndex = customersData?.page ? (customersData.page - 1) * customersData.page_size : 0;
+  const endIndex = startIndex + (customersData?.page_size || itemsPerPage);
+  const paginatedCustomers = filteredCustomers;
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -681,6 +713,49 @@ const CustomerManagement: React.FC = () => {
     }
   };
 
+  // Update customer mutation
+  const updateCustomerMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return await customersApi.updateCustomer(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      toast({
+        title: t("admin.customers.toast.customerUpdated"),
+        description: t("admin.customers.toast.customerUpdatedDesc"),
+      });
+      setIsEditDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.customers.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update customer status mutation
+  const updateCustomerStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      return await customersApi.updateCustomer(id, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      toast({
+        title: t("admin.customers.toast.customerUpdated"),
+        description: t("admin.customers.toast.customerUpdatedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.customers.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleEditCustomer = (customer: Customer) => {
     setSelectedCustomer(customer);
     setIsEditDialogOpen(true);
@@ -706,31 +781,19 @@ const CustomerManagement: React.FC = () => {
   };
 
   const handleDeactivateCustomer = (customerId: string) => {
-    toast({
-      title: t("admin.customers.toast.customerDeactivated"),
-      description: t("admin.customers.toast.customerDeactivatedDesc"),
-    });
+    updateCustomerStatusMutation.mutate({ id: customerId, status: 'inactive' });
   };
 
   const handleReactivateCustomer = (customerId: string) => {
-    toast({
-      title: t("admin.customers.toast.customerReactivated"),
-      description: t("admin.customers.toast.customerReactivatedDesc"),
-    });
+    updateCustomerStatusMutation.mutate({ id: customerId, status: 'active' });
   };
 
   const handleBanCustomer = (customerId: string) => {
-    toast({
-      title: t("admin.customers.toast.customerBanned"),
-      description: t("admin.customers.toast.customerBannedDesc"),
-    });
+    updateCustomerStatusMutation.mutate({ id: customerId, status: 'banned' });
   };
 
   const handleUnbanCustomer = (customerId: string) => {
-    toast({
-      title: t("admin.customers.toast.customerUnbanned"),
-      description: t("admin.customers.toast.customerUnbannedDesc"),
-    });
+    updateCustomerStatusMutation.mutate({ id: customerId, status: 'active' });
   };
 
   const handleForcePasswordReset = (customerId: string) => {
@@ -773,11 +836,19 @@ const CustomerManagement: React.FC = () => {
   };
 
   const handleSaveCustomerChanges = () => {
-    toast({
-      title: t("admin.customers.toast.customerUpdated"),
-      description: t("admin.customers.toast.customerUpdatedDesc"),
-    });
-    setIsEditDialogOpen(false);
+    if (!selectedCustomer) return;
+    
+    // Get form values (you'll need to add state for form fields)
+    // For now, just update status if changed
+    const formData = {
+      name: selectedCustomer.name,
+      email: selectedCustomer.email,
+      phone: selectedCustomer.phone,
+      status: selectedCustomer.status,
+      // Add other fields as needed
+    };
+    
+    updateCustomerMutation.mutate({ id: selectedCustomer.id, data: formData });
   };
 
   const handleEditBooking = (booking: CustomerBooking) => {
@@ -842,18 +913,13 @@ const CustomerManagement: React.FC = () => {
       labels: [...customer.labels, vipLabel],
     };
 
-    // Update the customers array
-    const updatedCustomers = customers.map((c) =>
-      c.id === customer.id ? updatedCustomer : c
-    );
-
-    // Update the state
-    setCustomers(updatedCustomers);
-
     // Update selected customer if it's the same one
     if (selectedCustomer && selectedCustomer.id === customer.id) {
       setSelectedCustomer(updatedCustomer);
     }
+    
+    // Invalidate queries to refetch from API
+    queryClient.invalidateQueries({ queryKey: ['customers'] });
 
     toast({
       title: t("admin.customers.vip.setVIPSuccess"),
@@ -868,18 +934,13 @@ const CustomerManagement: React.FC = () => {
       labels: customer.labels.filter((label) => label.name !== "VIP"),
     };
 
-    // Update the customers array
-    const updatedCustomers = customers.map((c) =>
-      c.id === customer.id ? updatedCustomer : c
-    );
-
-    // Update the state
-    setCustomers(updatedCustomers);
-
     // Update selected customer if it's the same one
     if (selectedCustomer && selectedCustomer.id === customer.id) {
       setSelectedCustomer(updatedCustomer);
     }
+    
+    // Invalidate queries to refetch from API
+    queryClient.invalidateQueries({ queryKey: ['customers'] });
 
     toast({
       title: t("admin.customers.vip.removeVIPSuccess"),
@@ -913,11 +974,8 @@ const CustomerManagement: React.FC = () => {
       setSelectedCustomer(updatedCustomer);
       setSelectedLabels(updatedCustomer.labels);
 
-      // Update the customers array
-      const updatedCustomers = customers.map((c) =>
-        c.id === selectedCustomer.id ? updatedCustomer : c
-      );
-      setCustomers(updatedCustomers);
+      // Invalidate queries to refetch from API
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     }
 
     setNewLabel({
@@ -942,11 +1000,8 @@ const CustomerManagement: React.FC = () => {
       setSelectedCustomer(updatedCustomer);
       setSelectedLabels(updatedCustomer.labels);
 
-      // Update the customers array
-      const updatedCustomers = customers.map((c) =>
-        c.id === selectedCustomer.id ? updatedCustomer : c
-      );
-      setCustomers(updatedCustomers);
+      // Invalidate queries to refetch from API
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     }
 
     toast({
@@ -957,15 +1012,8 @@ const CustomerManagement: React.FC = () => {
 
   const handleSaveLabels = () => {
     if (selectedCustomer) {
-      // Update the customer with new labels
-      const updatedCustomers = customers.map((customer) =>
-        customer.id === selectedCustomer.id
-          ? { ...customer, labels: selectedLabels }
-          : customer
-      );
-
-      // Update the state
-      setCustomers(updatedCustomers);
+      // Invalidate queries to refetch from API
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
 
       // Update selected customer
       const updatedSelectedCustomer = {
@@ -1261,7 +1309,31 @@ const CustomerManagement: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedCustomers.map((customer) => (
+                {customersLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
+                      <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+                    </TableCell>
+                  </TableRow>
+                ) : customersError ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
+                      <span className="ml-2 text-red-500">
+                        {t("common.error")}: {customersError instanceof Error ? customersError.message : t("admin.customers.toast.error")}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedCustomers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="text-center py-12">
+                      <User className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">{t("admin.customers.noCustomersFound")}</p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedCustomers.map((customer) => (
                   <TableRow key={customer.id}>
                     <TableCell>
                       <div className="flex items-center space-x-3 rtl:space-x-reverse">
@@ -1498,30 +1570,33 @@ const CustomerManagement: React.FC = () => {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                ))
+                )}
               </TableBody>
             </Table>
           </div>
 
           {/* Pagination */}
-          <ResponsivePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            showInfo={true}
-            infoText={`${t("admin.customers.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredCustomers.length)} ${t(
-              "admin.customers.pagination.of"
-            )} ${filteredCustomers.length} ${t(
-              "admin.customers.pagination.results"
-            )}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredCustomers.length}
-            itemsPerPage={itemsPerPage}
-            className="mt-4"
-          />
+          {!customersLoading && !customersError && (
+            <ResponsivePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              showInfo={true}
+              infoText={`${t("admin.customers.pagination.showing")} ${
+                startIndex + 1
+              }-${Math.min(endIndex, customersData?.count || 0)} ${t(
+                "admin.customers.pagination.of"
+              )} ${customersData?.count || 0} ${t(
+                "admin.customers.pagination.results"
+              )}`}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={customersData?.count || 0}
+              itemsPerPage={itemsPerPage}
+              className="mt-4"
+            />
+          )}
         </CardContent>
       </Card>
 

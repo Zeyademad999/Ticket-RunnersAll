@@ -103,6 +103,8 @@ import { formatCurrencyForLocale } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ticketsApi, eventsApi } from "@/lib/api/adminApi";
 
 type TicketLabel = {
   id: string;
@@ -199,13 +201,75 @@ const TicketsManagement: React.FC = () => {
     { name: "CheckCircle", icon: CheckCircle },
   ];
 
-  // Mock events data for assign ticket dialog
-  const mockEvents = Array.from({ length: 100 }, (_, i) => ({
-    id: `${i + 1}`,
-    title: `Event ${i + 1} - ${t("admin.tickets.mock.summerMusicFestival")}`,
-  }));
+  const queryClient = useQueryClient();
 
-  // Mock tickets data
+  // Fetch events for assign ticket dialog
+  const { data: eventsData } = useQuery({
+    queryKey: ['events', 'all'],
+    queryFn: async () => {
+      const response = await eventsApi.getEvents({ page_size: 1000 });
+      return response;
+    },
+  });
+
+  // Transform events for assign dialog
+  const availableEvents = useMemo(() => {
+    if (!eventsData?.results) return [];
+    return eventsData.results.map((event: any) => ({
+      id: event.id,
+      title: event.title,
+    }));
+  }, [eventsData]);
+
+  // Fetch tickets from API
+  const { data: ticketsData, isLoading: ticketsLoading, error: ticketsError } = useQuery({
+    queryKey: ['tickets', searchTerm, eventFilter, statusFilter, dateFilter, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (eventFilter !== 'all') params.event = eventFilter;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (dateFilter !== 'all') {
+        // Parse date filter (format: YYYY-MM)
+        const [year, month] = dateFilter.split('-');
+        params.date_from = `${year}-${month}-01T00:00:00Z`;
+        // Get last day of month
+        const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
+        params.date_to = `${year}-${month}-${lastDay}T23:59:59Z`;
+      }
+      
+      const response = await ticketsApi.getTickets(params);
+      return response;
+    },
+  });
+
+  // Transform API tickets to match Ticket interface
+  const tickets: Ticket[] = useMemo(() => {
+    if (!ticketsData?.results) return [];
+    return ticketsData.results.map((item: any) => ({
+      id: item.id,
+      eventId: item.event?.id || '',
+      eventTitle: item.event_title || item.event?.title || '',
+      customerId: item.customer?.id || '',
+      customerName: item.customer_name || item.customer?.name || '',
+      category: item.category || '',
+      price: parseFloat(item.price) || 0,
+      purchaseDate: item.purchase_date ? item.purchase_date.split('T')[0] : '',
+      status: item.status as "valid" | "used" | "refunded" | "banned",
+      checkInTime: item.check_in_time || undefined,
+      phoneNumber: item.customer?.phone_number || item.customer?.mobile_number || '',
+      ticketNumber: item.ticket_number || '',
+      qrCode: item.qr_code || item.ticket_number || '',
+      labels: [], // Labels are not in backend API yet
+    }));
+  }, [ticketsData]);
+
+  // Mock tickets data (removed - using API now)
+  /*
   const tickets: Ticket[] = [
     {
       id: "1",
@@ -690,8 +754,9 @@ const TicketsManagement: React.FC = () => {
       labels: [],
     },
   ];
+  */
 
-  // Mock check-in logs
+  // Mock check-in logs (TODO: Replace with API call)
   const checkInLogs: CheckInLog[] = [
     {
       id: "1",
@@ -725,66 +790,53 @@ const TicketsManagement: React.FC = () => {
     },
   ];
 
-  // Filter tickets based on search and filters
+  // Filtered tickets (API handles filtering, but we filter categories client-side)
   const filteredTickets = useMemo(() => {
-    return tickets.filter((ticket) => {
-      const matchesSearch =
-        ticket.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.eventTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        ticket.ticketNumber.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesEvent =
-        eventFilter === "all" || ticket.eventId === eventFilter;
-      const matchesCategory =
-        categoryFilter === "all" || ticket.category === categoryFilter;
-      const matchesStatus =
-        statusFilter === "all" || ticket.status === statusFilter;
-      const matchesDate =
-        dateFilter === "all" || ticket.purchaseDate.includes(dateFilter);
+    let filtered = tickets;
+    
+    // Client-side category filter (if backend doesn't support it)
+    if (categoryFilter !== "all") {
+      filtered = filtered.filter((ticket) => ticket.category === categoryFilter);
+    }
+    
+    return filtered;
+  }, [tickets, categoryFilter]);
 
-      return (
-        matchesSearch &&
-        matchesEvent &&
-        matchesCategory &&
-        matchesStatus &&
-        matchesDate
-      );
-    });
-  }, [
-    tickets,
-    searchTerm,
-    eventFilter,
-    categoryFilter,
-    statusFilter,
-    dateFilter,
-  ]);
-
-  // Get unique values for filters
+  // Get unique values for filters from API data
   const uniqueEvents = useMemo(() => {
-    return [
-      ...new Map(
-        tickets.map((ticket) => [
-          ticket.eventId,
-          { id: ticket.eventId, title: ticket.eventTitle },
-        ])
-      ).values(),
-    ];
-  }, [tickets]);
+    if (!ticketsData?.results) return [];
+    const eventMap = new Map();
+    ticketsData.results.forEach((ticket: any) => {
+      const eventId = ticket.event?.id || '';
+      const eventTitle = ticket.event_title || ticket.event?.title || '';
+      if (eventId && !eventMap.has(eventId)) {
+        eventMap.set(eventId, { id: eventId, title: eventTitle });
+      }
+    });
+    return Array.from(eventMap.values());
+  }, [ticketsData]);
 
   const uniqueCategories = useMemo(() => {
-    return [...new Set(tickets.map((ticket) => ticket.category))];
-  }, [tickets]);
+    if (!ticketsData?.results) return [];
+    return [...new Set(ticketsData.results.map((ticket: any) => ticket.category))];
+  }, [ticketsData]);
 
   const uniqueDates = useMemo(() => {
+    if (!ticketsData?.results) return [];
     return [
-      ...new Set(tickets.map((ticket) => ticket.purchaseDate.substring(0, 7))),
+      ...new Set(
+        ticketsData.results
+          .map((ticket: any) => ticket.purchase_date?.substring(0, 7))
+          .filter(Boolean)
+      ),
     ];
-  }, [tickets]);
+  }, [ticketsData]);
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredTickets.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedTickets = filteredTickets.slice(startIndex, endIndex);
+  // Pagination from API response
+  const totalPages = ticketsData?.total_pages || 1;
+  const startIndex = ticketsData?.page ? (ticketsData.page - 1) * ticketsData.page_size : 0;
+  const endIndex = startIndex + (ticketsData?.page_size || itemsPerPage);
+  const paginatedTickets = filteredTickets;
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -856,18 +908,33 @@ const TicketsManagement: React.FC = () => {
     setIsEditDialogOpen(true);
   };
 
+  // Update ticket status mutation
+  const updateTicketStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      return await ticketsApi.updateTicketStatus(id, status);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      toast({
+        title: t("admin.tickets.toast.ticketUpdated"),
+        description: t("admin.tickets.toast.ticketUpdatedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.tickets.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleBanTicket = (ticketId: string) => {
-    toast({
-      title: t("admin.tickets.toast.ticketBanned"),
-      description: t("admin.tickets.toast.ticketBannedDesc"),
-    });
+    updateTicketStatusMutation.mutate({ id: ticketId, status: 'banned' });
   };
 
   const handleRefundTicket = (ticketId: string) => {
-    toast({
-      title: t("admin.tickets.toast.ticketRefunded"),
-      description: t("admin.tickets.toast.ticketRefundedDesc"),
-    });
+    updateTicketStatusMutation.mutate({ id: ticketId, status: 'refunded' });
   };
 
   const handleExportTickets = () => {
@@ -887,10 +954,7 @@ const TicketsManagement: React.FC = () => {
   };
 
   const handleUnbanTicket = (ticketId: string) => {
-    toast({
-      title: t("admin.tickets.toast.ticketUnbanned"),
-      description: t("admin.tickets.toast.ticketUnbannedDesc"),
-    });
+    updateTicketStatusMutation.mutate({ id: ticketId, status: 'valid' });
   };
 
   const handleAssignTicketAction = () => {
@@ -906,12 +970,39 @@ const TicketsManagement: React.FC = () => {
     setEventSearchValue("");
   };
 
+  // Update ticket mutation
+  const updateTicketMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return await ticketsApi.updateTicket(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      toast({
+        title: t("admin.tickets.toast.ticketUpdated"),
+        description: t("admin.tickets.toast.ticketUpdatedDesc"),
+      });
+      setIsEditDialogOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.tickets.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleSaveTicketChanges = () => {
-    toast({
-      title: t("admin.tickets.toast.ticketUpdated"),
-      description: t("admin.tickets.toast.ticketUpdatedDesc"),
-    });
-    setIsEditDialogOpen(false);
+    if (!selectedTicket) return;
+    
+    // Get form values (you'll need to add state for form fields)
+    // For now, just update status if changed
+    const formData = {
+      status: selectedTicket.status,
+      // Add other fields as needed
+    };
+    
+    updateTicketMutation.mutate({ id: selectedTicket.id, data: formData });
   };
 
   // Label management functions
@@ -1230,41 +1321,59 @@ const TicketsManagement: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table className="w-full rtl:text-right ltr:text-left">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.ticket")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.customer")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.event")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.category")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.purchaseDate")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.status")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.price")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.labels")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right">
-                    {t("admin.tickets.table.actions")}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedTickets.map((ticket) => (
+          {ticketsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+            </div>
+          ) : ticketsError ? (
+            <div className="flex items-center justify-center py-12">
+              <AlertCircle className="h-8 w-8 text-red-500" />
+              <span className="ml-2 text-red-500">
+                {t("common.error")}: {ticketsError instanceof Error ? ticketsError.message : t("admin.tickets.toast.error")}
+              </span>
+            </div>
+          ) : paginatedTickets.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Ticket className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">{t("admin.tickets.noTicketsFound")}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="w-full rtl:text-right ltr:text-left">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.ticket")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.customer")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.event")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.category")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.purchaseDate")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.status")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.price")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.labels")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.actions")}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedTickets.map((ticket) => (
                   <TableRow key={ticket.id}>
                     <TableCell>
                       <div className="rtl:text-right">
@@ -1392,29 +1501,32 @@ const TicketsManagement: React.FC = () => {
                     </TableCell>
                   </TableRow>
                 ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
           {/* Pagination */}
-          <ResponsivePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            showInfo={true}
-            infoText={`${t("admin.tickets.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredTickets.length)} ${t(
-              "admin.tickets.pagination.of"
-            )} ${filteredTickets.length} ${t(
-              "admin.tickets.pagination.results"
-            )}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredTickets.length}
-            itemsPerPage={itemsPerPage}
-            className="mt-4"
-          />
+          {!ticketsLoading && !ticketsError && (
+            <ResponsivePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              showInfo={true}
+              infoText={`${t("admin.tickets.pagination.showing")} ${
+                startIndex + 1
+              }-${Math.min(endIndex, ticketsData?.count || 0)} ${t(
+                "admin.tickets.pagination.of"
+              )} ${ticketsData?.count || 0} ${t(
+                "admin.tickets.pagination.results"
+              )}`}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={ticketsData?.count || 0}
+              itemsPerPage={itemsPerPage}
+              className="mt-4"
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -1632,7 +1744,7 @@ const TicketsManagement: React.FC = () => {
                       {selectedEventId ? (
                         <span className="truncate">
                           {
-                            mockEvents.find(
+                            availableEvents.find(
                               (event) => event.id === selectedEventId
                             )?.title
                           }
@@ -1656,7 +1768,7 @@ const TicketsManagement: React.FC = () => {
                           {t("admin.tickets.form.noEventsFound")}
                         </CommandEmpty>
                         <CommandGroup>
-                          {mockEvents.map((event) => (
+                          {availableEvents.map((event) => (
                             <CommandItem
                               key={event.id}
                               value={`${event.id} ${event.title}`}

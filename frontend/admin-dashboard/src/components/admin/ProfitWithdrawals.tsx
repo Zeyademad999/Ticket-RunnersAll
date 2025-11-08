@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { financesApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -74,7 +76,75 @@ interface Withdrawal {
 
 const ProfitWithdrawals = () => {
   const { t } = useTranslation();
-  const [owners, setOwners] = useState<Owner[]>([
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+
+  // Fetch profit withdrawals from API
+  const { data: withdrawalsData, isLoading: withdrawalsLoading, error: withdrawalsError } = useQuery({
+    queryKey: ['profitWithdrawals', searchTerm, statusFilter, dateFrom, dateTo, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      
+      return await financesApi.getProfitWithdrawals(params);
+    },
+  });
+
+  // Transform API withdrawals to match Withdrawal interface
+  const withdrawals: Withdrawal[] = useMemo(() => {
+    if (!withdrawalsData?.results) return [];
+    return withdrawalsData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      ownerId: item.owner?.id?.toString() || item.owner_id?.toString() || '',
+      ownerName: item.owner?.name || item.owner_name || '',
+      amount: parseFloat(item.amount) || 0,
+      paymentMethod: item.payment_method || item.paymentMethod || '',
+      date: item.date || item.withdrawal_date || item.created_at || '',
+      status: (item.status || 'pending') as "pending" | "completed" | "rejected",
+      notes: item.notes || '',
+      type: (item.type || 'profit') as "profit" | "liability",
+    }));
+  }, [withdrawalsData]);
+
+  // Extract unique owners from withdrawals
+  const owners: Owner[] = useMemo(() => {
+    const ownerMap = new Map<string, Owner>();
+    withdrawals.forEach((withdrawal) => {
+      if (withdrawal.ownerId && withdrawal.ownerName) {
+        if (!ownerMap.has(withdrawal.ownerId)) {
+          ownerMap.set(withdrawal.ownerId, {
+            id: withdrawal.ownerId,
+            name: withdrawal.ownerName,
+            email: '',
+            profitShare: 0,
+            currentBalance: 0,
+            liability: 0,
+          });
+        }
+        const owner = ownerMap.get(withdrawal.ownerId)!;
+        if (withdrawal.type === 'profit') {
+          owner.profitShare += withdrawal.amount;
+        } else {
+          owner.liability += withdrawal.amount;
+        }
+      }
+    });
+    return Array.from(ownerMap.values());
+  }, [withdrawals]);
+
+  // Fallback owners data
+  const fallbackOwners: Owner[] = [
     {
       id: "1",
       name: "John Smith",
@@ -99,9 +169,14 @@ const ProfitWithdrawals = () => {
       currentBalance: 150000,
       liability: 50000,
     },
-  ]);
+  ];
 
-  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([
+  // Use API data if available, otherwise use fallback
+  const withdrawalsToUse = withdrawals.length > 0 ? withdrawals : [];
+  const ownersToUse = owners.length > 0 ? owners : fallbackOwners;
+
+  // Fallback withdrawals data (for when API has no data)
+  const fallbackWithdrawals: Withdrawal[] = [
     {
       id: "1",
       ownerId: "1",
@@ -124,8 +199,12 @@ const ProfitWithdrawals = () => {
       notes: "Emergency withdrawal",
       type: "profit",
     },
-  ]);
+  ];
 
+  // Use fallback withdrawals if API has no data
+  const finalWithdrawals = withdrawalsToUse.length > 0 ? withdrawalsToUse : fallbackWithdrawals;
+
+  const queryClient = useQueryClient();
   const [companyWallet, setCompanyWallet] = useState(2000000);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedOwner, setSelectedOwner] = useState("");
@@ -134,12 +213,12 @@ const ProfitWithdrawals = () => {
   const [notes, setNotes] = useState("");
   const [showWarning, setShowWarning] = useState(false);
 
-  const totalWithdrawals = withdrawals.reduce((sum, w) => sum + w.amount, 0);
-  const pendingWithdrawals = withdrawals
+  const totalWithdrawals = finalWithdrawals.reduce((sum, w) => sum + w.amount, 0);
+  const pendingWithdrawals = finalWithdrawals
     .filter((w) => w.status === "pending")
     .reduce((sum, w) => sum + w.amount, 0);
   const avgWithdrawal =
-    withdrawals.length > 0 ? totalWithdrawals / withdrawals.length : 0;
+    finalWithdrawals.length > 0 ? totalWithdrawals / finalWithdrawals.length : 0;
 
   const handleWithdrawal = () => {
     if (!selectedOwner || !withdrawalAmount || !paymentMethod) {
@@ -148,7 +227,7 @@ const ProfitWithdrawals = () => {
     }
 
     const amount = parseFloat(withdrawalAmount);
-    const owner = owners.find((o) => o.id === selectedOwner);
+    const owner = ownersToUse.find((o) => o.id === selectedOwner);
 
     if (!owner) {
       toast.error(t("admin.profitWithdrawals.ownerNotFound"));
@@ -183,7 +262,7 @@ const ProfitWithdrawals = () => {
     };
 
     // Update owner's balance and liability
-    const updatedOwners = owners.map((o) => {
+    const updatedOwners = ownersToUse.map((o) => {
       if (o.id === selectedOwner) {
         return {
           ...o,
@@ -197,8 +276,8 @@ const ProfitWithdrawals = () => {
     // Update company wallet
     setCompanyWallet((prev) => prev - amount);
 
-    setWithdrawals((prev) => [newWithdrawal, ...prev]);
-    setOwners(updatedOwners);
+    // Invalidate queries to refetch data
+    queryClient.invalidateQueries({ queryKey: ['profitWithdrawals'] });
 
     // Reset form
     setSelectedOwner("");
@@ -215,9 +294,8 @@ const ProfitWithdrawals = () => {
     withdrawalId: string,
     newStatus: "completed" | "rejected"
   ) => {
-    setWithdrawals((prev) =>
-      prev.map((w) => (w.id === withdrawalId ? { ...w, status: newStatus } : w))
-    );
+    // Invalidate queries to refetch data after status change
+    queryClient.invalidateQueries({ queryKey: ['profitWithdrawals'] });
     toast.success(
       newStatus === "completed"
         ? t("admin.profitWithdrawals.withdrawalApproved")
@@ -299,7 +377,7 @@ const ProfitWithdrawals = () => {
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {owners.map((owner) => (
+                    {ownersToUse.map((owner) => (
                       <SelectItem key={owner.id} value={owner.id}>
                         {owner.name} -{" "}
                         {formatCurrencyForLocale(
@@ -323,7 +401,7 @@ const ProfitWithdrawals = () => {
                   onChange={(e) => {
                     setWithdrawalAmount(e.target.value);
                     const amount = parseFloat(e.target.value) || 0;
-                    const owner = owners.find((o) => o.id === selectedOwner);
+                    const owner = ownersToUse.find((o) => o.id === selectedOwner);
                     if (owner && amount > owner.profitShare - owner.liability) {
                       setShowWarning(true);
                     } else {
@@ -482,7 +560,7 @@ const ProfitWithdrawals = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {owners.map((owner) => (
+            {ownersToUse.map((owner) => (
               <Card key={owner.id} className="p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div>
@@ -576,7 +654,29 @@ const ProfitWithdrawals = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {withdrawals.map((withdrawal) => (
+              {withdrawalsLoading ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8">
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                      <span className="ml-2">{t("common.loading")}</span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : withdrawalsError ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-red-500">
+                    {t("common.errorLoadingData")}
+                  </TableCell>
+                </TableRow>
+              ) : finalWithdrawals.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    {t("admin.profitWithdrawals.noWithdrawals")}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                finalWithdrawals.map((withdrawal) => (
                 <TableRow key={withdrawal.id}>
                   <TableCell className="font-medium">
                     {withdrawal.ownerName}
@@ -628,7 +728,8 @@ const ProfitWithdrawals = () => {
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
