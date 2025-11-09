@@ -66,44 +66,8 @@ const ProfitShareManagement = () => {
     }));
   }, [profitShareData]);
 
-  // Sample data - fallback if API doesn't return data
-  const fallbackOwners: Owner[] = [
-    {
-      id: "1",
-      name: "Ahmed Hassan",
-      email: "ahmed@ticketrunners.com",
-      profitShare: 25.0,
-      currentBalance: 450000,
-      isActive: true,
-    },
-    {
-      id: "2",
-      name: "Sarah Johnson",
-      email: "sarah@ticketrunners.com",
-      profitShare: 20.0,
-      currentBalance: 360000,
-      isActive: true,
-    },
-    {
-      id: "3",
-      name: "Mohammed Al-Rashid",
-      email: "mohammed@ticketrunners.com",
-      profitShare: 15.0,
-      currentBalance: 270000,
-      isActive: true,
-    },
-    {
-      id: "4",
-      name: "Lisa Chen",
-      email: "lisa@ticketrunners.com",
-      profitShare: -5.0, // Negative due to early withdrawal
-      currentBalance: -90000,
-      isActive: true,
-    },
-  ];
-
-  // Use API data if available, otherwise use fallback
-  const ownersToUse = owners.length > 0 ? owners : fallbackOwners;
+  // Use API data - show empty state if no data
+  const ownersToUse = owners;
 
   const [editingOwner, setEditingOwner] = useState<string | null>(null);
   const [newOwnerName, setNewOwnerName] = useState("");
@@ -112,7 +76,7 @@ const ProfitShareManagement = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [validationError, setValidationError] = useState("");
 
-  const totalProfit = profitShareData?.total_profit || profitShareData?.totalProfit || 1800000;
+  const totalProfit = profitShareData?.total_profit || profitShareData?.totalProfit || 0;
   const totalShareholders = ownersToUse.filter((owner) => owner.isActive).length;
   const totalDistributed = ownersToUse.reduce(
     (sum, owner) => sum + owner.currentBalance,
@@ -143,16 +107,15 @@ const ProfitShareManagement = () => {
   }, [totalProfitShare, t]);
 
   const handleProfitShareChange = (ownerId: string, newShare: number) => {
-    setOwners((prev) =>
-      prev.map((owner) =>
-        owner.id === ownerId ? { ...owner, profitShare: newShare } : owner
-      )
-    );
+    // TODO: Implement API mutation to update profit share
+    // This would require a PUT/PATCH endpoint for profit share
+    setEditingOwner(null);
   };
 
   const handleSaveChanges = (ownerId: string) => {
     setEditingOwner(null);
-    // Here you would typically save to API
+    // TODO: Implement API mutation to save changes
+    // This would require a PUT/PATCH endpoint for profit share
   };
 
   const handleCancelEdit = () => {
@@ -183,23 +146,8 @@ const ProfitShareManagement = () => {
       return;
     }
 
-    const newOwner: {
-      id: string;
-      name: string;
-      email: string;
-      profitShare: number;
-      currentBalance: number;
-      isActive: boolean;
-    } = {
-      id: Date.now().toString(),
-      name: newOwnerName,
-      email: newOwnerEmail,
-      profitShare: shareValue,
-      currentBalance: (shareValue / 100) * totalProfit,
-      isActive: true,
-    };
-
-    setOwners((prev) => [...prev, newOwner]);
+    // TODO: Implement API mutation to add owner
+    // This would require a POST endpoint for profit share owners
     setNewOwnerName("");
     setNewOwnerEmail("");
     setNewOwnerShare("");
@@ -208,15 +156,13 @@ const ProfitShareManagement = () => {
   };
 
   const handleRemoveOwner = (ownerId: string) => {
-    setOwners((prev) => prev.filter((owner) => owner.id !== ownerId));
+    // TODO: Implement API mutation to remove owner
+    // This would require a DELETE endpoint for profit share owners
   };
 
   const handleToggleActive = (ownerId: string) => {
-    setOwners((prev) =>
-      prev.map((owner) =>
-        owner.id === ownerId ? { ...owner, isActive: !owner.isActive } : owner
-      )
-    );
+    // TODO: Implement API mutation to toggle active status
+    // This would require a PUT/PATCH endpoint for profit share owners
   };
 
   return (
@@ -261,7 +207,9 @@ const ProfitShareManagement = () => {
               {formatCurrencyForLocale(totalProfit, i18n.language)}
             </div>
             <p className="text-xs text-muted-foreground rtl:text-right">
-              +15% {t("admin.profitShare.stats.fromLastPeriod")}
+              {totalProfit > 0 
+                ? `${t("admin.profitShare.stats.fromLastPeriod")}`
+                : t("admin.profitShare.stats.noData") || "No data available"}
             </p>
           </CardContent>
         </Card>
@@ -297,8 +245,9 @@ const ProfitShareManagement = () => {
               {formatCurrencyForLocale(totalDistributed, i18n.language)}
             </div>
             <p className="text-xs text-muted-foreground rtl:text-right">
-              {((totalDistributed / totalProfit) * 100).toFixed(1)}%{" "}
-              {t("admin.profitShare.stats.ofTotalProfit")}
+              {totalProfit > 0 
+                ? `${((totalDistributed / totalProfit) * 100).toFixed(1)}% ${t("admin.profitShare.stats.ofTotalProfit")}`
+                : t("admin.profitShare.stats.noData") || "No data available"}
             </p>
           </CardContent>
         </Card>
@@ -449,8 +398,21 @@ const ProfitShareManagement = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {ownersToUse.map((owner) => (
+          {profitShareLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              {t("common.loading") || "Loading..."}
+            </div>
+          ) : profitShareError ? (
+            <div className="text-center py-8 text-destructive">
+              {t("common.error") || "Error"}: {profitShareError instanceof Error ? profitShareError.message : String(profitShareError)}
+            </div>
+          ) : ownersToUse.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              {t("admin.profitShare.noOwners") || "No profit share owners found"}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {ownersToUse.map((owner) => (
               <div
                 key={owner.id}
                 className="flex items-center justify-between p-4 border rounded-lg"
@@ -546,7 +508,8 @@ const ProfitShareManagement = () => {
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

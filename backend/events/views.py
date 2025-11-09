@@ -152,6 +152,23 @@ class EventViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
     
     @action(detail=True, methods=['get'])
+    def ushers(self, request, pk=None):
+        """
+        Get ushers assigned to this event.
+        GET /api/events/:id/ushers/
+        """
+        event = self.get_object()
+        from users.serializers import UsherSerializer
+        ushers = event.ushers.all()
+        serializer = UsherSerializer(ushers, many=True)
+        return Response({
+            'event_id': event.id,
+            'event_title': event.title,
+            'ushers': serializer.data,
+            'count': ushers.count()
+        })
+    
+    @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
         """
         Get event statistics.

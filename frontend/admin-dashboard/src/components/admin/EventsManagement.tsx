@@ -65,6 +65,7 @@ import {
   Activity,
   Target,
   Image as ImageIcon,
+  RefreshCw,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { format, parseISO } from "date-fns";
@@ -1170,17 +1171,17 @@ const EventsManagement: React.FC = () => {
 
   // Get unique values for filters
   const uniqueCategories = useMemo(() => {
-    return [...new Set(events.map((event) => event.category))];
+    return [...new Set(events.map((event) => event.category).filter(cat => cat && typeof cat === 'string' && cat.trim() !== ''))];
   }, [events]);
 
   const uniqueLocations = useMemo(() => {
     return [
-      ...new Set(events.map((event) => event.location.split(",")[0].trim())),
+      ...new Set(events.map((event) => event.location?.split(",")[0]?.trim() || '').filter(loc => loc && typeof loc === 'string' && loc.trim() !== '')),
     ];
   }, [events]);
 
   const uniqueOrganizers = useMemo(() => {
-    return [...new Set(events.map((event) => event.organizer))];
+    return [...new Set(events.map((event) => event.organizer).filter(org => org && typeof org === 'string' && org.trim() !== ''))];
   }, [events]);
 
   // Pagination logic - use backend pagination
@@ -1422,6 +1423,26 @@ const EventsManagement: React.FC = () => {
       setIsUsherManagementDialogOpen(true);
     }
   };
+
+  // Fetch ushers for selected event
+  const { data: eventUshersData, isLoading: eventUshersLoading } = useQuery({
+    queryKey: ['event-ushers', selectedEventForUshers?.id],
+    queryFn: async () => {
+      if (!selectedEventForUshers?.id) return null;
+      const response = await eventsApi.getEvent(selectedEventForUshers.id);
+      // Fetch ushers for this event using the ushers endpoint
+      const ushersResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/events/${selectedEventForUshers.id}/ushers/`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('admin_access_token')}`,
+        },
+      });
+      if (ushersResponse.ok) {
+        return await ushersResponse.json();
+      }
+      return { ushers: [], count: 0 };
+    },
+    enabled: !!selectedEventForUshers?.id && isUsherManagementDialogOpen,
+  });
 
   const handleManageTickets = (eventId: string) => {
     const event = events.find((e) => e.id === eventId);
@@ -2197,7 +2218,7 @@ const EventsManagement: React.FC = () => {
                   {t("admin.events.filters.allCategories")}
                 </SelectItem>
                 {uniqueCategories.map((category) => (
-                  <SelectItem key={category} value={category}>
+                  <SelectItem key={category} value={category || "unknown"}>
                     {category}
                   </SelectItem>
                 ))}
@@ -2213,7 +2234,7 @@ const EventsManagement: React.FC = () => {
                   {t("admin.events.filters.allLocations")}
                 </SelectItem>
                 {uniqueLocations.map((location) => (
-                  <SelectItem key={location} value={location}>
+                  <SelectItem key={location} value={location || "unknown"}>
                     {location}
                   </SelectItem>
                 ))}
@@ -2231,7 +2252,7 @@ const EventsManagement: React.FC = () => {
                   {t("admin.events.filters.allOrganizers")}
                 </SelectItem>
                 {uniqueOrganizers.map((organizer) => (
-                  <SelectItem key={organizer} value={organizer}>
+                  <SelectItem key={organizer} value={organizer || "unknown"}>
                     {organizer}
                   </SelectItem>
                 ))}
@@ -5375,86 +5396,67 @@ For questions about this event, please contact the organizer.`;
                 <CardHeader>
                   <CardTitle className="text-sm rtl:text-right">
                     {t("admin.events.ushers.currentUshers")} (
-                    {selectedEventForUshers.usheringAccounts})
+                    {eventUshersData?.count || 0})
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {ushers.map((usher) => (
-                      <div
-                        key={usher.id}
-                        className="flex items-center justify-between p-4 border rounded-lg rtl:flex-row-reverse"
-                      >
-                        <div className="flex items-center gap-3 rtl:flex-row-reverse">
-                          <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                            <UserCheck className="h-5 w-5 text-gray-600" />
-                          </div>
-                          <div className="rtl:text-right">
-                            <p className="font-medium">{usher.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {usher.email}
-                            </p>
-                            <div className="flex gap-1 mt-1 rtl:flex-row-reverse">
-                              {usher.assignedAreas.map((area, index) => (
-                                <Badge
-                                  key={index}
-                                  variant="outline"
-                                  className="text-xs"
-                                >
-                                  {area}
+                  {eventUshersLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+                    </div>
+                  ) : eventUshersData?.ushers && eventUshersData.ushers.length > 0 ? (
+                    <div className="space-y-3">
+                      {eventUshersData.ushers.map((usher: any) => (
+                        <div
+                          key={usher.id}
+                          className="flex items-center justify-between p-4 border rounded-lg rtl:flex-row-reverse"
+                        >
+                          <div className="flex items-center gap-3 rtl:flex-row-reverse">
+                            <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                              <UserCheck className="h-5 w-5 text-gray-600" />
+                            </div>
+                            <div className="rtl:text-right">
+                              <p className="font-medium">{usher.name}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {usher.email}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                {usher.phone}
+                              </p>
+                              <div className="flex gap-1 mt-1 rtl:flex-row-reverse">
+                                <Badge variant="outline" className="text-xs">
+                                  {usher.role}
                                 </Badge>
-                              ))}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 rtl:flex-row-reverse">
-                          <Badge
-                            className={
-                              usher.status === "active"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-red-100 text-red-800"
-                            }
-                          >
-                            {usher.status === "active"
-                              ? t("admin.events.ushers.active")
-                              : t("admin.events.ushers.inactive")}
-                          </Badge>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="sm">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="end"
-                              className="rtl:text-right"
+                          <div className="flex items-center gap-2 rtl:flex-row-reverse">
+                            <Badge
+                              className={
+                                usher.status === "active"
+                                  ? "bg-green-100 text-green-800"
+                                  : usher.status === "inactive"
+                                  ? "bg-red-100 text-red-800"
+                                  : "bg-yellow-100 text-yellow-800"
+                              }
                             >
-                              <DropdownMenuItem
-                                onClick={() => handleEditUsher(usher)}
-                              >
-                                <Edit className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
-                                {t("admin.events.ushers.edit")}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleViewUsherActivity(usher)}
-                              >
-                                <Activity className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
-                                {t("admin.events.ushers.viewActivity")}
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                className="text-red-600"
-                                onClick={() => handleRemoveUsher(usher.id)}
-                              >
-                                <UserMinus className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
-                                {t("admin.events.ushers.remove")}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                              {usher.status === "active"
+                                ? t("admin.events.ushers.active")
+                                : usher.status === "inactive"
+                                ? t("admin.events.ushers.inactive")
+                                : t("admin.events.ushers.onLeave")}
+                            </Badge>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <Users className="h-12 w-12 text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">{t("admin.events.ushers.noUshersAssigned") || "No ushers assigned to this event"}</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

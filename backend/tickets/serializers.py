@@ -11,14 +11,35 @@ class TicketListSerializer(serializers.ModelSerializer):
     """
     event_title = serializers.CharField(source='event.title', read_only=True)
     customer_name = serializers.CharField(source='customer.name', read_only=True)
+    customer_id = serializers.SerializerMethodField()
+    customer_phone = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
     
     class Meta:
         model = Ticket
         fields = [
-            'id', 'event_title', 'customer_name', 'category', 'price',
-            'purchase_date', 'status', 'ticket_number', 'dependents'
+            'id', 'event_title', 'customer_name', 'customer_id', 'customer_phone',
+            'category', 'price', 'purchase_date', 'status', 'ticket_number', 'dependents', 'payment_status'
         ]
         read_only_fields = ['id', 'purchase_date']
+    
+    def get_customer_id(self, obj):
+        """Get customer ID as string"""
+        return str(obj.customer.id) if obj.customer else ''
+    
+    def get_customer_phone(self, obj):
+        """Get customer phone number (phone or mobile_number)"""
+        if not obj.customer:
+            return ''
+        return obj.customer.phone or obj.customer.mobile_number or ''
+    
+    def get_payment_status(self, obj):
+        """Get payment status for this ticket"""
+        from payments.models import PaymentTransaction
+        payment = PaymentTransaction.objects.filter(ticket=obj).order_by('-created_at').first()
+        if payment:
+            return payment.status
+        return None
 
 
 class TicketDetailSerializer(serializers.ModelSerializer):
@@ -46,9 +67,11 @@ class TicketDetailSerializer(serializers.ModelSerializer):
     
     def get_customer(self, obj):
         return {
-            'id': obj.customer.id,
+            'id': str(obj.customer.id),
             'name': obj.customer.name,
-            'email': obj.customer.email
+            'email': obj.customer.email,
+            'phone': obj.customer.phone or '',
+            'mobile_number': obj.customer.mobile_number or '',
         }
 
 

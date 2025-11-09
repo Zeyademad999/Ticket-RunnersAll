@@ -138,7 +138,7 @@ const PayoutsManagement: React.FC = () => {
   });
 
   // Fetch organizers for filter dropdown
-  const { data: organizersData } = useQuery({
+  const { data: organizersData, isLoading: organizersLoading } = useQuery({
     queryKey: ['organizers', 'all'],
     queryFn: () => usersApi.getOrganizers({ page_size: 1000 }),
   });
@@ -148,8 +148,8 @@ const PayoutsManagement: React.FC = () => {
     if (!payoutsData?.results) return [];
     return payoutsData.results.map((item: any) => ({
       id: item.id?.toString() || '',
-      organizerId: item.organizer?.id?.toString() || item.organizer_id?.toString() || '',
-      organizerName: item.organizer?.organization_name || item.organizer_name || '',
+      organizerId: item.organizer?.id?.toString() || item.organizer_id?.toString() || item.organizer?.toString() || '',
+      organizerName: item.organizer_name || item.organizer?.name || '',
       amount: parseFloat(item.amount) || 0,
       status: (item.status || 'pending') as "pending" | "processing" | "completed" | "failed",
       method: (item.method || item.payment_method || 'bank_transfer') as "bank_transfer" | "paypal" | "stripe",
@@ -164,25 +164,31 @@ const PayoutsManagement: React.FC = () => {
 
   // Transform API organizers to match Organizer interface
   const organizers: Organizer[] = useMemo(() => {
-    if (!organizersData?.results) return [];
-    return organizersData.results.map((item: any) => ({
-      id: item.id?.toString() || '',
-      name: item.organization_name || item.user?.username || '',
-      email: item.contact_email || item.user?.email || '',
-      phone: item.contact_mobile || '',
-      status: (item.user?.is_active ? 'active' : 'inactive') as "active" | "inactive",
-      totalEvents: item.total_events || 0,
-      totalRevenue: parseFloat(item.total_revenue) || 0,
-      pendingPayout: parseFloat(item.pending_payout) || 0,
-      completedPayouts: parseFloat(item.completed_payouts) || 0,
-      lastPayoutDate: item.last_payout_date || undefined,
-      bankInfo: item.bank_info ? {
-        accountName: item.bank_info.account_name || '',
-        accountNumber: item.bank_info.account_number || '',
-        bankName: item.bank_info.bank_name || '',
-        swiftCode: item.bank_info.swift_code || undefined,
-      } : undefined,
-    }));
+    if (!organizersData) return [];
+    // Handle both paginated and non-paginated responses
+    const results = organizersData.results || organizersData;
+    if (!Array.isArray(results)) return [];
+    
+    return results
+      .filter((item: any) => item && item.id) // Filter out invalid items
+      .map((item: any) => ({
+        id: item.id?.toString() || '',
+        name: item.name || item.organization_name || item.user?.username || item.user?.name || 'Unnamed Organizer',
+        email: item.email || item.contact_email || item.user?.email || '',
+        phone: item.phone || item.contact_mobile || item.user?.phone || '',
+        status: (item.status || (item.user?.is_active ? 'active' : 'inactive')) as "active" | "inactive",
+        totalEvents: item.total_events || 0,
+        totalRevenue: parseFloat(item.total_revenue || item.total_revenue_amount || 0) || 0,
+        pendingPayout: parseFloat(item.pending_payout || item.pending_payout_amount || 0) || 0,
+        completedPayouts: parseFloat(item.completed_payouts || item.completed_payouts_amount || 0) || 0,
+        lastPayoutDate: item.last_payout_date || undefined,
+        bankInfo: item.bank_info ? {
+          accountName: item.bank_info.account_name || '',
+          accountNumber: item.bank_info.account_number || '',
+          bankName: item.bank_info.bank_name || '',
+          swiftCode: item.bank_info.swift_code || undefined,
+        } : undefined,
+      }));
   }, [organizersData]);
 
   // Mock data (removed - using API now)
@@ -755,15 +761,12 @@ const PayoutsManagement: React.FC = () => {
     setIsViewPayoutOpen(true);
   };
 
-  // Filtered payouts (API handles most filtering, but we filter organizer client-side if needed)
+  // Filtered payouts - API handles filtering, but we ensure organizer filter works
   const filteredPayouts = useMemo(() => {
     // API already handles status and date filtering
-    // Only filter by organizer if needed
-    if (filters.organizer === 'all') {
-      return payouts;
-    }
-    return payouts.filter((payout) => payout.organizerId === filters.organizer);
-  }, [payouts, filters.organizer]);
+    // Organizer filter is also handled by API, but we keep this for consistency
+    return payouts;
+  }, [payouts]);
 
   // Pagination - API handles pagination, so we use the data directly
   const totalPages = payoutsData?.total_pages || 1;
@@ -938,17 +941,27 @@ const PayoutsManagement: React.FC = () => {
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {organizers
-                    .filter((org) => org.pendingPayout > 0)
-                    .map((organizer) => (
+                  {organizersLoading ? (
+                    <SelectItem value="loading" disabled>
+                      {t("common.loading") || "Loading organizers..."}
+                    </SelectItem>
+                  ) : organizers.length === 0 ? (
+                    <SelectItem value="no-organizers" disabled>
+                      {t("admin.payouts.noOrganizersFound") || "No organizers found"}
+                    </SelectItem>
+                  ) : (
+                    organizers.map((organizer) => (
                       <SelectItem key={organizer.id} value={organizer.id}>
-                        {organizer.name} -{" "}
-                        {formatCurrencyForLocale(
-                          organizer.pendingPayout,
-                          i18n.language
+                        {organizer.name || organizer.id || "Unnamed Organizer"}
+                        {organizer.pendingPayout > 0 && (
+                          <> - {formatCurrencyForLocale(
+                            organizer.pendingPayout,
+                            i18n.language
+                          )}</>
                         )}
                       </SelectItem>
-                    ))}
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -1045,9 +1058,14 @@ const PayoutsManagement: React.FC = () => {
                 onValueChange={(value) =>
                   setFilters({ ...filters, organizer: value })
                 }
+                disabled={organizersLoading}
               >
                 <SelectTrigger className="w-40">
-                  <SelectValue />
+                  <SelectValue placeholder={
+                    organizersLoading 
+                      ? (t("common.loading") || "Loading...") 
+                      : (t("admin.payouts.filters.selectOrganizer") || "Select Organizer")
+                  } />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">

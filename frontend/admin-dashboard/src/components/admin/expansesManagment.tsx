@@ -4,7 +4,6 @@ import { financesApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -13,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -31,10 +29,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
@@ -47,22 +43,15 @@ import { ResponsivePagination } from "@/components/ui/pagination";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import i18n from "@/lib/i18n";
-import { useTheme } from "@/hooks/useTheme";
 import {
   Plus,
   Edit,
   Trash2,
-  Eye,
   Download,
   Search,
-  Filter,
-  Calendar,
   DollarSign,
-  CreditCard,
   Receipt,
   Tag,
-  User,
-  MoreHorizontal,
   RefreshCw,
   AlertCircle,
 } from "lucide-react";
@@ -74,46 +63,33 @@ import { ar, enUS } from "date-fns/locale";
 // Types
 interface Expense {
   id: string;
-  details: string;
+  description: string;
   amount: number;
-  categoryId: string;
-  categoryName: string;
-  paidBy: string;
-  paymentMethodId: string;
-  paymentMethodName: string;
-  paymentDate: string;
+  category: string; // Backend uses category as string choice
+  date: string;
   createdAt: string;
-  updatedAt: string;
-  status: "paid" | "pending" | "cancelled";
-  receipt?: string;
-  notes?: string;
+  createdBy?: string;
 }
+
+// Backend category choices
+const EXPENSE_CATEGORIES = [
+  { value: 'marketing', label: 'Marketing' },
+  { value: 'operations', label: 'Operations' },
+  { value: 'technology', label: 'Technology' },
+  { value: 'staff', label: 'Staff' },
+  { value: 'office', label: 'Office' },
+  { value: 'other', label: 'Other' },
+] as const;
 
 interface ExpenseCategory {
-  id: string;
-  name: string;
-  description?: string;
+  value: string;
+  label: string;
   totalPayments: number;
   totalAmount: number;
-  createdAt: string;
-  updatedAt?: string;
-  isActive: boolean;
-}
-
-interface PaymentMethod {
-  id: string;
-  name: string;
-  description?: string;
-  totalTransactions: number;
-  totalAmount: number;
-  createdAt: string;
-  updatedAt?: string;
-  isActive: boolean;
 }
 
 const ExpensesManagement: React.FC = () => {
   const { t, i18n: i18nInstance } = useTranslation();
-  const { isDark } = useTheme();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -121,50 +97,29 @@ const ExpensesManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState("expenses");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
-  const [selectedStatus, setSelectedStatus] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [amountMin, setAmountMin] = useState("");
+  const [amountMax, setAmountMax] = useState("");
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [expensesPerPage, setExpensesPerPage] = useState(25);
+  const [expensesPerPage] = useState(25);
 
   // Dialog states
   const [showAddExpense, setShowAddExpense] = useState(false);
-  const [showAddCategory, setShowAddCategory] = useState(false);
-  const [showAddPaymentMethod, setShowAddPaymentMethod] = useState(false);
   const [showEditExpense, setShowEditExpense] = useState(false);
-  const [showEditCategory, setShowEditCategory] = useState(false);
-  const [showEditPaymentMethod, setShowEditPaymentMethod] = useState(false);
 
   // Form states
   const [expenseForm, setExpenseForm] = useState({
-    details: "",
+    description: "",
     amount: "",
-    categoryId: "",
-    paidBy: "",
-    paymentMethodId: "",
-    paymentDate: "",
-    notes: "",
-  });
-
-  const [categoryForm, setCategoryForm] = useState({
-    name: "",
-    description: "",
-  });
-
-  const [paymentMethodForm, setPaymentMethodForm] = useState({
-    name: "",
-    description: "",
+    category: "",
+    date: "",
   });
 
   // Selected items for editing
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
-  const [selectedCategoryForEdit, setSelectedCategoryForEdit] =
-    useState<ExpenseCategory | null>(null);
-  const [selectedPaymentMethodForEdit, setSelectedPaymentMethodForEdit] =
-    useState<PaymentMethod | null>(null);
 
   // Get date locale based on current language
   const getDateLocale = () => {
@@ -179,7 +134,7 @@ const ExpensesManagement: React.FC = () => {
 
   // Fetch expenses from API
   const { data: expensesData, isLoading: expensesLoading, error: expensesError } = useQuery({
-    queryKey: ['expenses', searchTerm, selectedCategory, selectedStatus, dateFrom, dateTo, currentPage, expensesPerPage],
+    queryKey: ['expenses', searchTerm, selectedCategory, dateFrom, dateTo, currentPage, expensesPerPage],
     queryFn: async () => {
       const params: any = {
         page: currentPage,
@@ -188,7 +143,6 @@ const ExpensesManagement: React.FC = () => {
       
       if (searchTerm) params.search = searchTerm;
       if (selectedCategory !== 'all') params.category = selectedCategory;
-      if (selectedStatus !== 'all') params.status = selectedStatus;
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
       
@@ -201,76 +155,67 @@ const ExpensesManagement: React.FC = () => {
     if (!expensesData?.results) return [];
     return expensesData.results.map((item: any) => ({
       id: item.id?.toString() || '',
-      details: item.details || item.description || '',
+      description: item.description || '',
       amount: parseFloat(item.amount) || 0,
-      categoryId: item.category?.id?.toString() || item.category_id?.toString() || '',
-      categoryName: item.category?.name || item.category_name || '',
-      paidBy: item.paid_by || item.paidBy || '',
-      paymentMethodId: item.payment_method?.id?.toString() || item.payment_method_id?.toString() || '',
-      paymentMethodName: item.payment_method?.name || item.payment_method_name || '',
-      paymentDate: item.payment_date || item.paymentDate || item.created_at || '',
+      category: item.category || '',
+      date: item.date || item.created_at || '',
       createdAt: item.created_at || item.createdAt || '',
-      updatedAt: item.updated_at || item.updatedAt || '',
-      status: (item.status || 'paid') as "paid" | "pending" | "cancelled",
-      receipt: item.receipt || undefined,
-      notes: item.notes || undefined,
+      createdBy: item.created_by?.username || item.created_by?.name || undefined,
     }));
   }, [expensesData]);
 
-  // Extract unique categories and payment methods from expenses
+  // Calculate categories from expenses
   const categories: ExpenseCategory[] = useMemo(() => {
     const categoryMap = new Map<string, ExpenseCategory>();
+    
+    EXPENSE_CATEGORIES.forEach((cat) => {
+      categoryMap.set(cat.value, {
+        value: cat.value,
+        label: cat.label,
+        totalPayments: 0,
+        totalAmount: 0,
+      });
+    });
+    
     expenses.forEach((expense) => {
-      if (expense.categoryId && expense.categoryName) {
-        if (!categoryMap.has(expense.categoryId)) {
-          categoryMap.set(expense.categoryId, {
-            id: expense.categoryId,
-            name: expense.categoryName,
-            totalPayments: 0,
-            totalAmount: 0,
-            createdAt: expense.createdAt,
-            isActive: true,
-          });
-        }
-        const category = categoryMap.get(expense.categoryId)!;
+      if (expense.category && categoryMap.has(expense.category)) {
+        const category = categoryMap.get(expense.category)!;
         category.totalPayments += 1;
         category.totalAmount += expense.amount;
       }
     });
+    
     return Array.from(categoryMap.values());
   }, [expenses]);
 
-  const paymentMethods: PaymentMethod[] = useMemo(() => {
-    const methodMap = new Map<string, PaymentMethod>();
-    expenses.forEach((expense) => {
-      if (expense.paymentMethodId && expense.paymentMethodName) {
-        if (!methodMap.has(expense.paymentMethodId)) {
-          methodMap.set(expense.paymentMethodId, {
-            id: expense.paymentMethodId,
-            name: expense.paymentMethodName,
-            totalTransactions: 0,
-            totalAmount: 0,
-            createdAt: expense.createdAt,
-            isActive: true,
-          });
-        }
-        const method = methodMap.get(expense.paymentMethodId)!;
-        method.totalTransactions += 1;
-        method.totalAmount += expense.amount;
-      }
-    });
-    return Array.from(methodMap.values());
-  }, [expenses]);
-
-  // Filtered expenses (API handles most filtering, but we filter payment method client-side if needed)
+  // Filtered expenses (API handles filtering, but we also do client-side amount filtering)
   const filteredExpenses = useMemo(() => {
-    // API already handles search, category, status, and date filtering
-    // Only filter by payment method if needed
-    if (selectedPaymentMethod === 'all') {
-      return expenses;
+    let filtered = expenses;
+    
+    // Client-side amount filtering
+    if (amountMin) {
+      const min = parseFloat(amountMin);
+      if (!isNaN(min)) {
+        filtered = filtered.filter(expense => expense.amount >= min);
+      }
     }
-    return expenses.filter((expense) => expense.paymentMethodId === selectedPaymentMethod);
-  }, [expenses, selectedPaymentMethod]);
+    if (amountMax) {
+      const max = parseFloat(amountMax);
+      if (!isNaN(max)) {
+        filtered = filtered.filter(expense => expense.amount <= max);
+      }
+    }
+    
+    return filtered;
+  }, [expenses, amountMin, amountMax]);
+
+  // Calculate highest expense
+  const highestExpense = useMemo(() => {
+    if (filteredExpenses.length === 0) return null;
+    return filteredExpenses.reduce((max, expense) => 
+      expense.amount > max.amount ? expense : max
+    );
+  }, [filteredExpenses]);
 
   // Pagination - API handles pagination, so we use the data directly
   const totalPages = expensesData?.total_pages || 1;
@@ -281,40 +226,88 @@ const ExpensesManagement: React.FC = () => {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCategory, selectedPaymentMethod, selectedStatus, dateFrom, dateTo]);
+  }, [searchTerm, selectedCategory, dateFrom, dateTo, amountMin, amountMax]);
 
   // Calculate totals
   const totalExpenses = expenses.reduce(
     (sum, expense) => sum + expense.amount,
     0
   );
-  const totalCategories = categories.length;
-  const totalPaymentMethods = paymentMethods.length;
+  const totalCategories = categories.filter(cat => cat.totalPayments > 0).length;
 
   // Handle expense form changes
   const handleExpenseFormChange = (field: string, value: string) => {
     setExpenseForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Handle category form changes
-  const handleCategoryFormChange = (field: string, value: string) => {
-    setCategoryForm((prev) => ({ ...prev, [field]: value }));
-  };
+  // Create expense mutation
+  const createExpenseMutation = useMutation({
+    mutationFn: financesApi.createExpense,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      setExpenseForm({ description: "", amount: "", category: "", date: "" });
+      setShowAddExpense(false);
+      toast({
+        title: t("expenses.toast.expenseAdded"),
+        description: t("expenses.toast.expenseAddedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("expenses.toast.error"),
+        description: error?.response?.data?.detail || error?.message || t("expenses.toast.errorDesc"),
+        variant: "destructive",
+      });
+    },
+  });
 
-  // Handle payment method form changes
-  const handlePaymentMethodFormChange = (field: string, value: string) => {
-    setPaymentMethodForm((prev) => ({ ...prev, [field]: value }));
-  };
+  // Update expense mutation
+  const updateExpenseMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => financesApi.updateExpense(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      setShowEditExpense(false);
+      setSelectedExpense(null);
+      toast({
+        title: t("expenses.toast.expenseUpdated"),
+        description: t("expenses.toast.expenseUpdatedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("expenses.toast.error"),
+        description: error?.response?.data?.detail || error?.message || t("expenses.toast.errorDesc"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete expense mutation
+  const deleteExpenseMutation = useMutation({
+    mutationFn: financesApi.deleteExpense,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      toast({
+        title: t("expenses.toast.expenseDeleted"),
+        description: t("expenses.toast.expenseDeletedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("expenses.toast.error"),
+        description: error?.response?.data?.detail || error?.message || t("expenses.toast.errorDesc"),
+        variant: "destructive",
+      });
+    },
+  });
 
   // Add new expense
   const handleAddExpense = () => {
     if (
-      !expenseForm.details ||
+      !expenseForm.description ||
       !expenseForm.amount ||
-      !expenseForm.categoryId ||
-      !expenseForm.paidBy ||
-      !expenseForm.paymentMethodId ||
-      !expenseForm.paymentDate
+      !expenseForm.category ||
+      !expenseForm.date
     ) {
       toast({
         title: t("expenses.toast.error"),
@@ -324,120 +317,23 @@ const ExpensesManagement: React.FC = () => {
       return;
     }
 
-    const category = categories.find((c) => c.id === expenseForm.categoryId);
-    const paymentMethod = paymentMethods.find(
-      (p) => p.id === expenseForm.paymentMethodId
-    );
-
-    const newExpense: Expense = {
-      id: Date.now().toString(),
-      details: expenseForm.details,
+    createExpenseMutation.mutate({
+      category: expenseForm.category,
       amount: parseFloat(expenseForm.amount),
-      categoryId: expenseForm.categoryId,
-      categoryName: category?.name || "",
-      paidBy: expenseForm.paidBy,
-      paymentMethodId: expenseForm.paymentMethodId,
-      paymentMethodName: paymentMethod?.name || "",
-      paymentDate: expenseForm.paymentDate,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      status: "paid",
-      notes: expenseForm.notes,
-    };
-
-    // Note: Expense creation would need API endpoint
-    // For now, invalidate query to refetch
-    queryClient.invalidateQueries({ queryKey: ['expenses'] });
-    setExpenseForm({
-      details: "",
-      amount: "",
-      categoryId: "",
-      paidBy: "",
-      paymentMethodId: "",
-      paymentDate: "",
-      notes: "",
-    });
-    setShowAddExpense(false);
-
-    toast({
-      title: t("expenses.toast.expenseAdded"),
-      description: t("expenses.toast.expenseAddedDesc"),
+      description: expenseForm.description,
+      date: expenseForm.date,
     });
   };
 
-  // Add new category
-  const handleAddCategory = () => {
-    if (!categoryForm.name) {
-      toast({
-        title: t("expenses.toast.error"),
-        description: t("expenses.toast.errorDesc"),
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const newCategory: ExpenseCategory = {
-      id: Date.now().toString(),
-      name: categoryForm.name,
-      description: categoryForm.description,
-      totalPayments: 0,
-      totalAmount: 0,
-      createdAt: new Date().toISOString(),
-      isActive: true,
-    };
-
-    setCategories((prev) => [newCategory, ...prev]);
-    setCategoryForm({ name: "", description: "" });
-    setShowAddCategory(false);
-
-    toast({
-      title: t("expenses.toast.categoryAdded"),
-      description: t("expenses.toast.categoryAddedDesc"),
-    });
-  };
-
-  // Add new payment method
-  const handleAddPaymentMethod = () => {
-    if (!paymentMethodForm.name) {
-      toast({
-        title: t("expenses.toast.error"),
-        description: t("expenses.toast.errorDesc"),
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const newPaymentMethod: PaymentMethod = {
-      id: Date.now().toString(),
-      name: paymentMethodForm.name,
-      description: paymentMethodForm.description,
-      totalTransactions: 0,
-      totalAmount: 0,
-      createdAt: new Date().toISOString(),
-      isActive: true,
-    };
-
-    setPaymentMethods((prev) => [newPaymentMethod, ...prev]);
-    setPaymentMethodForm({ name: "", description: "" });
-    setShowAddPaymentMethod(false);
-
-    toast({
-      title: t("expenses.toast.paymentMethodAdded"),
-      description: t("expenses.toast.paymentMethodAddedDesc"),
-    });
-  };
 
   // Edit expense
   const handleEditExpense = (expense: Expense) => {
     setSelectedExpense(expense);
     setExpenseForm({
-      details: expense.details,
+      description: expense.description,
       amount: expense.amount.toString(),
-      categoryId: expense.categoryId,
-      paidBy: expense.paidBy,
-      paymentMethodId: expense.paymentMethodId,
-      paymentDate: expense.paymentDate.split("T")[0],
-      notes: expense.notes || "",
+      category: expense.category,
+      date: expense.date.split("T")[0],
     });
     setShowEditExpense(true);
   };
@@ -446,142 +342,22 @@ const ExpensesManagement: React.FC = () => {
   const handleSaveExpenseChanges = () => {
     if (!selectedExpense) return;
 
-    const category = categories.find((c) => c.id === expenseForm.categoryId);
-    const paymentMethod = paymentMethods.find(
-      (p) => p.id === expenseForm.paymentMethodId
-    );
-
-    const updatedExpense: Expense = {
-      ...selectedExpense,
-      details: expenseForm.details,
-      amount: parseFloat(expenseForm.amount),
-      categoryId: expenseForm.categoryId,
-      categoryName: category?.name || "",
-      paidBy: expenseForm.paidBy,
-      paymentMethodId: expenseForm.paymentMethodId,
-      paymentMethodName: paymentMethod?.name || "",
-      paymentDate: expenseForm.paymentDate,
-      notes: expenseForm.notes,
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Note: Expense update would need API endpoint
-    // For now, invalidate query to refetch
-    queryClient.invalidateQueries({ queryKey: ['expenses'] });
-    setShowEditExpense(false);
-    setSelectedExpense(null);
-
-    toast({
-      title: t("expenses.toast.expenseUpdated"),
-      description: t("expenses.toast.expenseUpdatedDesc"),
-    });
-  };
-
-  // Edit category
-  const handleEditCategory = (category: ExpenseCategory) => {
-    setSelectedCategoryForEdit(category);
-    setCategoryForm({
-      name: category.name,
-      description: category.description || "",
-    });
-    setShowEditCategory(true);
-  };
-
-  // Save category changes
-  const handleSaveCategoryChanges = () => {
-    if (!selectedCategoryForEdit) return;
-
-    const updatedCategory: ExpenseCategory = {
-      ...selectedCategoryForEdit,
-      name: categoryForm.name,
-      description: categoryForm.description,
-      updatedAt: new Date().toISOString(),
-    };
-
-    setCategories((prev) =>
-      prev.map((cat) =>
-        cat.id === selectedCategoryForEdit.id ? updatedCategory : cat
-      )
-    );
-    setShowEditCategory(false);
-    setSelectedCategoryForEdit(null);
-
-    toast({
-      title: t("expenses.toast.categoryUpdated"),
-      description: t("expenses.toast.categoryUpdatedDesc"),
-    });
-  };
-
-  // Edit payment method
-  const handleEditPaymentMethod = (paymentMethod: PaymentMethod) => {
-    setSelectedPaymentMethodForEdit(paymentMethod);
-    setPaymentMethodForm({
-      name: paymentMethod.name,
-      description: paymentMethod.description || "",
-    });
-    setShowEditPaymentMethod(true);
-  };
-
-  // Save payment method changes
-  const handleSavePaymentMethodChanges = () => {
-    if (!selectedPaymentMethodForEdit) return;
-
-    const updatedPaymentMethod: PaymentMethod = {
-      ...selectedPaymentMethodForEdit,
-      name: paymentMethodForm.name,
-      description: paymentMethodForm.description,
-      updatedAt: new Date().toISOString(),
-    };
-
-    setPaymentMethods((prev) =>
-      prev.map((pm) =>
-        pm.id === selectedPaymentMethodForEdit.id ? updatedPaymentMethod : pm
-      )
-    );
-    setShowEditPaymentMethod(false);
-    setSelectedPaymentMethodForEdit(null);
-
-    toast({
-      title: t("expenses.toast.paymentMethodUpdated"),
-      description: t("expenses.toast.paymentMethodUpdatedDesc"),
+    updateExpenseMutation.mutate({
+      id: selectedExpense.id,
+      data: {
+        category: expenseForm.category,
+        amount: parseFloat(expenseForm.amount),
+        description: expenseForm.description,
+        date: expenseForm.date,
+      },
     });
   };
 
   // Delete expense
   const handleDeleteExpense = (expenseId: string) => {
-    // Note: Expense deletion would need API endpoint
-    // For now, invalidate query to refetch
-    queryClient.invalidateQueries({ queryKey: ['expenses'] });
-    toast({
-      title: t("expenses.toast.expenseDeleted"),
-      description: t("expenses.toast.expenseDeletedDesc"),
-    });
-  };
-
-  // Delete category
-  const handleDeleteCategory = (categoryId: string) => {
-    setCategories((prev) => prev.filter((cat) => cat.id !== categoryId));
-    toast({
-      title: t("expenses.toast.categoryDeleted"),
-      description: t("expenses.toast.categoryDeletedDesc"),
-    });
-  };
-
-  // Delete payment method
-  const handleDeletePaymentMethod = (paymentMethodId: string) => {
-    setPaymentMethods((prev) => prev.filter((pm) => pm.id !== paymentMethodId));
-    toast({
-      title: t("expenses.toast.paymentMethodDeleted"),
-      description: t("expenses.toast.paymentMethodDeletedDesc"),
-    });
-  };
-
-  // Export expenses
-  const handleExportExpenses = () => {
-    toast({
-      title: t("expenses.toast.exportSuccess"),
-      description: t("expenses.toast.exportSuccessDesc"),
-    });
+    if (window.confirm(t("expenses.confirmDelete") || "Are you sure you want to delete this expense?")) {
+      deleteExpenseMutation.mutate(expenseId);
+    }
   };
 
   return (
@@ -598,7 +374,7 @@ const ExpensesManagement: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 rtl:space-x-reverse">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 rtl:space-x-reverse">
         <Card>
           <CardHeader className="flex flex-row items-center space-y-0 pb-2 rtl:flex-row-reverse">
             <div className="flex-1 rtl:text-right">
@@ -641,17 +417,40 @@ const ExpensesManagement: React.FC = () => {
           <CardHeader className="flex flex-row items-center space-y-0 pb-2 rtl:flex-row-reverse">
             <div className="flex-1 rtl:text-right">
               <CardTitle className="text-sm font-medium">
-                {t("expenses.stats.paymentMethods")}
+                {t("expenses.stats.highestExpense") || "Highest Expense"}
               </CardTitle>
             </div>
-            <CreditCard className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+            <DollarSign className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          </CardHeader>
+          <CardContent className="rtl:text-right">
+            <div className="text-2xl font-bold currency-container">
+              {highestExpense 
+                ? formatCurrencyForLocale(highestExpense.amount, i18n.language)
+                : formatCurrencyForLocale(0, i18n.language)}
+            </div>
+            <p className="text-xs text-muted-foreground rtl:text-right truncate">
+              {highestExpense 
+                ? highestExpense.description || t("expenses.stats.noDescription") || "No description"
+                : t("expenses.stats.noExpenses") || "No expenses"}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center space-y-0 pb-2 rtl:flex-row-reverse">
+            <div className="flex-1 rtl:text-right">
+              <CardTitle className="text-sm font-medium">
+                {t("expenses.stats.totalCount") || "Total Expenses"}
+              </CardTitle>
+            </div>
+            <Receipt className="h-4 w-4 text-muted-foreground flex-shrink-0" />
           </CardHeader>
           <CardContent className="rtl:text-right">
             <div className="text-2xl font-bold number-container">
-              {formatNumberForLocale(totalPaymentMethods, i18n.language)}
+              {formatNumberForLocale(filteredExpenses.length, i18n.language)}
             </div>
             <p className="text-xs text-muted-foreground rtl:text-right">
-              {t("expenses.stats.activeMethods")}
+              {t("expenses.stats.filteredCount") || "Filtered expenses"}
             </p>
           </CardContent>
         </Card>
@@ -662,15 +461,12 @@ const ExpensesManagement: React.FC = () => {
         onValueChange={setActiveTab}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-3 rtl:flex-row-reverse">
+        <TabsList className="grid w-full grid-cols-2 rtl:flex-row-reverse">
           <TabsTrigger value="expenses" className="rtl:text-right">
             {t("expenses.tabs.expenses")}
           </TabsTrigger>
           <TabsTrigger value="categories" className="rtl:text-right">
             {t("expenses.tabs.categories")}
-          </TabsTrigger>
-          <TabsTrigger value="payment-methods" className="rtl:text-right">
-            {t("expenses.tabs.paymentMethods")}
           </TabsTrigger>
         </TabsList>
 
@@ -692,7 +488,7 @@ const ExpensesManagement: React.FC = () => {
               <ExportDialog
                 data={filteredExpenses}
                 columns={[
-                  { header: "Details", key: "details", width: 30 },
+                  { header: "Description", key: "description", width: 40 },
                   {
                     header: "Amount",
                     key: "amount",
@@ -700,20 +496,13 @@ const ExpensesManagement: React.FC = () => {
                     formatter: (value) =>
                       formatCurrencyForLocale(value, i18nInstance.language),
                   },
-                  { header: "Category", key: "categoryName", width: 20 },
-                  { header: "Paid By", key: "paidBy", width: 20 },
+                  { header: "Category", key: "category", width: 20 },
                   {
-                    header: "Payment Method",
-                    key: "paymentMethodName",
-                    width: 20,
-                  },
-                  {
-                    header: "Payment Date",
-                    key: "paymentDate",
+                    header: "Date",
+                    key: "date",
                     width: 20,
                     formatter: formatDateForLocale,
                   },
-                  { header: "Status", key: "status", width: 15 },
                 ]}
                 title={t("expenses.expenses.title")}
                 subtitle={t("expenses.expenses.subtitle", {
@@ -754,16 +543,16 @@ const ExpensesManagement: React.FC = () => {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="details" className="rtl:text-right">
-                        {t("expenses.form.details")}
+                      <Label htmlFor="description" className="rtl:text-right">
+                        {t("expenses.form.description") || "Description"}
                       </Label>
                       <Textarea
-                        id="details"
-                        value={expenseForm.details}
+                        id="description"
+                        value={expenseForm.description}
                         onChange={(e) =>
-                          handleExpenseFormChange("details", e.target.value)
+                          handleExpenseFormChange("description", e.target.value)
                         }
-                        placeholder={t("expenses.form.detailsPlaceholder")}
+                        placeholder={t("expenses.form.descriptionPlaceholder") || "Enter expense description"}
                         className="rtl:text-right"
                       />
                     </div>
@@ -775,6 +564,7 @@ const ExpensesManagement: React.FC = () => {
                         <Input
                           id="amount"
                           type="number"
+                          step="0.01"
                           value={expenseForm.amount}
                           onChange={(e) =>
                             handleExpenseFormChange("amount", e.target.value)
@@ -788,9 +578,9 @@ const ExpensesManagement: React.FC = () => {
                           {t("expenses.form.category")}
                         </Label>
                         <Select
-                          value={expenseForm.categoryId}
+                          value={expenseForm.category}
                           onValueChange={(value) =>
-                            handleExpenseFormChange("categoryId", value)
+                            handleExpenseFormChange("category", value)
                           }
                         >
                           <SelectTrigger className="rtl:text-right">
@@ -799,54 +589,9 @@ const ExpensesManagement: React.FC = () => {
                             />
                           </SelectTrigger>
                           <SelectContent>
-                            {categories.map((category) => (
-                              <SelectItem key={category.id} value={category.id}>
-                                {category.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 rtl:space-x-reverse">
-                      <div className="space-y-2">
-                        <Label htmlFor="paidBy" className="rtl:text-right">
-                          {t("expenses.form.paidBy")}
-                        </Label>
-                        <Input
-                          id="paidBy"
-                          value={expenseForm.paidBy}
-                          onChange={(e) =>
-                            handleExpenseFormChange("paidBy", e.target.value)
-                          }
-                          placeholder={t("expenses.form.paidByPlaceholder")}
-                          className="rtl:text-right"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label
-                          htmlFor="paymentMethod"
-                          className="rtl:text-right"
-                        >
-                          {t("expenses.form.paymentMethod")}
-                        </Label>
-                        <Select
-                          value={expenseForm.paymentMethodId}
-                          onValueChange={(value) =>
-                            handleExpenseFormChange("paymentMethodId", value)
-                          }
-                        >
-                          <SelectTrigger className="rtl:text-right">
-                            <SelectValue
-                              placeholder={t(
-                                "expenses.form.selectPaymentMethod"
-                              )}
-                            />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {paymentMethods.map((method) => (
-                              <SelectItem key={method.id} value={method.id}>
-                                {method.name}
+                            {EXPENSE_CATEGORIES.map((category) => (
+                              <SelectItem key={category.value} value={category.value}>
+                                {category.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -854,30 +599,16 @@ const ExpensesManagement: React.FC = () => {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="paymentDate" className="rtl:text-right">
-                        {t("expenses.form.paymentDate")}
+                      <Label htmlFor="date" className="rtl:text-right">
+                        {t("expenses.form.date") || "Date"}
                       </Label>
                       <Input
-                        id="paymentDate"
+                        id="date"
                         type="date"
-                        value={expenseForm.paymentDate}
+                        value={expenseForm.date}
                         onChange={(e) =>
-                          handleExpenseFormChange("paymentDate", e.target.value)
+                          handleExpenseFormChange("date", e.target.value)
                         }
-                        className="rtl:text-right"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="notes" className="rtl:text-right">
-                        {t("expenses.form.notes")}
-                      </Label>
-                      <Textarea
-                        id="notes"
-                        value={expenseForm.notes}
-                        onChange={(e) =>
-                          handleExpenseFormChange("notes", e.target.value)
-                        }
-                        placeholder={t("expenses.form.notesPlaceholder")}
                         className="rtl:text-right"
                       />
                     </div>
@@ -899,17 +630,17 @@ const ExpensesManagement: React.FC = () => {
           </div>
 
           {/* Search and Filters */}
-          <div className="flex flex-col sm:flex-row gap-4 rtl:flex-row-reverse">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 rtl:left-auto rtl:right-3" />
-              <Input
-                placeholder={t("expenses.search.placeholder")}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 rtl:pl-3 rtl:pr-10"
-              />
-            </div>
-            <div className="flex gap-2 rtl:flex-row-reverse">
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-4 rtl:flex-row-reverse">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 rtl:left-auto rtl:right-3" />
+                <Input
+                  placeholder={t("expenses.search.placeholder")}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 rtl:pl-3 rtl:pr-10"
+                />
+              </div>
               <Select
                 value={selectedCategory}
                 onValueChange={setSelectedCategory}
@@ -921,52 +652,89 @@ const ExpensesManagement: React.FC = () => {
                   <SelectItem value="all">
                     {t("expenses.filters.allCategories")}
                   </SelectItem>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
+                  {EXPENSE_CATEGORIES.map((category) => (
+                    <SelectItem key={category.value} value={category.value}>
+                      {category.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              <Select
-                value={selectedPaymentMethod}
-                onValueChange={setSelectedPaymentMethod}
-              >
-                <SelectTrigger className="w-[150px] rtl:text-right">
-                  <SelectValue
-                    placeholder={t("expenses.filters.paymentMethod")}
+            </div>
+            
+            {/* Date Range and Amount Filters */}
+            <div className="flex flex-col sm:flex-row gap-4 rtl:flex-row-reverse">
+              <div className="flex gap-2 rtl:flex-row-reverse">
+                <div className="space-y-2 flex-1">
+                  <Label htmlFor="dateFrom" className="text-xs rtl:text-right">
+                    {t("expenses.filters.dateFrom") || "From Date"}
+                  </Label>
+                  <Input
+                    id="dateFrom"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="rtl:text-right"
                   />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {t("expenses.filters.allMethods")}
-                  </SelectItem>
-                  {paymentMethods.map((method) => (
-                    <SelectItem key={method.id} value={method.id}>
-                      {method.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className="w-[120px] rtl:text-right">
-                  <SelectValue placeholder={t("expenses.filters.status")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {t("expenses.filters.allStatuses")}
-                  </SelectItem>
-                  <SelectItem value="paid">
-                    {t("expenses.status.paid")}
-                  </SelectItem>
-                  <SelectItem value="pending">
-                    {t("expenses.status.pending")}
-                  </SelectItem>
-                  <SelectItem value="cancelled">
-                    {t("expenses.status.cancelled")}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                </div>
+                <div className="space-y-2 flex-1">
+                  <Label htmlFor="dateTo" className="text-xs rtl:text-right">
+                    {t("expenses.filters.dateTo") || "To Date"}
+                  </Label>
+                  <Input
+                    id="dateTo"
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="rtl:text-right"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 rtl:flex-row-reverse">
+                <div className="space-y-2 flex-1">
+                  <Label htmlFor="amountMin" className="text-xs rtl:text-right">
+                    {t("expenses.filters.minAmount") || "Min Amount"}
+                  </Label>
+                  <Input
+                    id="amountMin"
+                    type="number"
+                    step="0.01"
+                    placeholder={t("expenses.filters.minAmountPlaceholder") || "Min"}
+                    value={amountMin}
+                    onChange={(e) => setAmountMin(e.target.value)}
+                    className="rtl:text-right"
+                  />
+                </div>
+                <div className="space-y-2 flex-1">
+                  <Label htmlFor="amountMax" className="text-xs rtl:text-right">
+                    {t("expenses.filters.maxAmount") || "Max Amount"}
+                  </Label>
+                  <Input
+                    id="amountMax"
+                    type="number"
+                    step="0.01"
+                    placeholder={t("expenses.filters.maxAmountPlaceholder") || "Max"}
+                    value={amountMax}
+                    onChange={(e) => setAmountMax(e.target.value)}
+                    className="rtl:text-right"
+                  />
+                </div>
+              </div>
+              {(dateFrom || dateTo || amountMin || amountMax) && (
+                <div className="flex items-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setDateFrom("");
+                      setDateTo("");
+                      setAmountMin("");
+                      setAmountMax("");
+                    }}
+                    className="h-10"
+                  >
+                    {t("expenses.filters.clearFilters") || "Clear Filters"}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -978,7 +746,7 @@ const ExpensesManagement: React.FC = () => {
                   <TableHeader>
                     <TableRow>
                       <RTLTableHeader>
-                        {t("expenses.table.details")}
+                        {t("expenses.table.description") || "Description"}
                       </RTLTableHeader>
                       <RTLTableHeader>
                         {t("expenses.table.amount")}
@@ -987,16 +755,7 @@ const ExpensesManagement: React.FC = () => {
                         {t("expenses.table.category")}
                       </RTLTableHeader>
                       <RTLTableHeader>
-                        {t("expenses.table.paidBy")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.paymentMethod")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.paymentDate")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.status")}
+                        {t("expenses.table.date") || "Date"}
                       </RTLTableHeader>
                       <RTLTableHeader>
                         {t("admin.common.actions")}
@@ -1006,39 +765,32 @@ const ExpensesManagement: React.FC = () => {
                   <TableBody>
                     {expensesLoading ? (
                       <TableRow>
-                        <RTLTableCell colSpan={8} className="text-center py-12">
+                        <TableCell colSpan={5} className="text-center py-12">
                           <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground mx-auto" />
                           <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
-                        </RTLTableCell>
+                        </TableCell>
                       </TableRow>
                     ) : expensesError ? (
                       <TableRow>
-                        <RTLTableCell colSpan={8} className="text-center py-12">
+                        <TableCell colSpan={5} className="text-center py-12">
                           <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
                           <span className="ml-2 text-red-500">
                             {t("common.error")}: {expensesError instanceof Error ? expensesError.message : t("expenses.toast.error")}
                           </span>
-                        </RTLTableCell>
+                        </TableCell>
                       </TableRow>
                     ) : paginatedExpenses.length === 0 ? (
                       <TableRow>
-                        <RTLTableCell colSpan={8} className="text-center py-12">
+                        <TableCell colSpan={5} className="text-center py-12">
                           <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                           <p className="text-muted-foreground">{t("expenses.noExpensesFound")}</p>
-                        </RTLTableCell>
+                        </TableCell>
                       </TableRow>
                     ) : (
                       paginatedExpenses.map((expense) => (
                       <TableRow key={expense.id}>
                         <RTLTableCell>
-                          <div>
-                            <div className="font-medium">{expense.details}</div>
-                            {expense.notes && (
-                              <div className="text-sm text-muted-foreground">
-                                {expense.notes}
-                              </div>
-                            )}
-                          </div>
+                          <div className="font-medium">{expense.description}</div>
                         </RTLTableCell>
                         <RTLTableCell>
                           <div className="font-medium currency-container">
@@ -1050,26 +802,11 @@ const ExpensesManagement: React.FC = () => {
                         </RTLTableCell>
                         <RTLTableCell>
                           <Badge variant="secondary">
-                            {expense.categoryName}
+                            {EXPENSE_CATEGORIES.find(c => c.value === expense.category)?.label || expense.category}
                           </Badge>
                         </RTLTableCell>
-                        <RTLTableCell>{expense.paidBy}</RTLTableCell>
-                        <RTLTableCell>{expense.paymentMethodName}</RTLTableCell>
                         <RTLTableCell>
-                          {formatDateForLocale(expense.paymentDate)}
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          <Badge
-                            variant={
-                              expense.status === "paid"
-                                ? "default"
-                                : expense.status === "pending"
-                                ? "secondary"
-                                : "destructive"
-                            }
-                          >
-                            {t(`expenses.status.${expense.status}`)}
-                          </Badge>
+                          {formatDateForLocale(expense.date)}
                         </RTLTableCell>
                         <RTLTableCell>
                           <div className="flex items-center gap-2 rtl:flex-row-reverse">
@@ -1124,7 +861,7 @@ const ExpensesManagement: React.FC = () => {
 
         {/* Categories Tab */}
         <TabsContent value="categories" className="space-y-6">
-          {/* Header with Actions */}
+          {/* Header */}
           <div className="flex items-center justify-between rtl:flex-row-reverse">
             <div>
               <h3 className="text-lg font-semibold rtl:text-right">
@@ -1132,76 +869,9 @@ const ExpensesManagement: React.FC = () => {
               </h3>
               <p className="text-sm text-muted-foreground rtl:text-right">
                 {t("expenses.categories.subtitle", {
-                  count: categories.length,
+                  count: categories.filter(c => c.totalPayments > 0).length,
                 })}
               </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Dialog open={showAddCategory} onOpenChange={setShowAddCategory}>
-                <DialogTrigger asChild>
-                  <Button className="flex items-center gap-2 rtl:flex-row-reverse">
-                    <Plus className="h-4 w-4" />
-                    {t("expenses.actions.addCategory")}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[400px]">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {t("expenses.dialogs.addCategory.title")}
-                    </DialogTitle>
-                    <DialogDescription className="rtl:text-right">
-                      {t("expenses.dialogs.addCategory.subtitle")}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="categoryName" className="rtl:text-right">
-                        {t("expenses.form.categoryName")}
-                      </Label>
-                      <Input
-                        id="categoryName"
-                        value={categoryForm.name}
-                        onChange={(e) =>
-                          handleCategoryFormChange("name", e.target.value)
-                        }
-                        placeholder={t("expenses.form.categoryNamePlaceholder")}
-                        className="rtl:text-right"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="categoryDescription"
-                        className="rtl:text-right"
-                      >
-                        {t("expenses.form.description")}
-                      </Label>
-                      <Textarea
-                        id="categoryDescription"
-                        value={categoryForm.description}
-                        onChange={(e) =>
-                          handleCategoryFormChange(
-                            "description",
-                            e.target.value
-                          )
-                        }
-                        placeholder={t("expenses.form.descriptionPlaceholder")}
-                        className="rtl:text-right"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 rtl:flex-row-reverse">
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowAddCategory(false)}
-                    >
-                      {t("admin.common.cancel")}
-                    </Button>
-                    <Button onClick={handleAddCategory}>
-                      {t("expenses.actions.addCategory")}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
             </div>
           </div>
 
@@ -1213,34 +883,23 @@ const ExpensesManagement: React.FC = () => {
                   <TableHeader>
                     <TableRow>
                       <RTLTableHeader>
-                        {t("expenses.table.name")}
+                        {t("expenses.table.name") || "Category"}
                       </RTLTableHeader>
                       <RTLTableHeader>
-                        {t("expenses.table.description")}
+                        {t("expenses.table.totalPayments") || "Total Expenses"}
                       </RTLTableHeader>
                       <RTLTableHeader>
-                        {t("expenses.table.totalPayments")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.totalAmount")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.status")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("admin.common.actions")}
+                        {t("expenses.table.totalAmount") || "Total Amount"}
                       </RTLTableHeader>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {categories.map((category) => (
-                      <TableRow key={category.id}>
+                    {categories
+                      .filter(cat => cat.totalPayments > 0)
+                      .map((category) => (
+                      <TableRow key={category.value}>
                         <RTLTableCell className="font-medium">
-                          {category.name}
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          {category.description ||
-                            t("expenses.table.noDescription")}
+                          {category.label}
                         </RTLTableCell>
                         <RTLTableCell>
                           {formatNumberForLocale(
@@ -1256,217 +915,16 @@ const ExpensesManagement: React.FC = () => {
                             )}
                           </div>
                         </RTLTableCell>
-                        <RTLTableCell>
-                          <Badge
-                            variant={
-                              category.isActive ? "default" : "secondary"
-                            }
-                          >
-                            {category.isActive
-                              ? t("expenses.status.active")
-                              : t("expenses.status.inactive")}
-                          </Badge>
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          <div className="flex items-center gap-2 rtl:flex-row-reverse">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditCategory(category)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteCategory(category.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </RTLTableCell>
                       </TableRow>
                     ))}
-                  </TableBody>
-                </RTLTable>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Payment Methods Tab */}
-        <TabsContent value="payment-methods" className="space-y-6">
-          {/* Header with Actions */}
-          <div className="flex items-center justify-between rtl:flex-row-reverse">
-            <div>
-              <h3 className="text-lg font-semibold rtl:text-right">
-                {t("expenses.paymentMethods.title")}
-              </h3>
-              <p className="text-sm text-muted-foreground rtl:text-right">
-                {t("expenses.paymentMethods.subtitle", {
-                  count: paymentMethods.length,
-                })}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Dialog
-                open={showAddPaymentMethod}
-                onOpenChange={setShowAddPaymentMethod}
-              >
-                <DialogTrigger asChild>
-                  <Button className="flex items-center gap-2 rtl:flex-row-reverse">
-                    <Plus className="h-4 w-4" />
-                    {t("expenses.actions.addPaymentMethod")}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[400px]">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {t("expenses.dialogs.addPaymentMethod.title")}
-                    </DialogTitle>
-                    <DialogDescription className="rtl:text-right">
-                      {t("expenses.dialogs.addPaymentMethod.subtitle")}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="paymentMethodName"
-                        className="rtl:text-right"
-                      >
-                        {t("expenses.form.paymentMethodName")}
-                      </Label>
-                      <Input
-                        id="paymentMethodName"
-                        value={paymentMethodForm.name}
-                        onChange={(e) =>
-                          handlePaymentMethodFormChange("name", e.target.value)
-                        }
-                        placeholder={t(
-                          "expenses.form.paymentMethodNamePlaceholder"
-                        )}
-                        className="rtl:text-right"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label
-                        htmlFor="paymentMethodDescription"
-                        className="rtl:text-right"
-                      >
-                        {t("expenses.form.description")}
-                      </Label>
-                      <Textarea
-                        id="paymentMethodDescription"
-                        value={paymentMethodForm.description}
-                        onChange={(e) =>
-                          handlePaymentMethodFormChange(
-                            "description",
-                            e.target.value
-                          )
-                        }
-                        placeholder={t("expenses.form.descriptionPlaceholder")}
-                        className="rtl:text-right"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2 rtl:flex-row-reverse">
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowAddPaymentMethod(false)}
-                    >
-                      {t("admin.common.cancel")}
-                    </Button>
-                    <Button onClick={handleAddPaymentMethod}>
-                      {t("expenses.actions.addPaymentMethod")}
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
-
-          {/* Payment Methods Table */}
-          <Card>
-            <CardContent className="p-0">
-              <div className="relative w-full overflow-auto">
-                <RTLTable>
-                  <TableHeader>
-                    <TableRow>
-                      <RTLTableHeader>
-                        {t("expenses.table.name")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.description")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.totalTransactions")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.totalAmount")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("expenses.table.status")}
-                      </RTLTableHeader>
-                      <RTLTableHeader>
-                        {t("admin.common.actions")}
-                      </RTLTableHeader>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paymentMethods.map((method) => (
-                      <TableRow key={method.id}>
-                        <RTLTableCell className="font-medium">
-                          {method.name}
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          {method.description ||
-                            t("expenses.table.noDescription")}
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          {formatNumberForLocale(
-                            method.totalTransactions,
-                            i18nInstance.language
-                          )}
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          <div className="font-medium currency-container">
-                            {formatCurrencyForLocale(
-                              method.totalAmount,
-                              i18nInstance.language
-                            )}
-                          </div>
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          <Badge
-                            variant={method.isActive ? "default" : "secondary"}
-                          >
-                            {method.isActive
-                              ? t("expenses.status.active")
-                              : t("expenses.status.inactive")}
-                          </Badge>
-                        </RTLTableCell>
-                        <RTLTableCell>
-                          <div className="flex items-center gap-2 rtl:flex-row-reverse">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditPaymentMethod(method)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                handleDeletePaymentMethod(method.id)
-                              }
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </RTLTableCell>
+                    {categories.filter(cat => cat.totalPayments > 0).length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center py-12">
+                          <Tag className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground">{t("expenses.noCategoriesFound") || "No categories found"}</p>
+                        </TableCell>
                       </TableRow>
-                    ))}
+                    )}
                   </TableBody>
                 </RTLTable>
               </div>
@@ -1486,16 +944,16 @@ const ExpensesManagement: React.FC = () => {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="editDetails" className="rtl:text-right">
-                {t("expenses.form.details")}
+              <Label htmlFor="editDescription" className="rtl:text-right">
+                {t("expenses.form.description") || "Description"}
               </Label>
               <Textarea
-                id="editDetails"
-                value={expenseForm.details}
+                id="editDescription"
+                value={expenseForm.description}
                 onChange={(e) =>
-                  handleExpenseFormChange("details", e.target.value)
+                  handleExpenseFormChange("description", e.target.value)
                 }
-                placeholder={t("expenses.form.detailsPlaceholder")}
+                placeholder={t("expenses.form.descriptionPlaceholder") || "Enter expense description"}
                 className="rtl:text-right"
               />
             </div>
@@ -1507,6 +965,7 @@ const ExpensesManagement: React.FC = () => {
                 <Input
                   id="editAmount"
                   type="number"
+                  step="0.01"
                   value={expenseForm.amount}
                   onChange={(e) =>
                     handleExpenseFormChange("amount", e.target.value)
@@ -1520,9 +979,9 @@ const ExpensesManagement: React.FC = () => {
                   {t("expenses.form.category")}
                 </Label>
                 <Select
-                  value={expenseForm.categoryId}
+                  value={expenseForm.category}
                   onValueChange={(value) =>
-                    handleExpenseFormChange("categoryId", value)
+                    handleExpenseFormChange("category", value)
                   }
                 >
                   <SelectTrigger className="rtl:text-right">
@@ -1531,49 +990,9 @@ const ExpensesManagement: React.FC = () => {
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4 rtl:space-x-reverse">
-              <div className="space-y-2">
-                <Label htmlFor="editPaidBy" className="rtl:text-right">
-                  {t("expenses.form.paidBy")}
-                </Label>
-                <Input
-                  id="editPaidBy"
-                  value={expenseForm.paidBy}
-                  onChange={(e) =>
-                    handleExpenseFormChange("paidBy", e.target.value)
-                  }
-                  placeholder={t("expenses.form.paidByPlaceholder")}
-                  className="rtl:text-right"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="editPaymentMethod" className="rtl:text-right">
-                  {t("expenses.form.paymentMethod")}
-                </Label>
-                <Select
-                  value={expenseForm.paymentMethodId}
-                  onValueChange={(value) =>
-                    handleExpenseFormChange("paymentMethodId", value)
-                  }
-                >
-                  <SelectTrigger className="rtl:text-right">
-                    <SelectValue
-                      placeholder={t("expenses.form.selectPaymentMethod")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paymentMethods.map((method) => (
-                      <SelectItem key={method.id} value={method.id}>
-                        {method.name}
+                    {EXPENSE_CATEGORIES.map((category) => (
+                      <SelectItem key={category.value} value={category.value}>
+                        {category.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1581,158 +1000,31 @@ const ExpensesManagement: React.FC = () => {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editPaymentDate" className="rtl:text-right">
-                {t("expenses.form.paymentDate")}
+              <Label htmlFor="editDate" className="rtl:text-right">
+                {t("expenses.form.date") || "Date"}
               </Label>
               <Input
-                id="editPaymentDate"
+                id="editDate"
                 type="date"
-                value={expenseForm.paymentDate}
+                value={expenseForm.date}
                 onChange={(e) =>
-                  handleExpenseFormChange("paymentDate", e.target.value)
+                  handleExpenseFormChange("date", e.target.value)
                 }
-                className="rtl:text-right"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="editNotes" className="rtl:text-right">
-                {t("expenses.form.notes")}
-              </Label>
-              <Textarea
-                id="editNotes"
-                value={expenseForm.notes}
-                onChange={(e) =>
-                  handleExpenseFormChange("notes", e.target.value)
-                }
-                placeholder={t("expenses.form.notesPlaceholder")}
                 className="rtl:text-right"
               />
             </div>
           </div>
           <div className="flex justify-end gap-2 rtl:flex-row-reverse">
-            <Button variant="outline" onClick={() => setShowEditExpense(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowEditExpense(false);
+                setSelectedExpense(null);
+              }}
+            >
               {t("admin.common.cancel")}
             </Button>
             <Button onClick={handleSaveExpenseChanges}>
-              {t("expenses.actions.saveChanges")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Category Dialog */}
-      <Dialog open={showEditCategory} onOpenChange={setShowEditCategory}>
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>
-              {t("expenses.dialogs.editCategory.title")}
-            </DialogTitle>
-            <DialogDescription className="rtl:text-right">
-              {t("expenses.dialogs.editCategory.subtitle")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="editCategoryName" className="rtl:text-right">
-                {t("expenses.form.categoryName")}
-              </Label>
-              <Input
-                id="editCategoryName"
-                value={categoryForm.name}
-                onChange={(e) =>
-                  handleCategoryFormChange("name", e.target.value)
-                }
-                placeholder={t("expenses.form.categoryNamePlaceholder")}
-                className="rtl:text-right"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label
-                htmlFor="editCategoryDescription"
-                className="rtl:text-right"
-              >
-                {t("expenses.form.description")}
-              </Label>
-              <Textarea
-                id="editCategoryDescription"
-                value={categoryForm.description}
-                onChange={(e) =>
-                  handleCategoryFormChange("description", e.target.value)
-                }
-                placeholder={t("expenses.form.descriptionPlaceholder")}
-                className="rtl:text-right"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 rtl:flex-row-reverse">
-            <Button
-              variant="outline"
-              onClick={() => setShowEditCategory(false)}
-            >
-              {t("admin.common.cancel")}
-            </Button>
-            <Button onClick={handleSaveCategoryChanges}>
-              {t("expenses.actions.saveChanges")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Payment Method Dialog */}
-      <Dialog
-        open={showEditPaymentMethod}
-        onOpenChange={setShowEditPaymentMethod}
-      >
-        <DialogContent className="sm:max-w-[400px]">
-          <DialogHeader>
-            <DialogTitle>
-              {t("expenses.dialogs.editPaymentMethod.title")}
-            </DialogTitle>
-            <DialogDescription className="rtl:text-right">
-              {t("expenses.dialogs.editPaymentMethod.subtitle")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="editPaymentMethodName" className="rtl:text-right">
-                {t("expenses.form.paymentMethodName")}
-              </Label>
-              <Input
-                id="editPaymentMethodName"
-                value={paymentMethodForm.name}
-                onChange={(e) =>
-                  handlePaymentMethodFormChange("name", e.target.value)
-                }
-                placeholder={t("expenses.form.paymentMethodNamePlaceholder")}
-                className="rtl:text-right"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label
-                htmlFor="editPaymentMethodDescription"
-                className="rtl:text-right"
-              >
-                {t("expenses.form.description")}
-              </Label>
-              <Textarea
-                id="editPaymentMethodDescription"
-                value={paymentMethodForm.description}
-                onChange={(e) =>
-                  handlePaymentMethodFormChange("description", e.target.value)
-                }
-                placeholder={t("expenses.form.descriptionPlaceholder")}
-                className="rtl:text-right"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 rtl:flex-row-reverse">
-            <Button
-              variant="outline"
-              onClick={() => setShowEditPaymentMethod(false)}
-            >
-              {t("admin.common.cancel")}
-            </Button>
-            <Button onClick={handleSavePaymentMethodChanges}>
               {t("expenses.actions.saveChanges")}
             </Button>
           </div>

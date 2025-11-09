@@ -51,7 +51,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/hooks/useTheme";
 import i18n from "@/lib/i18n";
 import { formatNumberForLocale, formatCurrencyForLocale } from "@/lib/utils";
-import { Footer } from "@/components/Footer";
 import SystemLogs from "@/components/admin/SystemLogs";
 import CheckinLogs from "@/components/admin/CheckinLogs";
 import { ExportDialog } from "@/components/ui/export-dialog";
@@ -95,6 +94,7 @@ import UsherManagement from "@/components/admin/UsherManagment";
 import AdminAccountSettings from "@/components/admin/AdminAccountSettings";
 import ExpensesManagement from "@/components/admin/expansesManagment";
 import PayoutsManagement from "@/components/admin/PayoutsManagement";
+import PaymentsManagement from "@/components/admin/PaymentsManagement";
 import MerchantManagement from "@/components/admin/MerchantManagement";
 
 // Import Owner's Finances components
@@ -306,6 +306,11 @@ const EnhancedTabsList: React.FC<EnhancedTabsListProps> = ({
           value: "payouts",
           label: t("admin.dashboard.tabs.payouts"),
           icon: Banknote,
+        },
+        {
+          value: "payments",
+          label: t("admin.dashboard.tabs.payments") || "Payments",
+          icon: CreditCard,
         },
       ],
     },
@@ -1536,6 +1541,14 @@ const AdminDashboard: React.FC = () => {
             <PayoutsManagement />
           </TabsContent>
 
+          {/* Payments Tab */}
+          <TabsContent
+            value="payments"
+            className="space-y-6 transition-all duration-300 ease-in-out"
+          >
+            <PaymentsManagement />
+          </TabsContent>
+
           {/* Analytics Tab */}
           <TabsContent
             value="analytics"
@@ -1968,7 +1981,6 @@ const AdminDashboard: React.FC = () => {
           </TabsContent>
         </Tabs>
       </main>
-      <Footer />
     </div>
   );
 };

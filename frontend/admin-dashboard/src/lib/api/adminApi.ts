@@ -262,6 +262,19 @@ export const ticketsApi = {
   },
 
   /**
+   * Create ticket
+   */
+  createTicket: async (data: {
+    event_id: string;
+    customer_id: string;
+    category: string;
+    price: number;
+  }) => {
+    const response = await adminApi.post('/tickets/', data);
+    return response.data;
+  },
+
+  /**
    * Update ticket status
    */
   updateTicketStatus: async (id: string, status: string) => {
@@ -270,15 +283,34 @@ export const ticketsApi = {
   },
 
   /**
-   * Update ticket (general update - may not be supported by backend)
+   * Update ticket (general update)
    */
-  updateTicket: async (id: string, data: { status?: string; [key: string]: any }) => {
-    // If status is provided, use the status endpoint
-    if (data.status) {
-      return await ticketsApi.updateTicketStatus(id, data.status);
-    }
-    // Otherwise try PUT to base endpoint (may not work for ReadOnlyModelViewSet)
+  updateTicket: async (id: string, data: { status?: string; category?: string; price?: number; [key: string]: any }) => {
     const response = await adminApi.put(`/tickets/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete ticket
+   */
+  deleteTicket: async (id: string) => {
+    const response = await adminApi.delete(`/tickets/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Check in ticket
+   */
+  checkinTicket: async (id: string, data?: { device_name?: string; device_type?: string; notes?: string }) => {
+    const response = await adminApi.post(`/tickets/${id}/checkin/`, data || {});
+    return response.data;
+  },
+
+  /**
+   * Transfer ticket
+   */
+  transferTicket: async (id: string, to_customer_id: string) => {
+    const response = await adminApi.post(`/tickets/${id}/transfer/`, { to_customer_id });
     return response.data;
   },
 };
@@ -305,6 +337,14 @@ export const customersApi = {
    */
   getCustomer: async (id: string) => {
     const response = await adminApi.get(`/customers/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create customer
+   */
+  createCustomer: async (data: any) => {
+    const response = await adminApi.post('/customers/', data);
     return response.data;
   },
 
@@ -363,6 +403,87 @@ export const nfcCardsApi = {
    */
   bulkOperation: async (data: { operation: string; card_ids: string[]; [key: string]: any }) => {
     const response = await adminApi.post('/nfc-cards/bulk/', data);
+    return response.data;
+  },
+};
+
+// Ushers API
+export const ushersApi = {
+  /**
+   * Get ushers
+   */
+  getUshers: async (params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/ushers/', { params });
+    return response.data;
+  },
+
+  /**
+   * Create usher
+   */
+  createUsher: async (data: any) => {
+    const response = await adminApi.post('/ushers/', data);
+    return response.data;
+  },
+
+  /**
+   * Update usher
+   */
+  updateUsher: async (id: string, data: any) => {
+    const response = await adminApi.put(`/ushers/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete usher
+   */
+  deleteUsher: async (id: string) => {
+    const response = await adminApi.delete(`/ushers/${id}/`);
+    return response.data;
+  },
+};
+
+// Merchants API
+export const merchantsApi = {
+  /**
+   * Get merchants
+   */
+  getMerchants: async (params?: {
+    search?: string;
+    status?: string;
+    verification_status?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/merchants/', { params });
+    return response.data;
+  },
+
+  /**
+   * Create merchant
+   */
+  createMerchant: async (data: any) => {
+    const response = await adminApi.post('/merchants/', data);
+    return response.data;
+  },
+
+  /**
+   * Update merchant
+   */
+  updateMerchant: async (id: string, data: any) => {
+    const response = await adminApi.put(`/merchants/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete merchant
+   */
+  deleteMerchant: async (id: string) => {
+    const response = await adminApi.delete(`/merchants/${id}/`);
     return response.data;
   },
 };
@@ -588,6 +709,40 @@ export const financesApi = {
   },
 
   /**
+   * Create expense
+   */
+  createExpense: async (data: {
+    category: string;
+    amount: number;
+    description: string;
+    date: string;
+  }) => {
+    const response = await adminApi.post('/expenses/', data);
+    return response.data;
+  },
+
+  /**
+   * Update expense
+   */
+  updateExpense: async (id: string, data: {
+    category?: string;
+    amount?: number;
+    description?: string;
+    date?: string;
+  }) => {
+    const response = await adminApi.put(`/expenses/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete expense
+   */
+  deleteExpense: async (id: string) => {
+    const response = await adminApi.delete(`/expenses/${id}/`);
+    return response.data;
+  },
+
+  /**
    * Get payouts
    */
   getPayouts: async (params?: {
@@ -659,6 +814,32 @@ export const financesApi = {
     page_size?: number;
   }) => {
     const response = await adminApi.get('/finances/withdrawals/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get payments
+   */
+  getPayments: async (params?: {
+    search?: string;
+    status?: string;
+    payment_method?: string;
+    customer?: string;
+    ticket?: string;
+    date_from?: string;
+    date_to?: string;
+    page?: number;
+    page_size?: number;
+  }) => {
+    const response = await adminApi.get('/payments/', { params });
+    return response.data;
+  },
+
+  /**
+   * Get payment statistics
+   */
+  getPaymentStats: async () => {
+    const response = await adminApi.get('/payments/stats/');
     return response.data;
   },
 };

@@ -20,9 +20,9 @@ from .serializers import (
 from .filters import TicketFilter
 
 
-class TicketViewSet(viewsets.ReadOnlyModelViewSet):
+class TicketViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for Ticket model (read-only for list/detail, custom actions for updates).
+    ViewSet for Ticket model.
     """
     queryset = Ticket.objects.select_related('event', 'customer').all()
     permission_classes = [IsAuthenticated]
@@ -35,6 +35,124 @@ class TicketViewSet(viewsets.ReadOnlyModelViewSet):
         if self.action == 'list':
             return TicketListSerializer
         return TicketDetailSerializer
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'status']:
+            return [IsAuthenticated(), IsAdmin()]
+        return [IsAuthenticated()]
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Create a new ticket (admin only).
+        POST /api/tickets/
+        """
+        from events.models import Event
+        from customers.models import Customer
+        import uuid
+        
+        event_id = request.data.get('event_id')
+        customer_id = request.data.get('customer_id')
+        category = request.data.get('category')
+        price = request.data.get('price')
+        
+        if not all([event_id, customer_id, category, price]):
+            raise ValidationError('event_id, customer_id, category, and price are required.')
+        
+        try:
+            event = Event.objects.get(id=event_id)
+            customer = Customer.objects.get(id=customer_id)
+        except (Event.DoesNotExist, Customer.DoesNotExist):
+            raise NotFoundError('Event or customer not found.')
+        
+        # Generate unique ticket number
+        ticket_number = f"{event.id}-{customer.id}-{uuid.uuid4().hex[:8]}"
+        
+        # Create ticket
+        ticket = Ticket.objects.create(
+            event=event,
+            customer=customer,
+            category=category,
+            price=price,
+            status='valid',
+            ticket_number=ticket_number
+        )
+        
+        # Log system action
+        ip_address = get_client_ip(request)
+        log_system_action(
+            user=request.user,
+            action='CREATE_TICKET',
+            category='ticket',
+            severity='INFO',
+            description=f'Created ticket {ticket.ticket_number} for event {event.title}',
+            ip_address=ip_address,
+            status='SUCCESS'
+        )
+        
+        return Response(TicketDetailSerializer(ticket).data, status=status.HTTP_201_CREATED)
+    
+    def update(self, request, *args, **kwargs):
+        """
+        Update ticket (admin only).
+        PUT /api/tickets/:id/
+        """
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        
+        # Only allow updating status, category, and price
+        allowed_fields = ['status', 'category', 'price']
+        data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        
+        if 'status' in data:
+            old_status = instance.status
+            instance.status = data['status']
+            if instance.status == 'used' and old_status == 'valid':
+                instance.check_in_time = timezone.now()
+        
+        if 'category' in data:
+            instance.category = data['category']
+        
+        if 'price' in data:
+            instance.price = data['price']
+        
+        instance.save()
+        
+        # Log system action
+        ip_address = get_client_ip(request)
+        log_system_action(
+            user=request.user,
+            action='UPDATE_TICKET',
+            category='ticket',
+            severity='INFO',
+            description=f'Updated ticket {instance.ticket_number}',
+            ip_address=ip_address,
+            status='SUCCESS'
+        )
+        
+        return Response(TicketDetailSerializer(instance).data)
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete ticket (admin only).
+        DELETE /api/tickets/:id/
+        """
+        instance = self.get_object()
+        ticket_number = instance.ticket_number
+        
+        # Log system action before deletion
+        ip_address = get_client_ip(request)
+        log_system_action(
+            user=request.user,
+            action='DELETE_TICKET',
+            category='ticket',
+            severity='INFO',
+            description=f'Deleted ticket {ticket_number}',
+            ip_address=ip_address,
+            status='SUCCESS'
+        )
+        
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
     
     def list(self, request, *args, **kwargs):
         """
@@ -60,7 +178,7 @@ class TicketViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
     
-    @action(detail=True, methods=['put'], permission_classes=[IsAuthenticated, IsUsher])
+    @action(detail=True, methods=['put'], permission_classes=[IsAuthenticated, IsAdmin])
     def status(self, request, pk=None):
         """
         Update ticket status.

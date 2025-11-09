@@ -31,7 +31,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -42,13 +41,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
   ResponsivePagination,
 } from "@/components/ui/pagination";
 import {
@@ -70,21 +62,14 @@ import {
   Plus,
   Edit,
   Trash2,
-  Eye,
   Download,
   Ban,
   RefreshCw,
   CheckCircle,
-  XCircle,
   Clock,
-  User,
   Ticket,
-  Calendar,
-  DollarSign,
   MoreHorizontal,
   AlertCircle,
-  UserCheck,
-  UserX,
   ChevronsUpDown,
   Tag,
   Tags,
@@ -129,6 +114,7 @@ type Ticket = {
   ticketNumber: string;
   qrCode: string;
   labels: TicketLabel[];
+  paymentStatus?: "pending" | "processing" | "completed" | "failed" | "refunded" | null;
 };
 
 type CheckInLog = {
@@ -153,12 +139,13 @@ const TicketsManagement: React.FC = () => {
   const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
-  const [showCheckInLogs, setShowCheckInLogs] = useState(false);
+  const [editingTicket, setEditingTicket] = useState<Partial<Ticket>>({});
 
   // Assign ticket dialog state
   const [selectedEventId, setSelectedEventId] = useState<string>("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [assignPhoneNumber, setAssignPhoneNumber] = useState<string>("");
+  const [assignPrice, setAssignPrice] = useState<number>(0);
   const [eventSearchValue, setEventSearchValue] = useState<string>("");
 
   // Pagination state
@@ -166,7 +153,6 @@ const TicketsManagement: React.FC = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Label management state
-  const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [showManageLabelsDialog, setShowManageLabelsDialog] = useState(false);
   const [selectedLabels, setSelectedLabels] = useState<TicketLabel[]>([]);
   const [newLabel, setNewLabel] = useState({
@@ -250,22 +236,37 @@ const TicketsManagement: React.FC = () => {
   // Transform API tickets to match Ticket interface
   const tickets: Ticket[] = useMemo(() => {
     if (!ticketsData?.results) return [];
-    return ticketsData.results.map((item: any) => ({
-      id: item.id,
-      eventId: item.event?.id || '',
-      eventTitle: item.event_title || item.event?.title || '',
-      customerId: item.customer?.id || '',
-      customerName: item.customer_name || item.customer?.name || '',
-      category: item.category || '',
-      price: parseFloat(item.price) || 0,
-      purchaseDate: item.purchase_date ? item.purchase_date.split('T')[0] : '',
-      status: item.status as "valid" | "used" | "refunded" | "banned",
-      checkInTime: item.check_in_time || undefined,
-      phoneNumber: item.customer?.phone_number || item.customer?.mobile_number || '',
-      ticketNumber: item.ticket_number || '',
-      qrCode: item.qr_code || item.ticket_number || '',
-      labels: [], // Labels are not in backend API yet
-    }));
+    return ticketsData.results.map((item: any) => {
+      // Debug: log the item to see what fields are available
+      // console.log('Ticket item:', item);
+      
+      const customerId = item.customer_id 
+        ? String(item.customer_id) 
+        : (item.customer?.id ? String(item.customer.id) : '');
+      
+      const phoneNumber = item.customer_phone 
+        || item.customer?.phone 
+        || item.customer?.mobile_number 
+        || '';
+      
+      return {
+        id: item.id,
+        eventId: item.event?.id || '',
+        eventTitle: item.event_title || item.event?.title || '',
+        customerId: customerId,
+        customerName: item.customer_name || item.customer?.name || '',
+        category: item.category || '',
+        price: parseFloat(item.price) || 0,
+        purchaseDate: item.purchase_date ? item.purchase_date.split('T')[0] : '',
+        status: item.status as "valid" | "used" | "refunded" | "banned",
+        checkInTime: item.check_in_time || undefined,
+        phoneNumber: phoneNumber,
+        ticketNumber: item.ticket_number || '',
+        qrCode: item.qr_code || item.ticket_number || '',
+        labels: [], // Labels are not in backend API yet
+        paymentStatus: item.payment_status || null,
+      };
+    });
   }, [ticketsData]);
 
   // Mock tickets data (removed - using API now)
@@ -818,7 +819,7 @@ const TicketsManagement: React.FC = () => {
 
   const uniqueCategories = useMemo(() => {
     if (!ticketsData?.results) return [];
-    return [...new Set(ticketsData.results.map((ticket: any) => ticket.category))];
+    return [...new Set(ticketsData.results.map((ticket: any) => ticket.category))] as string[];
   }, [ticketsData]);
 
   const uniqueDates = useMemo(() => {
@@ -829,7 +830,7 @@ const TicketsManagement: React.FC = () => {
           .map((ticket: any) => ticket.purchase_date?.substring(0, 7))
           .filter(Boolean)
       ),
-    ];
+    ] as string[];
   }, [ticketsData]);
 
   // Pagination from API response
@@ -873,6 +874,39 @@ const TicketsManagement: React.FC = () => {
     }
   };
 
+  const getPaymentStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-100 text-green-800";
+      case "pending":
+      case "processing":
+        return "bg-yellow-100 text-yellow-800";
+      case "failed":
+        return "bg-red-100 text-red-800";
+      case "refunded":
+        return "bg-gray-100 text-gray-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getPaymentStatusText = (status: string) => {
+    switch (status) {
+      case "completed":
+        return t("admin.tickets.paymentStatus.completed") || "Paid";
+      case "pending":
+        return t("admin.tickets.paymentStatus.pending") || "Pending";
+      case "processing":
+        return t("admin.tickets.paymentStatus.processing") || "Processing";
+      case "failed":
+        return t("admin.tickets.paymentStatus.failed") || "Failed";
+      case "refunded":
+        return t("admin.tickets.paymentStatus.refunded") || "Refunded";
+      default:
+        return status;
+    }
+  };
+
   const getScanResultColor = (result: string) => {
     switch (result) {
       case "success":
@@ -905,7 +939,39 @@ const TicketsManagement: React.FC = () => {
 
   const handleEditTicket = (ticket: Ticket) => {
     setSelectedTicket(ticket);
+    setEditingTicket({
+      category: ticket.category,
+      price: ticket.price,
+      status: ticket.status,
+    });
     setIsEditDialogOpen(true);
+  };
+
+  const handleSaveTicketChanges = () => {
+    if (!selectedTicket) return;
+    
+    // Validate required fields
+    if (!editingTicket.category || !editingTicket.price) {
+      toast({
+        title: t("common.error"),
+        description: t("admin.tickets.toast.requiredFields"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prepare data for API
+    const updateData: any = {
+      category: editingTicket.category,
+      price: Number(editingTicket.price),
+    };
+
+    // Only update status if it changed
+    if (editingTicket.status && editingTicket.status !== selectedTicket.status) {
+      updateData.status = editingTicket.status;
+    }
+    
+    updateTicketMutation.mutate({ id: selectedTicket.id, data: updateData });
   };
 
   // Update ticket status mutation
@@ -923,7 +989,55 @@ const TicketsManagement: React.FC = () => {
     onError: (error: any) => {
       toast({
         title: t("common.error"),
-        description: error.response?.data?.error?.message || error.message || t("admin.tickets.toast.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("admin.tickets.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create ticket mutation
+  const createTicketMutation = useMutation({
+    mutationFn: async (data: { event_id: string; customer_id: string; category: string; price: number }) => {
+      return await ticketsApi.createTicket(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      toast({
+        title: t("admin.tickets.toast.ticketAssigned"),
+        description: t("admin.tickets.toast.ticketAssignedDesc"),
+      });
+      setIsAssignDialogOpen(false);
+      // Reset form
+      setSelectedEventId("");
+      setSelectedCategory("");
+      setAssignPhoneNumber("");
+      setEventSearchValue("");
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("admin.tickets.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete ticket mutation
+  const deleteTicketMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await ticketsApi.deleteTicket(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tickets'] });
+      toast({
+        title: t("admin.tickets.toast.ticketDeleted"),
+        description: t("admin.tickets.toast.ticketDeletedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("admin.tickets.toast.error"),
         variant: "destructive",
       });
     },
@@ -937,19 +1051,13 @@ const TicketsManagement: React.FC = () => {
     updateTicketStatusMutation.mutate({ id: ticketId, status: 'refunded' });
   };
 
-  const handleExportTickets = () => {
-    toast({
-      title: t("admin.tickets.toast.exportSuccess"),
-      description: t("admin.tickets.toast.exportSuccessDesc"),
-    });
-  };
-
   const handleAssignTicket = () => {
     setIsAssignDialogOpen(true);
     // Reset form
     setSelectedEventId("");
     setSelectedCategory("");
     setAssignPhoneNumber("");
+    setAssignPrice(0);
     setEventSearchValue("");
   };
 
@@ -957,17 +1065,53 @@ const TicketsManagement: React.FC = () => {
     updateTicketStatusMutation.mutate({ id: ticketId, status: 'valid' });
   };
 
-  const handleAssignTicketAction = () => {
-    toast({
-      title: t("admin.tickets.toast.ticketAssigned"),
-      description: t("admin.tickets.toast.ticketAssignedDesc"),
-    });
-    setIsAssignDialogOpen(false);
-    // Reset form
-    setSelectedEventId("");
-    setSelectedCategory("");
-    setAssignPhoneNumber("");
-    setEventSearchValue("");
+  const handleAssignTicketAction = async () => {
+    // Validate required fields
+    if (!selectedEventId || !selectedCategory || !assignPhoneNumber || !assignPrice) {
+      toast({
+        title: t("common.error"),
+        description: t("admin.tickets.toast.requiredFields"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Find customer by phone number
+    try {
+      const { customersApi } = await import("@/lib/api/adminApi");
+      const customersResponse = await customersApi.getCustomers({
+        search: assignPhoneNumber,
+        page_size: 10,
+      });
+      
+      const customers = customersResponse?.results || [];
+      const customer = customers.find(
+        (c: any) => c.phone === assignPhoneNumber || c.mobile_number === assignPhoneNumber
+      );
+
+      if (!customer) {
+        toast({
+          title: t("common.error"),
+          description: t("admin.tickets.toast.customerNotFound"),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Create ticket
+      createTicketMutation.mutate({
+        event_id: selectedEventId,
+        customer_id: customer.id.toString(),
+        category: selectedCategory,
+        price: assignPrice,
+      });
+    } catch (error: any) {
+      toast({
+        title: t("common.error"),
+        description: error.message || t("admin.tickets.toast.error"),
+        variant: "destructive",
+      });
+    }
   };
 
   // Update ticket mutation
@@ -991,19 +1135,6 @@ const TicketsManagement: React.FC = () => {
       });
     },
   });
-
-  const handleSaveTicketChanges = () => {
-    if (!selectedTicket) return;
-    
-    // Get form values (you'll need to add state for form fields)
-    // For now, just update status if changed
-    const formData = {
-      status: selectedTicket.status,
-      // Add other fields as needed
-    };
-    
-    updateTicketMutation.mutate({ id: selectedTicket.id, data: formData });
-  };
 
   // Label management functions
   const handleManageLabels = (ticket: Ticket) => {
@@ -1070,13 +1201,6 @@ const TicketsManagement: React.FC = () => {
 
   const handleSaveLabels = () => {
     if (selectedTicket) {
-      // Update the ticket with new labels
-      const updatedTickets = tickets.map((ticket) =>
-        ticket.id === selectedTicket.id
-          ? { ...ticket, labels: selectedLabels }
-          : ticket
-      );
-
       toast({
         title: t("admin.tickets.labels.toast.labelsSaved"),
         description: t("admin.tickets.labels.toast.labelsSavedDesc"),
@@ -1116,7 +1240,7 @@ const TicketsManagement: React.FC = () => {
               status: statusFilter,
               date: dateFilter,
             }}
-            onExport={(format) => {
+            onExport={() => {
               toast({
                 title: t("admin.tickets.toast.exportSuccess"),
                 description: t("admin.tickets.toast.exportSuccessDesc"),
@@ -1238,7 +1362,7 @@ const TicketsManagement: React.FC = () => {
                 <SelectItem value="all">
                   {t("admin.tickets.filters.allCategories")}
                 </SelectItem>
-                {uniqueCategories.map((category) => (
+                {uniqueCategories.map((category: string) => (
                   <SelectItem key={category} value={category}>
                     {t(`admin.tickets.categories.${category}`)}
                   </SelectItem>
@@ -1279,7 +1403,7 @@ const TicketsManagement: React.FC = () => {
                 <SelectItem value="all">
                   {t("admin.tickets.filters.allDates")}
                 </SelectItem>
-                {uniqueDates.map((date) => (
+                {uniqueDates.map((date: string) => (
                   <SelectItem key={date} value={date}>
                     {format(parseISO(date + "-01"), "MMMM yyyy", {
                       locale: i18n.language === "ar" ? ar : undefined,
@@ -1362,6 +1486,9 @@ const TicketsManagement: React.FC = () => {
                       {t("admin.tickets.table.status")}
                     </TableHead>
                     <TableHead className="rtl:text-right">
+                      {t("admin.tickets.table.paymentStatus") || "Payment Status"}
+                    </TableHead>
+                    <TableHead className="rtl:text-right">
                       {t("admin.tickets.table.price")}
                     </TableHead>
                     <TableHead className="rtl:text-right">
@@ -1378,18 +1505,25 @@ const TicketsManagement: React.FC = () => {
                     <TableCell>
                       <div className="rtl:text-right">
                         <p className="font-medium">{ticket.ticketNumber}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {t("admin.tickets.table.phoneNumber")}:{" "}
-                          {ticket.phoneNumber}
-                        </p>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="rtl:text-right">
-                        <p className="font-medium">{ticket.customerName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {t("admin.tickets.table.id")}: {ticket.customerId}
-                        </p>
+                        <p className="font-medium">{ticket.customerName || 'N/A'}</p>
+                        {ticket.customerId && (
+                          <p className="text-sm text-muted-foreground">
+                            {t("admin.tickets.table.id")}: {ticket.customerId}
+                          </p>
+                        )}
+                        {ticket.phoneNumber ? (
+                          <p className="text-sm text-muted-foreground">
+                            {t("admin.tickets.table.phoneNumber")}: {ticket.phoneNumber}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground italic">
+                            {t("admin.tickets.table.phoneNumber")}: {t("common.notAvailable")}
+                          </p>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -1413,6 +1547,17 @@ const TicketsManagement: React.FC = () => {
                       <Badge className={getStatusColor(ticket.status)}>
                         {getStatusText(ticket.status)}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {ticket.paymentStatus ? (
+                        <Badge className={getPaymentStatusColor(ticket.paymentStatus)}>
+                          {getPaymentStatusText(ticket.paymentStatus)}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="bg-gray-100 text-gray-600">
+                          {t("admin.tickets.table.noPayment") || "No Payment"}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <p className="font-medium rtl:text-right">
@@ -1496,6 +1641,18 @@ const TicketsManagement: React.FC = () => {
                               {t("admin.tickets.actions.unbanTicket")}
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => {
+                              if (window.confirm(t("admin.tickets.toast.confirmDelete"))) {
+                                deleteTicketMutation.mutate(ticket.id);
+                              }
+                            }}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
+                            {t("admin.tickets.actions.deleteTicket")}
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -1531,7 +1688,7 @@ const TicketsManagement: React.FC = () => {
       </Card>
 
       {/* Check-in Logs */}
-      {showCheckInLogs && (
+      {false && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 rtl:flex-row-reverse rtl:text-right ltr:text-left">
@@ -1631,13 +1788,16 @@ const TicketsManagement: React.FC = () => {
                   <label className="text-sm font-medium rtl:text-right">
                     {t("admin.tickets.form.ticketNumber")}
                   </label>
-                  <Input defaultValue={selectedTicket.ticketNumber} />
+                  <Input value={selectedTicket.ticketNumber} disabled />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right">
-                    {t("admin.tickets.form.category")}
+                    {t("admin.tickets.form.category")} *
                   </label>
-                  <Select defaultValue={selectedTicket.category}>
+                  <Select 
+                    value={editingTicket.category || selectedTicket.category || ""}
+                    onValueChange={(value) => setEditingTicket({ ...editingTicket, category: value })}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1662,25 +1822,26 @@ const TicketsManagement: React.FC = () => {
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right">
-                    {t("admin.tickets.form.price")}
+                    {t("admin.tickets.form.price")} *
                   </label>
-                  <Input type="number" defaultValue={selectedTicket.price} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium rtl:text-right">
-                    {t("admin.tickets.form.phoneNumber")}
-                  </label>
-                  <Input
-                    type="tel"
-                    defaultValue={selectedTicket.phoneNumber}
-                    placeholder="+966501234567"
+                  <Input 
+                    type="number" 
+                    min="0"
+                    step="0.01"
+                    value={editingTicket.price || selectedTicket.price || ""}
+                    onChange={(e) => setEditingTicket({ ...editingTicket, price: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right">
                     {t("admin.tickets.form.status")}
                   </label>
-                  <Select defaultValue={selectedTicket.status}>
+                  <Select 
+                    value={editingTicket.status || selectedTicket.status || "valid"}
+                    onValueChange={(value: "valid" | "used" | "refunded" | "banned") => 
+                      setEditingTicket({ ...editingTicket, status: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1706,12 +1867,21 @@ const TicketsManagement: React.FC = () => {
           <DialogFooter className="rtl:flex-row-reverse">
             <Button
               variant="outline"
-              onClick={() => setIsEditDialogOpen(false)}
+              onClick={() => {
+                setIsEditDialogOpen(false);
+                setEditingTicket({});
+                setSelectedTicket(null);
+              }}
             >
               {t("admin.tickets.dialogs.cancel")}
             </Button>
-            <Button onClick={handleSaveTicketChanges}>
-              {t("admin.tickets.dialogs.saveChanges")}
+            <Button 
+              onClick={handleSaveTicketChanges}
+              disabled={updateTicketMutation.isPending}
+            >
+              {updateTicketMutation.isPending 
+                ? t("common.loading") 
+                : t("admin.tickets.dialogs.saveChanges")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1745,7 +1915,7 @@ const TicketsManagement: React.FC = () => {
                         <span className="truncate">
                           {
                             availableEvents.find(
-                              (event) => event.id === selectedEventId
+                              (event: { id: string; title: string }) => event.id === selectedEventId
                             )?.title
                           }
                         </span>
@@ -1768,7 +1938,7 @@ const TicketsManagement: React.FC = () => {
                           {t("admin.tickets.form.noEventsFound")}
                         </CommandEmpty>
                         <CommandGroup>
-                          {availableEvents.map((event) => (
+                          {availableEvents.map((event: { id: string; title: string }) => (
                             <CommandItem
                               key={event.id}
                               value={`${event.id} ${event.title}`}
@@ -1831,17 +2001,42 @@ const TicketsManagement: React.FC = () => {
                   onChange={(e) => setAssignPhoneNumber(e.target.value)}
                 />
               </div>
+              <div>
+                <label className="text-sm font-medium rtl:text-right">
+                  {t("admin.tickets.form.price")} *
+                </label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="100.00"
+                  value={assignPrice || ""}
+                  onChange={(e) => setAssignPrice(parseFloat(e.target.value) || 0)}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter className="rtl:flex-row-reverse">
             <Button
               variant="outline"
-              onClick={() => setIsAssignDialogOpen(false)}
+              onClick={() => {
+                setIsAssignDialogOpen(false);
+                setSelectedEventId("");
+                setSelectedCategory("");
+                setAssignPhoneNumber("");
+                setAssignPrice(0);
+                setEventSearchValue("");
+              }}
             >
               {t("admin.tickets.dialogs.cancel")}
             </Button>
-            <Button onClick={handleAssignTicketAction}>
-              {t("admin.tickets.dialogs.assignTicketButton")}
+            <Button 
+              onClick={handleAssignTicketAction}
+              disabled={createTicketMutation.isPending}
+            >
+              {createTicketMutation.isPending 
+                ? t("common.loading") 
+                : t("admin.tickets.dialogs.assignTicketButton")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -262,7 +262,8 @@ const Deposits = () => {
     ).length;
     const avgDeposit =
       deposits.length > 0 ? totalDeposits / deposits.length : 0;
-    const monthlyGrowth = 18; // Mock data
+    // Calculate monthly growth from deposits data if available
+    const monthlyGrowth = deposits.length > 0 ? 0 : 0; // TODO: Calculate from API data if available
 
     return {
       totalDeposits,

@@ -25,9 +25,27 @@ class OrganizerViewSet(viewsets.ModelViewSet):
 
 
 class UsherViewSet(viewsets.ModelViewSet):
-    queryset = Usher.objects.select_related('user').all()
+    queryset = Usher.objects.select_related('user').prefetch_related('events').all()
     serializer_class = UsherSerializer
     permission_classes = [IsAuthenticated, IsAdmin]
+    
+    def get_serializer_context(self):
+        """Add request to serializer context"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    def create(self, request, *args, **kwargs):
+        """Override create to handle errors better"""
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {'error': serializer.errors},
+                status=400
+            )
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=201, headers=headers)
     
     @action(detail=True, methods=['post'])
     def assign_event(self, request, pk=None):

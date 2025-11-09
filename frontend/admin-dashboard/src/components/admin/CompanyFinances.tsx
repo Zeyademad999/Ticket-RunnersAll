@@ -99,98 +99,44 @@ const CompanyFinances = () => {
   const transformedFinancesData = useMemo(() => {
     if (!companyFinancesData) return [];
     // API might return different structure, adapt as needed
-    return Array.isArray(companyFinancesData) ? companyFinancesData : [companyFinancesData];
+    const dataArray = Array.isArray(companyFinancesData) ? companyFinancesData : [companyFinancesData];
+    // Ensure all items have required fields with defaults
+    return dataArray.map((item: any) => ({
+      id: item.id || item.period || String(Math.random()),
+      period: item.period || item.name || "Unknown Period",
+      totalRevenue: item.totalRevenue || item.total_revenue || 0,
+      totalExpenses: item.totalExpenses || item.total_expenses || 0,
+      netProfit: item.netProfit || item.net_profit || 0,
+      profitMargin: item.profitMargin || item.profit_margin || 0,
+      status: item.status || "completed",
+      date: item.date || item.created_at || item.createdAt || new Date().toISOString().split('T')[0],
+    }));
   }, [companyFinancesData]);
 
-  // Mock data for company finances (fallback if API doesn't return array)
-  const fallbackFinancesData = [
-    {
-      id: "1",
-      period: "Q1 2024",
-      totalRevenue: 2500000,
-      totalExpenses: 1800000,
-      netProfit: 700000,
-      profitMargin: 28,
-      status: "completed",
-      date: "2024-03-31",
-    },
-    {
-      id: "2",
-      period: "Q4 2023",
-      totalRevenue: 2200000,
-      totalExpenses: 1600000,
-      netProfit: 600000,
-      profitMargin: 27.3,
-      status: "completed",
-      date: "2023-12-31",
-    },
-    {
-      id: "3",
-      period: "Q3 2023",
-      totalRevenue: 2000000,
-      totalExpenses: 1500000,
-      netProfit: 500000,
-      profitMargin: 25,
-      status: "completed",
-      date: "2023-09-30",
-    },
-  ];
+  // Fetch owners from profit share API
+  const { data: profitShareData } = useQuery({
+    queryKey: ['profitShare'],
+    queryFn: () => financesApi.getProfitShare(),
+  });
 
-  // Mock data for owners
-  const [owners, setOwners] = useState<Owner[]>([
-    {
-      id: "1",
-      name: "Ahmed Hassan",
-      currentBalance: 250000,
-      deposits: 500000,
-      withdrawals: 750000,
-      netPosition: 0,
-      profitSharePercentage: 40,
-      email: "ahmed@company.com",
-      phone: "+20 122 652 1747",
-      joinDate: "2023-01-15",
-      status: "active",
-    },
-    {
-      id: "2",
-      name: "Sarah Mohamed",
-      currentBalance: 180000,
-      deposits: 300000,
-      withdrawals: 480000,
-      netPosition: 0,
-      profitSharePercentage: 30,
-      email: "sarah@company.com",
-      phone: "+20 122 652 1748",
-      joinDate: "2023-03-20",
-      status: "active",
-    },
-    {
-      id: "3",
-      name: "Omar Ali",
-      currentBalance: 120000,
-      deposits: 200000,
-      withdrawals: 320000,
-      netPosition: 0,
-      profitSharePercentage: 20,
-      email: "omar@company.com",
-      phone: "+20 122 652 1749",
-      joinDate: "2023-06-10",
-      status: "active",
-    },
-    {
-      id: "4",
-      name: "Fatima Ahmed",
-      currentBalance: 50000,
-      deposits: 100000,
-      withdrawals: 150000,
-      netPosition: 0,
-      profitSharePercentage: 10,
-      email: "fatima@company.com",
-      phone: "+20 122 652 1750",
-      joinDate: "2023-09-05",
-      status: "active",
-    },
-  ]);
+  // Transform profit share data to owners
+  const owners: Owner[] = useMemo(() => {
+    if (!profitShareData?.owners && !profitShareData?.results) return [];
+    const ownersData = profitShareData.owners || profitShareData.results || [];
+    return ownersData.map((item: any) => ({
+      id: item.id?.toString() || '',
+      name: item.name || item.owner_name || '',
+      email: item.email || item.owner_email || '',
+      phone: item.phone || item.owner_phone || '',
+      currentBalance: parseFloat(item.current_balance || item.currentBalance || 0),
+      deposits: parseFloat(item.total_deposits || item.totalDeposits || 0),
+      withdrawals: parseFloat(item.total_withdrawals || item.totalWithdrawals || 0),
+      netPosition: parseFloat(item.net_position || item.netPosition || 0),
+      profitSharePercentage: parseFloat(item.profit_share || item.profitShare || 0),
+      joinDate: item.join_date || item.joinDate || '',
+      status: (item.status || item.is_active !== false ? 'active' : 'inactive') as "active" | "inactive",
+    }));
+  }, [profitShareData]);
 
   // Company wallet balance
   const companyWalletBalance = owners.reduce(
@@ -201,6 +147,24 @@ const CompanyFinances = () => {
     (total, owner) => total + owner.profitSharePercentage,
     0
   );
+  
+  // Calculate summary stats from API data
+  const summaryStats = useMemo(() => {
+    const totalRevenue = transformedFinancesData.reduce((sum, item) => sum + item.totalRevenue, 0);
+    const totalExpenses = transformedFinancesData.reduce((sum, item) => sum + item.totalExpenses, 0);
+    const netProfit = totalRevenue - totalExpenses;
+    const profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
+    
+    return {
+      totalRevenue,
+      totalExpenses,
+      netProfit,
+      profitMargin,
+    };
+  }, [transformedFinancesData]);
+  
+  // Calculate total profit from API data for profit share calculations
+  const totalProfit = summaryStats.netProfit;
 
   // New owner form state
   const [newOwner, setNewOwner] = useState({
@@ -215,8 +179,13 @@ const CompanyFinances = () => {
     return i18nInstance.language === "ar" ? ar : enUS;
   };
 
-  const formatDateForLocale = (date: string) => {
-    return format(parseISO(date), "PPP", { locale: getDateLocale() });
+  const formatDateForLocale = (date: string | undefined | null) => {
+    if (!date) return t("common.notAvailable") || "N/A";
+    try {
+      return format(parseISO(date), "PPP", { locale: getDateLocale() });
+    } catch (error) {
+      return date; // Return the original date string if parsing fails
+    }
   };
 
   const handleAddOwner = () => {
@@ -241,21 +210,12 @@ const CompanyFinances = () => {
       return;
     }
 
-    const owner: Owner = {
-      id: Date.now().toString(),
-      name: newOwner.name,
-      currentBalance: newOwner.initialDeposit,
-      deposits: newOwner.initialDeposit,
-      withdrawals: 0,
-      netPosition: newOwner.initialDeposit,
-      profitSharePercentage: newOwner.profitSharePercentage,
-      email: newOwner.email,
-      phone: newOwner.phone,
-      joinDate: new Date().toISOString().split("T")[0],
-      status: "active",
-    };
-
-    setOwners([...owners, owner]);
+    // TODO: Implement API mutation to add owner
+    // This would require a POST endpoint for profit share owners
+    toast({
+      title: t("admin.companyFinances.ownerAdded"),
+      description: t("admin.companyFinances.ownerAddedDesc"),
+    });
 
     // Reset form
     setNewOwner({
@@ -267,11 +227,6 @@ const CompanyFinances = () => {
     });
 
     setIsAddOwnerDialogOpen(false);
-
-    toast({
-      title: t("admin.companyFinances.ownerAdded"),
-      description: t("admin.companyFinances.ownerAddedDesc"),
-    });
   };
 
   const filteredOwners = owners.filter(
@@ -294,7 +249,7 @@ const CompanyFinances = () => {
         </div>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <ExportDialog
-            data={companyFinancesData}
+            data={transformedFinancesData}
             columns={[
               { header: "Period", key: "period", width: 20 },
               {
@@ -369,11 +324,12 @@ const CompanyFinances = () => {
               </CardHeader>
               <CardContent className="rtl:text-right">
                 <div className="text-2xl font-bold">
-                  {formatCurrencyForLocale(6700000, i18nInstance.language)}
+                  {formatCurrencyForLocale(summaryStats.totalRevenue, i18nInstance.language)}
                 </div>
                 <p className="text-xs text-muted-foreground rtl:text-right">
-                  +{formatPercentageForLocale(13.6, i18nInstance.language, 1)}{" "}
-                  {t("admin.companyFinances.stats.fromLastYear")}
+                  {transformedFinancesData.length > 0 
+                    ? t("admin.companyFinances.stats.fromPeriods") || "From all periods"
+                    : t("admin.companyFinances.stats.noData") || "No data"}
                 </p>
               </CardContent>
             </Card>
@@ -389,11 +345,12 @@ const CompanyFinances = () => {
               </CardHeader>
               <CardContent className="rtl:text-right">
                 <div className="text-2xl font-bold">
-                  {formatCurrencyForLocale(4900000, i18nInstance.language)}
+                  {formatCurrencyForLocale(summaryStats.totalExpenses, i18nInstance.language)}
                 </div>
                 <p className="text-xs text-muted-foreground rtl:text-right">
-                  +{formatPercentageForLocale(8.7, i18nInstance.language, 1)}{" "}
-                  {t("admin.companyFinances.stats.fromLastYear")}
+                  {transformedFinancesData.length > 0 
+                    ? t("admin.companyFinances.stats.fromPeriods") || "From all periods"
+                    : t("admin.companyFinances.stats.noData") || "No data"}
                 </p>
               </CardContent>
             </Card>
@@ -409,11 +366,12 @@ const CompanyFinances = () => {
               </CardHeader>
               <CardContent className="rtl:text-right">
                 <div className="text-2xl font-bold">
-                  {formatCurrencyForLocale(1800000, i18nInstance.language)}
+                  {formatCurrencyForLocale(summaryStats.netProfit, i18nInstance.language)}
                 </div>
                 <p className="text-xs text-muted-foreground rtl:text-right">
-                  +{formatPercentageForLocale(20, i18nInstance.language, 0)}{" "}
-                  {t("admin.companyFinances.stats.fromLastYear")}
+                  {transformedFinancesData.length > 0 
+                    ? t("admin.companyFinances.stats.fromPeriods") || "From all periods"
+                    : t("admin.companyFinances.stats.noData") || "No data"}
                 </p>
               </CardContent>
             </Card>
@@ -429,11 +387,12 @@ const CompanyFinances = () => {
               </CardHeader>
               <CardContent className="rtl:text-right">
                 <div className="text-2xl font-bold number-container">
-                  {formatPercentageForLocale(26.9, i18nInstance.language)}
+                  {formatPercentageForLocale(summaryStats.profitMargin, i18nInstance.language)}
                 </div>
                 <p className="text-xs text-muted-foreground rtl:text-right">
-                  +{formatPercentageForLocale(1.2, i18nInstance.language, 1)}{" "}
-                  {t("admin.companyFinances.stats.fromLastYear")}
+                  {transformedFinancesData.length > 0 
+                    ? t("admin.companyFinances.stats.calculatedMargin") || "Calculated margin"
+                    : t("admin.companyFinances.stats.noData") || "No data"}
                 </p>
               </CardContent>
             </Card>
@@ -451,70 +410,84 @@ const CompanyFinances = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {companyFinancesData.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between p-4 border rounded-lg rtl:flex-row-reverse"
-                  >
-                    <div className="flex items-center gap-4 rtl:flex-row-reverse">
-                      <div className="flex flex-col rtl:text-right">
-                        <span className="font-medium">{item.period}</span>
-                        <span className="text-sm text-muted-foreground">
-                          {formatDateForLocale(item.date)}
-                        </span>
+              {financesLoading ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  {t("common.loading") || "Loading..."}
+                </div>
+              ) : financesError ? (
+                <div className="text-center py-8 text-destructive">
+                  {t("common.error") || "Error"}: {financesError instanceof Error ? financesError.message : String(financesError)}
+                </div>
+              ) : transformedFinancesData.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  {t("admin.companyFinances.noData") || "No financial data available"}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {transformedFinancesData.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between p-4 border rounded-lg rtl:flex-row-reverse"
+                    >
+                      <div className="flex items-center gap-4 rtl:flex-row-reverse">
+                        <div className="flex flex-col rtl:text-right">
+                          <span className="font-medium">{item.period}</span>
+                          <span className="text-sm text-muted-foreground">
+                            {formatDateForLocale(item.date)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6 rtl:flex-row-reverse">
+                        <div className="text-right">
+                          <div className="font-medium">
+                            {formatCurrencyForLocale(
+                              item.totalRevenue,
+                              i18nInstance.language
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {t("admin.companyFinances.revenue")}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium">
+                            {formatCurrencyForLocale(
+                              item.totalExpenses,
+                              i18nInstance.language
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {t("admin.companyFinances.expenses")}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium text-green-600">
+                            {formatCurrencyForLocale(
+                              item.netProfit,
+                              i18nInstance.language
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {t("admin.companyFinances.netProfit")}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-medium number-container">
+                            {formatPercentageForLocale(
+                              item.profitMargin,
+                              i18nInstance.language
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {t("admin.companyFinances.margin")}
+                          </div>
+                        </div>
+                        <Badge variant="outline">{item.status}</Badge>
                       </div>
                     </div>
-                    <div className="flex items-center gap-6 rtl:flex-row-reverse">
-                      <div className="text-right">
-                        <div className="font-medium">
-                          {formatCurrencyForLocale(
-                            item.totalRevenue,
-                            i18nInstance.language
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {t("admin.companyFinances.revenue")}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-medium">
-                          {formatCurrencyForLocale(
-                            item.totalExpenses,
-                            i18nInstance.language
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {t("admin.companyFinances.expenses")}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-medium text-green-600">
-                          {formatCurrencyForLocale(
-                            item.netProfit,
-                            i18nInstance.language
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {t("admin.companyFinances.netProfit")}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-medium number-container">
-                          {formatPercentageForLocale(
-                            item.profitMargin,
-                            i18nInstance.language
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {t("admin.companyFinances.margin")}
-                        </div>
-                      </div>
-                      <Badge variant="outline">{item.status}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -896,7 +869,7 @@ const CompanyFinances = () => {
                       <div className="text-right">
                         <div className="font-medium">
                           {formatCurrencyForLocale(
-                            1800000 * (owner.profitSharePercentage / 100),
+                            totalProfit > 0 ? totalProfit * (owner.profitSharePercentage / 100) : 0,
                             i18nInstance.language
                           )}
                         </div>

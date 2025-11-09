@@ -72,65 +72,125 @@ const generateDeviceFingerprint = (): string => {
 
 export class AuthService {
   /**
-   * Customer login with email/mobile and password
-   * Auto-detects login type (email or mobile)
+   * User registration - Step 1: Send OTP
+   * POST /api/v1/users/register/
    */
-  static async login(credentials: LoginRequest): Promise<AuthResponse> {
+  static async register(userData: {
+    mobile_number: string;
+    password: string;
+    name: string;
+    email: string;
+  }): Promise<{ message: string; mobile_number: string }> {
     return retryRequest(async () => {
-      const response = await apiClient.post<ApiResponse<AuthResponse>>(
-        "/auth/login",
-        credentials
+      const response = await apiClient.post(
+        "/users/register/",
+        userData
       );
-      const data = handleApiResponse(response);
+      return handleApiResponse(response);
+    });
+  }
 
-      // Handle different possible response structures
-      let authData: AuthResponse;
+  /**
+   * User registration - Step 2: Verify OTP and complete registration
+   * POST /api/v1/users/verify-otp/
+   */
+  static async verifyRegistrationOtp(data: {
+    mobile_number: string;
+    otp_code: string;
+    name: string;
+    email: string;
+    password: string;
+  }): Promise<AuthResponse> {
+    return retryRequest(async () => {
+      const response = await apiClient.post(
+        "/users/verify-otp/",
+        data
+      );
+      const responseData = handleApiResponse(response);
 
-      if (data.data && typeof data.data === "object" && "token" in data.data) {
-        // Standard nested structure: { success: true, data: { token: "...", user: {...} } }
-        authData = data.data as AuthResponse;
-      } else if ("token" in data) {
-        // Direct structure: { token: "...", user: {...} }
-        authData = data as unknown as AuthResponse;
-      } else if ("access_token" in data && "customer" in data) {
-        // API structure: { customer: {...}, access_token: "...", refresh_token: "..." }
-        const customerData = data.customer as any;
-        authData = {
-          token: data.access_token as string,
-          user: {
-            id: customerData.id,
-            name: `${customerData.first_name} ${customerData.last_name}`,
-            email: customerData.email,
-            phone: customerData.mobile_number,
-            CardActive:
-              customerData.type === "vip" || customerData.status === "vip",
-            emergencyContact: "",
-            emergencyContactName: "",
-            bloodType: "",
-            profileImage: "",
-          },
-          refreshToken: (data as any).refresh_token,
-        };
-      } else {
-        // Fallback: try to extract from the response directly
-        console.error("Unexpected response structure:", data);
-        throw new Error("Invalid response structure from login API");
-      }
+      // Backend returns: { access: "...", refresh: "...", user: {...} }
+      const authData: AuthResponse = {
+        token: responseData.access,
+        refreshToken: responseData.refresh,
+        user: {
+          id: responseData.user.id,
+          name: responseData.user.name,
+          email: responseData.user.email,
+          phone: responseData.user.mobile_number || responseData.user.phone,
+          CardActive: false,
+          emergencyContact: "",
+          emergencyContactName: "",
+          bloodType: "",
+          profileImage: "",
+        },
+      };
 
       // Store tokens securely
-      console.log("AuthService.login - Storing tokens:", {
-        hasToken: !!authData.token,
-        hasRefreshToken: !!authData.refreshToken,
-        tokenPreview: authData.token?.substring(0, 20) + "...",
-        refreshTokenPreview: authData.refreshToken?.substring(0, 20) + "...",
-      });
-
       if (authData.token) {
-        console.log("AuthService.login - Storing access token");
         await setSecureToken(authData.token);
       }
       if (authData.refreshToken) {
-        console.log("AuthService.login - Storing refresh token");
+        await setSecureRefreshToken(authData.refreshToken);
+      }
+
+      return authData;
+    });
+  }
+
+  /**
+   * User login - Step 1: Send OTP
+   * POST /api/v1/users/login/
+   */
+  static async login(credentials: {
+    mobile_number: string;
+    password: string;
+  }): Promise<{ message: string; mobile_number: string }> {
+    return retryRequest(async () => {
+      const response = await apiClient.post(
+        "/users/login/",
+        credentials
+      );
+      return handleApiResponse(response);
+    });
+  }
+
+  /**
+   * User login - Step 2: Verify OTP and get tokens
+   * POST /api/v1/users/verify-login-otp/
+   */
+  static async verifyLoginOtp(data: {
+    mobile_number: string;
+    otp_code: string;
+  }): Promise<AuthResponse> {
+    return retryRequest(async () => {
+      const response = await apiClient.post(
+        "/users/verify-login-otp/",
+        data
+      );
+      const responseData = handleApiResponse(response);
+
+      // Backend returns: { access: "...", refresh: "...", user: {...} }
+      const authData: AuthResponse = {
+        token: responseData.access,
+        refreshToken: responseData.refresh,
+        user: {
+          id: responseData.user.id,
+          name: responseData.user.name,
+          email: responseData.user.email,
+          phone: responseData.user.mobile_number || responseData.user.phone,
+          CardActive: false,
+          emergencyContact: "",
+          emergencyContactName: "",
+          bloodType: "",
+          profileImage: "",
+        },
+      };
+
+      // Store tokens securely
+      if (authData.token) {
+        await setSecureToken(authData.token);
+      }
+      if (authData.refreshToken) {
         await setSecureRefreshToken(authData.refreshToken);
       }
 
@@ -574,69 +634,76 @@ export class AuthService {
 
   /**
    * Get current user profile
+   * GET /api/v1/users/me/
    */
   static async getCurrentUser(): Promise<GetCurrentUserResponse> {
     return retryRequest(async () => {
-      const response = await apiClient.get<ApiResponse<GetCurrentUserResponse>>(
-        "/auth/me"
-      );
+      const response = await apiClient.get("/users/me/");
       const data = handleApiResponse(response);
 
-      // Handle different possible response structures
-      let userResponse: GetCurrentUserResponse;
-
-      if (
-        data.data &&
-        typeof data.data === "object" &&
-        "customer" in data.data
-      ) {
-        // Standard nested structure: { success: true, data: { customer: {...} } }
-        userResponse = data.data as GetCurrentUserResponse;
-      } else if ("customer" in data) {
-        // Direct structure: { customer: {...} }
-        userResponse = data as unknown as GetCurrentUserResponse;
-      } else {
-        // Fallback: try to extract from the response directly
-        console.error("Unexpected get current user response structure:", data);
-        throw new Error("Invalid response structure from get current user API");
-      }
+      // Backend returns user data directly
+      // Transform to match GetCurrentUserResponse format
+      const userResponse: GetCurrentUserResponse = {
+        customer: {
+          id: data.id,
+          first_name: data.name?.split(' ')[0] || '',
+          last_name: data.name?.split(' ').slice(1).join(' ') || '',
+          mobile_number: data.mobile_number || data.phone || '',
+          email: data.email || '',
+          profile_image_id: data.profile_image_id || '',
+          type: data.type || 'regular',
+          status: data.status || 'active',
+          created_at: data.created_at || data.registration_date || new Date().toISOString(),
+          updated_at: data.updated_at || new Date().toISOString(),
+        },
+      };
 
       return userResponse;
     });
   }
 
   /**
-   * Forgot password
+   * Update user profile
+   * PUT /api/v1/users/profile/
    */
-  static async forgotPassword(
-    email: string
-  ): Promise<ApiResponse<{ message: string }>> {
+  static async updateProfile(profileData: {
+    name?: string;
+    email?: string;
+    phone?: string;
+  }): Promise<any> {
     return retryRequest(async () => {
-      const response = await apiClient.post<ApiResponse<{ message: string }>>(
-        "/auth/forgot-password",
-        {
-          email,
-        }
+      const response = await apiClient.put("/users/profile/", profileData);
+      return handleApiResponse(response);
+    });
+  }
+
+  /**
+   * Request password reset OTP
+   * POST /api/v1/users/forgot-password/request-otp/
+   */
+  static async requestPasswordResetOtp(data: {
+    mobile_number: string;
+  }): Promise<{ message: string; mobile_number: string }> {
+    return retryRequest(async () => {
+      const response = await apiClient.post(
+        "/users/forgot-password/request-otp/",
+        data
       );
       return handleApiResponse(response);
     });
   }
 
   /**
-   * Reset password
+   * Reset password with OTP
+   * POST /api/v1/users/reset-password/
    */
-  static async resetPassword(
-    token: string,
-    newPassword: string
-  ): Promise<ApiResponse<{ message: string }>> {
+  static async resetPassword(data: {
+    mobile_number: string;
+    otp_code: string;
+    new_password: string;
+  }): Promise<{ message: string }> {
     return retryRequest(async () => {
-      const response = await apiClient.post<ApiResponse<{ message: string }>>(
-        "/auth/reset-password",
-        {
-          token,
-          newPassword,
-        }
-      );
+      const response = await apiClient.post("/users/reset-password/", data);
       return handleApiResponse(response);
     });
   }
@@ -697,9 +764,9 @@ export class AuthService {
   /**
    * Check if user is authenticated
    */
-  static isAuthenticated(): boolean {
-    const token = getSecureToken();
-    const refreshToken = getSecureRefreshToken();
+  static async isAuthenticated(): Promise<boolean> {
+    const token = await getSecureToken();
+    const refreshToken = await getSecureRefreshToken();
 
     if (!token || !refreshToken) {
       return false;
@@ -716,15 +783,15 @@ export class AuthService {
   /**
    * Get stored auth token
    */
-  static getAuthToken(): string | null {
-    return getSecureToken();
+  static async getAuthToken(): Promise<string | null> {
+    return await getSecureToken();
   }
 
   /**
    * Get stored refresh token
    */
-  static getRefreshToken(): string | null {
-    return getSecureRefreshToken();
+  static async getRefreshToken(): Promise<string | null> {
+    return await getSecureRefreshToken();
   }
 
   /**
@@ -885,57 +952,6 @@ export class AuthService {
     }
   }
 
-  /**
-   * Request OTP for password reset
-   */
-  static async requestPasswordResetOtp(
-    mobileNumber: string
-  ): Promise<PasswordResetOtpResponse> {
-    return retryRequest(async () => {
-      const response = await apiClient.post<
-        ApiResponse<PasswordResetOtpResponse>
-      >("/auth/password/reset/request", {
-        mobile_number: mobileNumber,
-      });
-      const data = handleApiResponse(response);
-
-      // Debug logging to help identify response structure
-      console.log("Password reset OTP API response:", {
-        status: response.status,
-        data: data,
-        dataType: typeof data,
-        hasData: !!data,
-        hasDataData: !!(data && data.data),
-        dataKeys: data ? Object.keys(data) : [],
-        dataDataKeys: data && data.data ? Object.keys(data.data) : [],
-      });
-
-      // Handle different possible response structures
-      let otpResponse: PasswordResetOtpResponse;
-
-      if (
-        data &&
-        data.data &&
-        typeof data.data === "object" &&
-        "message" in data.data
-      ) {
-        // Standard nested structure: { success: true, data: { message: "..." } }
-        otpResponse = data.data as PasswordResetOtpResponse;
-      } else if (data && "message" in data) {
-        // Direct structure: { message: "..." }
-        otpResponse = data as unknown as PasswordResetOtpResponse;
-      } else {
-        // Fallback: use default message as per API spec
-        console.warn("Unexpected password reset OTP response structure:", data);
-        otpResponse = {
-          message:
-            "If an account exists for this mobile, an OTP has been sent.",
-        };
-      }
-
-      return otpResponse;
-    });
-  }
 
   /**
    * Verify OTP for password reset
@@ -1084,7 +1100,14 @@ export class AuthService {
         const response = await apiClient.post<
           ApiResponse<ConfirmPasswordResetResponse>
         >("/auth/password/reset/confirm", requestData);
-        return response;
+        const data = handleApiResponse(response);
+        
+        // Transform response to include message
+        const confirmResponse: ConfirmPasswordResetResponse = {
+          message: data.data?.message || data.message || "Password reset successfully",
+        };
+        
+        return confirmResponse;
       } catch (error: any) {
         // If the first attempt fails with token invalid, try alternative token formats
         if (
@@ -1158,9 +1181,16 @@ export class AuthService {
                 const altResponse = await apiClient.post<
                   ApiResponse<ConfirmPasswordResetResponse>
                 >("/auth/password/reset/confirm", altRequestData);
-
+                const altData = handleApiResponse(altResponse);
+                
                 console.log("Alternative token worked!");
-                return altResponse;
+                
+                // Transform response to include message
+                const altConfirmResponse: ConfirmPasswordResetResponse = {
+                  message: altData.data?.message || altData.message || "Password reset successfully",
+                };
+                
+                return altConfirmResponse;
               } catch (altError: any) {
                 console.log("Alternative token failed:", altError.message);
 

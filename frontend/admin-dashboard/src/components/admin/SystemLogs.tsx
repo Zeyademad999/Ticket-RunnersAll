@@ -329,55 +329,58 @@ const SystemLogs: React.FC = () => {
   // Transform API logs to match SystemLog interface
   const logs: SystemLog[] = useMemo(() => {
     if (!logsData?.results) return [];
-    return logsData.results.map((item: any) => ({
-      id: item.id?.toString() || "",
-      timestamp: item.timestamp || item.created_at || "",
-      userId: item.user?.id?.toString() || item.user_id?.toString() || "",
-      userName: item.user?.name || item.user_name || item.user?.username || "",
-      userRole: (item.user?.role || item.user_role || "customer") as
-        | "super_admin"
-        | "admin"
-        | "usher"
-        | "support"
-        | "customer",
-      action: item.action || "",
-      category: (item.category || "system") as
-        | "authentication"
-        | "user_management"
-        | "event_management"
-        | "ticket_management"
-        | "nfc_management"
-        | "venue_management"
-        | "system"
-        | "security"
-        | "financial"
-        | "data_export"
-        | "settings",
-      severity: (item.severity || "low") as "low" | "medium" | "high" | "critical",
-      description: item.description || item.message || "",
-      details: {
-        before: item.details?.before,
-        after: item.details?.after,
+    return logsData.results.map((item: any) => {
+      const userId = item.user?.id?.toString() || item.user_id?.toString() || "";
+      return {
+        id: item.id?.toString() || "",
+        timestamp: item.timestamp || item.created_at || "",
+        userId: userId || "unknown",
+        userName: item.user?.name || item.user_name || item.user?.username || "",
+        userRole: (item.user?.role || item.user_role || "customer") as
+          | "super_admin"
+          | "admin"
+          | "usher"
+          | "support"
+          | "customer",
+        action: item.action || "",
+        category: (item.category || "system") as
+          | "authentication"
+          | "user_management"
+          | "event_management"
+          | "ticket_management"
+          | "nfc_management"
+          | "venue_management"
+          | "system"
+          | "security"
+          | "financial"
+          | "data_export"
+          | "settings",
+        severity: (item.severity || "low") as "low" | "medium" | "high" | "critical",
+        description: item.description || item.message || "",
+        details: {
+          before: item.details?.before,
+          after: item.details?.after,
+          ipAddress: item.ip_address || item.details?.ipAddress || "",
+          userAgent: item.user_agent || item.details?.userAgent || "",
+          location: item.location || item.details?.location || "",
+          deviceInfo: item.device_info || item.details?.deviceInfo || "",
+          sessionId: item.session_id || item.details?.sessionId || "",
+          affectedRecords: item.affected_records || item.details?.affectedRecords,
+          changes: item.changes || item.details?.changes || [],
+          metadata: item.metadata || item.details?.metadata || {},
+        },
+        status: (item.status || "success") as
+          | "success"
+          | "failed"
+          | "pending"
+          | "cancelled",
+        sessionId: item.session_id || item.details?.sessionId || "",
         ipAddress: item.ip_address || item.details?.ipAddress || "",
         userAgent: item.user_agent || item.details?.userAgent || "",
         location: item.location || item.details?.location || "",
         deviceInfo: item.device_info || item.details?.deviceInfo || "",
-        sessionId: item.session_id || item.details?.sessionId || "",
-        affectedRecords: item.affected_records || item.details?.affectedRecords,
-        changes: item.changes || item.details?.changes || [],
-        metadata: item.metadata || item.details?.metadata || {},
-      },
-      status: (item.status || "success") as
-        | "success"
-        | "failed"
-        | "pending"
-        | "cancelled",
-      sessionId: item.session_id || item.details?.sessionId || "",
-      ipAddress: item.ip_address || item.details?.ipAddress || "",
-      userAgent: item.user_agent || item.details?.userAgent || "",
-      location: item.location || item.details?.location || "",
-      deviceInfo: item.device_info || item.details?.deviceInfo || "",
-    }));
+      };
+    });
   }, [logsData]);
 
   // Filtered logs - API handles most filtering, but we filter status client-side if needed
@@ -653,12 +656,15 @@ const SystemLogs: React.FC = () => {
 
   // Get unique users for filter
   const uniqueUsers = useMemo(() => {
-    const users = new Set(logs.map((log) => log.userId));
+    const userIds = logs
+      .map((log) => log.userId)
+      .filter((id) => id && id.trim() !== "" && id !== "unknown");
+    const users = new Set(userIds);
     return Array.from(users).map((userId) => {
       const log = logs.find((l) => l.userId === userId);
       return {
         id: userId,
-        name: log?.userName || userId,
+        name: log?.userName || userId || "Unknown User",
         role: log?.userRole || "unknown",
       };
     });

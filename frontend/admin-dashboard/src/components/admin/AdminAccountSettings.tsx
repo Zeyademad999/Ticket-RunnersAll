@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { authApi } from "@/lib/api/adminApi";
 import {
   Card,
   CardContent,
@@ -40,17 +42,40 @@ const AdminAccountSettings: React.FC<AdminAccountSettingsProps> = () => {
   const { t, i18n: i18nInstance } = useTranslation();
   const { isDark } = useTheme();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  // Personal Information State
-  const [personalInfo, setPersonalInfo] = useState({
-    fullName: "Admin User",
-    email: "admin@ticketrunners.com",
-    phone: "+20 122 652 1747",
-    username: "admin",
-    role: "Super Admin",
-    lastLogin: "2024-01-15T10:30:00Z",
-    createdAt: "2023-06-01T00:00:00Z",
+  // Fetch current user profile from API
+  const { data: userData, isLoading: userLoading, error: userError } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: () => authApi.getMe(),
   });
+
+  // Personal Information State - initialized from API
+  const [personalInfo, setPersonalInfo] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    username: "",
+    role: "",
+    lastLogin: "",
+    createdAt: "",
+  });
+
+  // Update personalInfo when API data is loaded
+  useEffect(() => {
+    if (userData?.user || userData) {
+      const user = userData.user || userData;
+      setPersonalInfo({
+        fullName: user.full_name || user.first_name + " " + user.last_name || user.name || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        username: user.username || "",
+        role: user.role || "",
+        lastLogin: user.last_login || "",
+        createdAt: user.created_at || user.date_joined || "",
+      });
+    }
+  }, [userData]);
 
   // Password Reset State
   const [passwordData, setPasswordData] = useState({
@@ -84,17 +109,31 @@ const AdminAccountSettings: React.FC<AdminAccountSettingsProps> = () => {
   const [isUpdatingSecurity, setIsUpdatingSecurity] = useState(false);
 
   // Handle personal information update
+  const updatePersonalInfoMutation = useMutation({
+    mutationFn: async (data: typeof personalInfo) => {
+      // TODO: Implement API endpoint for updating user profile
+      // For now, just update local state
+      return data;
+    },
+    onSuccess: () => {
+      toast({
+        title: t("admin.accountSettings.personalInfo.updated"),
+        description: t("admin.accountSettings.personalInfo.updatedDesc"),
+      });
+      queryClient.invalidateQueries({ queryKey: ['currentUser'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("admin.accountSettings.personalInfo.error"),
+        description: error?.message || t("admin.accountSettings.personalInfo.errorDesc"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handlePersonalInfoUpdate = async () => {
     setIsUpdatingPersonal(true);
-
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    toast({
-      title: t("admin.accountSettings.personalInfo.updated"),
-      description: t("admin.accountSettings.personalInfo.updatedDesc"),
-    });
-
+    await updatePersonalInfoMutation.mutateAsync(personalInfo);
     setIsUpdatingPersonal(false);
   };
 
@@ -173,6 +212,37 @@ const AdminAccountSettings: React.FC<AdminAccountSettingsProps> = () => {
   };
 
   // Handle password reset
+  const changePasswordMutation = useMutation({
+    mutationFn: async (data: { oldPassword: string; newPassword: string }) => {
+      return await authApi.changePassword(data.oldPassword, data.newPassword);
+    },
+    onSuccess: () => {
+      toast({
+        title: t("admin.accountSettings.password.updated"),
+        description: t("admin.accountSettings.password.updatedDesc"),
+      });
+      // Reset all password fields and OTP state
+      setPasswordData({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+      setOtpVerification({
+        isVerifying: false,
+        otpValue: "",
+        isVerified: false,
+        showOtpInput: false,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("admin.accountSettings.password.error"),
+        description: error?.response?.data?.detail || error?.message || t("admin.accountSettings.password.errorDesc"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handlePasswordReset = async () => {
     if (!otpVerification.isVerified) {
       toast({
@@ -202,28 +272,10 @@ const AdminAccountSettings: React.FC<AdminAccountSettingsProps> = () => {
     }
 
     setIsUpdatingPassword(true);
-
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Reset all password fields and OTP state
-    setPasswordData({
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
+    await changePasswordMutation.mutateAsync({
+      oldPassword: passwordData.currentPassword,
+      newPassword: passwordData.newPassword,
     });
-    setOtpVerification({
-      isVerifying: false,
-      otpValue: "",
-      isVerified: false,
-      showOtpInput: false,
-    });
-
-    toast({
-      title: t("admin.accountSettings.password.updated"),
-      description: t("admin.accountSettings.password.updatedDesc"),
-    });
-
     setIsUpdatingPassword(false);
   };
 

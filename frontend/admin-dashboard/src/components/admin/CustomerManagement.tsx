@@ -170,6 +170,17 @@ const CustomerManagement: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
+  // Add customer form state
+  const [newCustomer, setNewCustomer] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    mobile_number: "",
+    password: "",
+    confirmPassword: "",
+    status: "active" as "active" | "inactive" | "banned",
+  });
+
   // Label management state
   const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [showManageLabelsDialog, setShowManageLabelsDialog] = useState(false);
@@ -294,6 +305,14 @@ const CustomerManagement: React.FC = () => {
       labels: [], // Labels are not in backend API yet
     }));
   }, [customersData]);
+
+  // Compute unique locations from customers
+  const uniqueLocations = useMemo(() => {
+    const locations = customers
+      .map((customer) => customer.location)
+      .filter((location) => location && location.trim() !== '');
+    return Array.from(new Set(locations)).sort();
+  }, [customers]);
 
   // Mock customers data (removed - using API now)
   /*
@@ -756,6 +775,38 @@ const CustomerManagement: React.FC = () => {
     },
   });
 
+  // Create customer mutation
+  const createCustomerMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await customersApi.createCustomer(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      toast({
+        title: t("admin.customers.toast.customerAdded"),
+        description: t("admin.customers.toast.customerAddedDesc"),
+      });
+      setIsAddDialogOpen(false);
+      // Reset form
+      setNewCustomer({
+        name: "",
+        email: "",
+        phone: "",
+        mobile_number: "",
+        password: "",
+        confirmPassword: "",
+        status: "active",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("admin.customers.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleEditCustomer = (customer: Customer) => {
     setSelectedCustomer(customer);
     setIsEditDialogOpen(true);
@@ -828,11 +879,46 @@ const CustomerManagement: React.FC = () => {
   };
 
   const handleAddCustomer = () => {
-    toast({
-      title: t("admin.customers.toast.customerAdded"),
-      description: t("admin.customers.toast.customerAddedDesc"),
-    });
-    setIsAddDialogOpen(false);
+    // Validate required fields
+    if (!newCustomer.name || !newCustomer.email || !newCustomer.phone) {
+      toast({
+        title: t("common.error"),
+        description: t("admin.customers.form.requiredFields"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate password if provided
+    if (newCustomer.password && newCustomer.password !== newCustomer.confirmPassword) {
+      toast({
+        title: t("common.error"),
+        description: t("admin.customers.form.passwordsDoNotMatch"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Prepare data for API
+    const customerData: any = {
+      name: newCustomer.name,
+      email: newCustomer.email,
+      phone: newCustomer.phone,
+      status: newCustomer.status,
+    };
+
+    // Add mobile_number if provided
+    if (newCustomer.mobile_number) {
+      customerData.mobile_number = newCustomer.mobile_number;
+    }
+
+    // Add password if provided
+    if (newCustomer.password) {
+      customerData.password = newCustomer.password;
+    }
+
+    // Create customer
+    createCustomerMutation.mutate(customerData);
   };
 
   const handleSaveCustomerChanges = () => {
@@ -1928,38 +2014,75 @@ const CustomerManagement: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.customers.form.name")}
+                  {t("admin.customers.form.name")} *
                 </label>
                 <Input
+                  value={newCustomer.name}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
                   placeholder={t("admin.customers.form.namePlaceholder")}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.customers.form.email")}
+                  {t("admin.customers.form.email")} *
                 </label>
                 <Input
                   type="email"
+                  value={newCustomer.email}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
                   placeholder={t("admin.customers.form.emailPlaceholder")}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.customers.form.phone")}
+                  {t("admin.customers.form.phone")} *
                 </label>
                 <Input
+                  value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                   placeholder={t("admin.customers.form.phonePlaceholder")}
                   dir="ltr"
                 />
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.customers.form.location")}
+                  {t("admin.customers.form.mobileNumber")}
                 </label>
                 <Input
-                  placeholder={t("admin.customers.form.locationPlaceholder")}
+                  value={newCustomer.mobile_number}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, mobile_number: e.target.value })}
+                  placeholder={t("admin.customers.form.mobileNumberPlaceholder")}
+                  dir="ltr"
                 />
               </div>
+            </div>
+
+            {/* Status Selection */}
+            <div>
+              <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                {t("admin.customers.form.status")}
+              </label>
+              <Select
+                value={newCustomer.status}
+                onValueChange={(value: "active" | "inactive" | "banned") =>
+                  setNewCustomer({ ...newCustomer, status: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">
+                    {t("admin.customers.status.active")}
+                  </SelectItem>
+                  <SelectItem value="inactive">
+                    {t("admin.customers.status.inactive")}
+                  </SelectItem>
+                  <SelectItem value="banned">
+                    {t("admin.customers.status.banned")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Password Section */}
@@ -1974,6 +2097,8 @@ const CustomerManagement: React.FC = () => {
                   </label>
                   <Input
                     type="password"
+                    value={newCustomer.password}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, password: e.target.value })}
                     placeholder={t(
                       "admin.customers.form.newPasswordPlaceholder"
                     )}
@@ -1985,6 +2110,8 @@ const CustomerManagement: React.FC = () => {
                   </label>
                   <Input
                     type="password"
+                    value={newCustomer.confirmPassword}
+                    onChange={(e) => setNewCustomer({ ...newCustomer, confirmPassword: e.target.value })}
                     placeholder={t(
                       "admin.customers.form.confirmPasswordPlaceholder"
                     )}
@@ -1992,16 +2119,33 @@ const CustomerManagement: React.FC = () => {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground mt-2 rtl:text-right ltr:text-left">
-                {t("admin.customers.form.passwordRequired")}
+                {t("admin.customers.form.passwordOptional")}
               </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+            <Button variant="outline" onClick={() => {
+              setIsAddDialogOpen(false);
+              // Reset form when closing
+              setNewCustomer({
+                name: "",
+                email: "",
+                phone: "",
+                mobile_number: "",
+                password: "",
+                confirmPassword: "",
+                status: "active",
+              });
+            }}>
               {t("admin.customers.dialogs.cancel")}
             </Button>
-            <Button onClick={handleAddCustomer}>
-              {t("admin.customers.dialogs.addCustomerButton")}
+            <Button 
+              onClick={handleAddCustomer}
+              disabled={createCustomerMutation.isPending}
+            >
+              {createCustomerMutation.isPending 
+                ? t("common.loading") 
+                : t("admin.customers.dialogs.addCustomerButton")}
             </Button>
           </DialogFooter>
         </DialogContent>

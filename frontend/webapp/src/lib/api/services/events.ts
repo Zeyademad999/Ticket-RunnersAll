@@ -22,36 +22,60 @@ import {
 
 export class EventsService {
   /**
-   * Get all events with pagination and filtering
+   * Get all public events with filtering
+   * GET /api/v1/public/events/
    */
   static async getEvents(
-    page: number = 1,
-    limit: number = 10,
-    filters?: EventFilters
-  ): Promise<PaginatedResponse<EventData>> {
+    filters?: {
+      category?: string;
+      location?: string;
+      date_from?: string;
+      date_to?: string;
+      search?: string;
+    }
+  ): Promise<EventData[]> {
     return retryRequest(async () => {
-      const params = {
-        page,
-        limit,
-        ...filters,
-      };
-      const queryString = buildQueryParams(params);
-      const response = await apiClient.get<PaginatedResponse<EventData>>(
-        `/events?${queryString}`
-      );
-      return handleApiResponse(response);
+      const params = buildQueryParams(filters || {});
+      const url = params ? `/public/events/?${params}` : "/public/events/";
+      const response = await apiClient.get(url);
+      const data = handleApiResponse(response);
+      // Backend returns array directly
+      return Array.isArray(data) ? data : [];
+    });
+  }
+
+  /**
+   * Get featured events
+   * GET /api/v1/public/events/featured/
+   */
+  static async getFeaturedEvents(): Promise<EventData[]> {
+    return retryRequest(async () => {
+      const response = await apiClient.get("/public/events/featured/");
+      const data = handleApiResponse(response);
+      return Array.isArray(data) ? data : [];
+    });
+  }
+
+  /**
+   * Get event categories
+   * GET /api/v1/public/events/categories/
+   */
+  static async getEventCategories(): Promise<string[]> {
+    return retryRequest(async () => {
+      const response = await apiClient.get("/public/events/categories/");
+      const data = handleApiResponse(response);
+      return Array.isArray(data) ? data : [];
     });
   }
 
   /**
    * Get event by ID
+   * GET /api/v1/public/events/:id/
    */
   static async getEventById(id: string): Promise<EventData> {
     return retryRequest(async () => {
-      const response = await apiClient.get<ApiResponse<EventData>>(
-        `/events/${id}`
-      );
-      return handleApiResponse(response).data;
+      const response = await apiClient.get(`/public/events/${id}/`);
+      return handleApiResponse(response);
     });
   }
 

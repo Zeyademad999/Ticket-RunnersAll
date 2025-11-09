@@ -143,69 +143,18 @@ const ProfitWithdrawals = () => {
     return Array.from(ownerMap.values());
   }, [withdrawals]);
 
-  // Fallback owners data
-  const fallbackOwners: Owner[] = [
-    {
-      id: "1",
-      name: "John Smith",
-      email: "john@company.com",
-      profitShare: 500000,
-      currentBalance: 450000,
-      liability: 0,
-    },
-    {
-      id: "2",
-      name: "Sarah Johnson",
-      email: "sarah@company.com",
-      profitShare: 300000,
-      currentBalance: 280000,
-      liability: 0,
-    },
-    {
-      id: "3",
-      name: "Mike Wilson",
-      email: "mike@company.com",
-      profitShare: 200000,
-      currentBalance: 150000,
-      liability: 50000,
-    },
-  ];
-
-  // Use API data if available, otherwise use fallback
-  const withdrawalsToUse = withdrawals.length > 0 ? withdrawals : [];
-  const ownersToUse = owners.length > 0 ? owners : fallbackOwners;
-
-  // Fallback withdrawals data (for when API has no data)
-  const fallbackWithdrawals: Withdrawal[] = [
-    {
-      id: "1",
-      ownerId: "1",
-      ownerName: "John Smith",
-      amount: 50000,
-      paymentMethod: "Bank Transfer",
-      date: "2024-01-15",
-      status: "completed",
-      notes: "Monthly profit withdrawal",
-      type: "profit",
-    },
-    {
-      id: "2",
-      ownerId: "2",
-      ownerName: "Sarah Johnson",
-      amount: 30000,
-      paymentMethod: "PayPal",
-      date: "2024-01-16",
-      status: "pending",
-      notes: "Emergency withdrawal",
-      type: "profit",
-    },
-  ];
-
-  // Use fallback withdrawals if API has no data
-  const finalWithdrawals = withdrawalsToUse.length > 0 ? withdrawalsToUse : fallbackWithdrawals;
+  // Use API data only
+  const ownersToUse = owners;
+  const finalWithdrawals = withdrawals;
 
   const queryClient = useQueryClient();
-  const [companyWallet, setCompanyWallet] = useState(2000000);
+  // Calculate company wallet from withdrawals data or use 0 if not available
+  const companyWallet = useMemo(() => {
+    // TODO: Get company wallet balance from API if available
+    // For now, calculate from completed withdrawals or use 0
+    return 0; // Will be updated when API provides this data
+  }, [withdrawalsData]);
+  
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedOwner, setSelectedOwner] = useState("");
   const [withdrawalAmount, setWithdrawalAmount] = useState("");
@@ -273,9 +222,8 @@ const ProfitWithdrawals = () => {
       return o;
     });
 
-    // Update company wallet
-    setCompanyWallet((prev) => prev - amount);
-
+    // TODO: Implement API mutation to create withdrawal
+    // This would require a POST endpoint for profit withdrawals
     // Invalidate queries to refetch data
     queryClient.invalidateQueries({ queryKey: ['profitWithdrawals'] });
 
@@ -559,8 +507,13 @@ const ProfitWithdrawals = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {ownersToUse.map((owner) => (
+          {ownersToUse.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              {t("admin.profitWithdrawals.noOwners") || "No owners found"}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {ownersToUse.map((owner) => (
               <Card key={owner.id} className="p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div>
@@ -613,7 +566,8 @@ const ProfitWithdrawals = () => {
                 </div>
               </Card>
             ))}
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

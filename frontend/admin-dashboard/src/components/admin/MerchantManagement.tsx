@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -31,7 +30,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -42,13 +40,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
   ResponsivePagination,
 } from "@/components/ui/pagination";
 import {
@@ -59,44 +50,14 @@ import {
   Trash2,
   Eye,
   Download,
-  User,
-  Mail,
-  Phone,
-  Calendar,
   DollarSign,
   MoreHorizontal,
   UserCheck,
-  UserX,
-  Lock,
-  Unlock,
   RefreshCw,
   AlertCircle,
-  CheckCircle,
-  XCircle,
   Clock,
-  TrendingUp,
   CreditCard,
-  Ticket,
-  MapPin,
-  Star,
-  StarOff,
-  Repeat,
-  Activity,
-  Ban,
-  Tag,
-  Tags,
-  Crown,
-  Award,
-  Shield,
-  Heart,
-  Zap,
   Building2,
-  Wallet,
-  Banknote,
-  Receipt,
-  Settings,
-  Key,
-  Globe,
   FileText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -110,6 +71,8 @@ import {
 } from "@/lib/utils";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { merchantsApi } from "@/lib/api/adminApi";
 
 type MerchantAccount = {
   id: string;
@@ -117,39 +80,22 @@ type MerchantAccount = {
   ownerName: string;
   email: string;
   phone: string;
-  status: "active" | "inactive" | "suspended" | "pending";
+  status: "active" | "inactive" | "suspended";
   registrationDate: string;
-  lastLogin: string;
+  lastLogin?: string;
   totalEvents: number;
   totalRevenue: number;
   commissionRate: number;
   payoutBalance: number;
   location: string;
   businessType: string;
-  taxId: string;
-  bankAccount: string;
+  taxId?: string;
+  bankAccount?: string;
   profileImage?: string;
   verificationStatus: "verified" | "pending" | "rejected";
-  documents: string[];
+  documents?: string[];
 };
 
-type MerchantEvent = {
-  id: string;
-  eventTitle: string;
-  date: string;
-  revenue: number;
-  commission: number;
-  status: "upcoming" | "ongoing" | "completed" | "cancelled";
-};
-
-type MerchantTransaction = {
-  id: string;
-  type: "payout" | "commission" | "refund" | "adjustment";
-  description: string;
-  amount: number;
-  timestamp: string;
-  status: "pending" | "completed" | "failed";
-};
 
 const MerchantAccountsManagement: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -163,18 +109,66 @@ const MerchantAccountsManagement: React.FC = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [showMerchantDetails, setShowMerchantDetails] = useState(false);
-  const [showEventsDialog, setShowEventsDialog] = useState(false);
-  const [showTransactionsDialog, setShowTransactionsDialog] = useState(false);
   const [showTransferCardsDialog, setShowTransferCardsDialog] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-
-  // Form state for card transfer
-  const [transferCardsForm, setTransferCardsForm] = useState({
-    serialStart: "",
-    serialEnd: "",
-    selectedMerchantId: "",
+  const [editingMerchant, setEditingMerchant] = useState<Partial<MerchantAccount>>({});
+  const [newMerchant, setNewMerchant] = useState({
+    businessName: "",
+    ownerName: "",
+    email: "",
+    phone: "",
+    location: "",
+    businessType: "",
+    commissionRate: 0,
+    taxId: "",
   });
+
+  const queryClient = useQueryClient();
+
+  // Fetch merchants from API
+  const { data: merchantsData, isLoading: merchantsLoading, error: merchantsError } = useQuery({
+    queryKey: ['merchants', searchTerm, statusFilter, locationFilter, verificationFilter, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (verificationFilter !== 'all') params.verification_status = verificationFilter;
+      
+      const response = await merchantsApi.getMerchants(params);
+      return response;
+    },
+  });
+
+  // Transform API merchants to match MerchantAccount interface
+  const merchants: MerchantAccount[] = useMemo(() => {
+    if (!merchantsData?.results) return [];
+    return merchantsData.results.map((item: any) => ({
+      id: String(item.id),
+      businessName: item.business_name || '',
+      ownerName: item.owner_name || '',
+      email: item.email || '',
+      phone: item.phone || '',
+      status: item.status as "active" | "inactive" | "suspended",
+      registrationDate: item.registration_date || item.registrationDate || '',
+      lastLogin: item.last_login || item.lastLogin || undefined,
+      totalEvents: item.total_events || item.totalEvents || 0,
+      totalRevenue: parseFloat(item.total_revenue || item.totalRevenue) || 0,
+      commissionRate: parseFloat(item.commission_rate || item.commissionRate) * 100 || 0, // Convert from decimal to percentage
+      payoutBalance: parseFloat(item.payout_balance || item.payoutBalance) || 0,
+      location: item.location || '',
+      businessType: item.business_type || item.businessType || '',
+      taxId: item.tax_id || item.taxId || undefined,
+      bankAccount: item.bank_account || item.bankAccount || undefined,
+      profileImage: item.profile_image || item.profileImage || undefined,
+      verificationStatus: item.verification_status || item.verificationStatus || 'pending',
+      documents: item.documents || [],
+    }));
+  }, [merchantsData]);
 
   // Get current locale for date formatting
   const currentLocale = i18n.language === "ar" ? ar : enUS;
@@ -208,149 +202,12 @@ const MerchantAccountsManagement: React.FC = () => {
     return formatPhoneNumberForLocale(phoneNumber, i18n.language);
   };
 
-  // Mock merchant accounts data
-  const [merchants, setMerchants] = useState<MerchantAccount[]>([
-    {
-      id: "M001",
-      businessName: "Cairo Events Co.",
-      ownerName: "Ahmed Hassan",
-      email: "ahmed@cairoevents.com",
-      phone: "+20 10 1234 5678",
-      status: "active",
-      registrationDate: "2024-01-15",
-      lastLogin: "2025-08-16T10:30:00",
-      totalEvents: 25,
-      totalRevenue: 150000,
-      commissionRate: 15,
-      payoutBalance: 12500,
-      location: "Cairo, Egypt",
-      businessType: "Event Management",
-      taxId: "TAX-001-2024",
-      bankAccount: "EG123456789012345678901234",
-      profileImage:
-        "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face",
-      verificationStatus: "verified",
-      documents: ["business_license.pdf", "tax_certificate.pdf"],
-    },
-    {
-      id: "M002",
-      businessName: "Alexandria Entertainment",
-      ownerName: "Sarah Mohamed",
-      email: "sarah@alexentertainment.com",
-      phone: "+20 10 2345 6789",
-      status: "active",
-      registrationDate: "2024-02-20",
-      lastLogin: "2025-08-15T15:45:00",
-      totalEvents: 18,
-      totalRevenue: 98000,
-      commissionRate: 12,
-      payoutBalance: 8200,
-      location: "Alexandria, Egypt",
-      businessType: "Entertainment",
-      taxId: "TAX-002-2024",
-      bankAccount: "EG987654321098765432109876",
-      profileImage:
-        "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
-      verificationStatus: "verified",
-      documents: ["business_license.pdf", "tax_certificate.pdf"],
-    },
-    {
-      id: "M003",
-      businessName: "Giza Productions",
-      ownerName: "Omar Ali",
-      email: "omar@gizaproductions.com",
-      phone: "+20 10 3456 7890",
-      status: "pending",
-      registrationDate: "2024-03-10",
-      lastLogin: "2025-07-20T09:15:00",
-      totalEvents: 0,
-      totalRevenue: 0,
-      commissionRate: 10,
-      payoutBalance: 0,
-      location: "Giza, Egypt",
-      businessType: "Production",
-      taxId: "TAX-003-2024",
-      bankAccount: "EG111111111111111111111111",
-      profileImage:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
-      verificationStatus: "pending",
-      documents: ["business_license.pdf"],
-    },
-    {
-      id: "M004",
-      businessName: "Luxor Cultural Events",
-      ownerName: "Fatima Ahmed",
-      email: "fatima@luxorevents.com",
-      phone: "+20 10 4567 8901",
-      status: "suspended",
-      registrationDate: "2024-04-05",
-      lastLogin: "2025-06-15T14:20:00",
-      totalEvents: 8,
-      totalRevenue: 45000,
-      commissionRate: 15,
-      payoutBalance: 3200,
-      location: "Luxor, Egypt",
-      businessType: "Cultural Events",
-      taxId: "TAX-004-2024",
-      bankAccount: "EG222222222222222222222222",
-      profileImage:
-        "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
-      verificationStatus: "rejected",
-      documents: ["business_license.pdf"],
-    },
-    {
-      id: "M005",
-      businessName: "Aswan Music Festival",
-      ownerName: "Youssef Ibrahim",
-      email: "youssef@aswanmusic.com",
-      phone: "+20 10 5678 9012",
-      status: "active",
-      registrationDate: "2024-05-12",
-      lastLogin: "2025-08-16T11:00:00",
-      totalEvents: 12,
-      totalRevenue: 75000,
-      commissionRate: 18,
-      payoutBalance: 5800,
-      location: "Aswan, Egypt",
-      businessType: "Music Festival",
-      taxId: "TAX-005-2024",
-      bankAccount: "EG333333333333333333333333",
-      profileImage:
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face",
-      verificationStatus: "verified",
-      documents: [
-        "business_license.pdf",
-        "tax_certificate.pdf",
-        "music_license.pdf",
-      ],
-    },
-    {
-      id: "M006",
-      businessName: "BTECH",
-      ownerName: "Mohamed Ali",
-      email: "mohamed@btech.com",
-      phone: "+20 10 6789 0123",
-      status: "active",
-      registrationDate: "2024-06-01",
-      lastLogin: "2025-08-16T12:00:00",
-      totalEvents: 0,
-      totalRevenue: 0,
-      commissionRate: 10,
-      payoutBalance: 0,
-      location: "Cairo, Egypt",
-      businessType: "NFC Card Retailer",
-      taxId: "TAX-006-2024",
-      bankAccount: "EG444444444444444444444444",
-      profileImage:
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
-      verificationStatus: "verified",
-      documents: [
-        "business_license.pdf",
-        "tax_certificate.pdf",
-        "nfc_license.pdf",
-      ],
-    },
-  ]);
+  // Form state for card transfer
+  const [transferCardsForm, setTransferCardsForm] = useState({
+    serialStart: "",
+    serialEnd: "",
+    selectedMerchantId: "",
+  });
 
   // Helper function to parse serial number and extract prefix and number
   const parseSerialNumber = (serialNumber: string) => {
@@ -439,96 +296,103 @@ const MerchantAccountsManagement: React.FC = () => {
     return { valid: true, range };
   };
 
-  // Mock merchant events
-  const merchantEvents: MerchantEvent[] = [
-    {
-      id: "E001",
-      eventTitle: "Summer Music Festival",
-      date: "2025-08-15",
-      revenue: 25000,
-      commission: 3750,
-      status: "completed",
-    },
-    {
-      id: "E002",
-      eventTitle: "Tech Innovators Meetup",
-      date: "2025-09-01",
-      revenue: 12000,
-      commission: 1800,
-      status: "upcoming",
-    },
-    {
-      id: "E003",
-      eventTitle: "Stand-up Comedy Night",
-      date: "2025-08-22",
-      revenue: 8000,
-      commission: 1200,
-      status: "upcoming",
-    },
-  ];
-
-  // Mock merchant transactions
-  const merchantTransactions: MerchantTransaction[] = [
-    {
-      id: "T001",
-      type: "payout",
-      description: "Monthly payout for August 2025",
-      amount: 12500,
-      timestamp: "2025-08-01T10:00:00",
-      status: "completed",
-    },
-    {
-      id: "T002",
-      type: "commission",
-      description: "Commission for Summer Music Festival",
-      amount: 3750,
-      timestamp: "2025-08-15T18:30:00",
-      status: "completed",
-    },
-    {
-      id: "T003",
-      type: "refund",
-      description: "Refund for cancelled event",
-      amount: -1200,
-      timestamp: "2025-08-10T14:20:00",
-      status: "completed",
-    },
-  ];
-
-  // Filter merchants based on search and filters
+  // Filter merchants based on search and filters (client-side for location)
   const filteredMerchants = useMemo(() => {
-    return merchants.filter((merchant) => {
-      const matchesSearch =
-        merchant.businessName
-          .toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        merchant.ownerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        merchant.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        merchant.phone.includes(searchTerm);
-      const matchesStatus =
-        statusFilter === "all" || merchant.status === statusFilter;
-      const matchesLocation =
-        locationFilter === "all" || merchant.location.includes(locationFilter);
-      const matchesVerification =
-        verificationFilter === "all" ||
-        merchant.verificationStatus === verificationFilter;
-
-      return (
-        matchesSearch && matchesStatus && matchesLocation && matchesVerification
-      );
-    });
-  }, [merchants, searchTerm, statusFilter, locationFilter, verificationFilter]);
+    let filtered = merchants;
+    
+    // Client-side filter for location (backend handles search, status, and verification)
+    if (locationFilter !== "all") {
+      filtered = filtered.filter((merchant) => merchant.location.includes(locationFilter));
+    }
+    
+    return filtered;
+  }, [merchants, locationFilter]);
 
   // Get unique locations for filter
   const uniqueLocations = useMemo(() => {
-    return [...new Set(merchants.map((merchant) => merchant.location))];
+    const locations = merchants.map((merchant) => merchant.location).filter(Boolean);
+    return [...new Set(locations)] as string[];
   }, [merchants]);
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredMerchants.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedMerchants = filteredMerchants.slice(startIndex, endIndex);
+  // Pagination from API response
+  const totalPages = merchantsData?.total_pages || 1;
+  const startIndex = merchantsData?.page ? (merchantsData.page - 1) * merchantsData.page_size : 0;
+  const endIndex = startIndex + (merchantsData?.page_size || itemsPerPage);
+  const paginatedMerchants = filteredMerchants;
+
+  // Mutations
+  const createMerchantMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await merchantsApi.createMerchant(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['merchants'] });
+      toast({
+        title: t("admin.merchants.toast.merchantAdded"),
+        description: t("admin.merchants.toast.merchantAddedDesc"),
+      });
+      setIsAddDialogOpen(false);
+      setNewMerchant({
+        businessName: "",
+        ownerName: "",
+        email: "",
+        phone: "",
+        location: "",
+        businessType: "",
+        commissionRate: 0,
+        taxId: "",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.merchants.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMerchantMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return await merchantsApi.updateMerchant(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['merchants'] });
+      toast({
+        title: t("admin.merchants.toast.merchantUpdated"),
+        description: t("admin.merchants.toast.merchantUpdatedDesc"),
+      });
+      setIsEditDialogOpen(false);
+      setEditingMerchant({});
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.merchants.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMerchantMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await merchantsApi.deleteMerchant(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['merchants'] });
+      toast({
+        title: t("admin.merchants.toast.merchantDeleted"),
+        description: t("admin.merchants.toast.merchantDeletedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.merchants.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
 
   // Reset to first page when filters change
   useEffect(() => {
@@ -593,6 +457,19 @@ const MerchantAccountsManagement: React.FC = () => {
 
   const handleEditMerchant = (merchant: MerchantAccount) => {
     setSelectedMerchant(merchant);
+    setEditingMerchant({
+      businessName: merchant.businessName,
+      ownerName: merchant.ownerName,
+      email: merchant.email,
+      phone: merchant.phone,
+      location: merchant.location,
+      businessType: merchant.businessType,
+      commissionRate: merchant.commissionRate,
+      taxId: merchant.taxId,
+      bankAccount: merchant.bankAccount,
+      status: merchant.status,
+      verificationStatus: merchant.verificationStatus,
+    });
     setIsEditDialogOpen(true);
   };
 
@@ -602,70 +479,68 @@ const MerchantAccountsManagement: React.FC = () => {
   };
 
   const handleDeleteMerchant = (merchantId: string) => {
-    toast({
-      title: t("admin.merchants.toast.merchantDeleted"),
-      description: t("admin.merchants.toast.merchantDeletedDesc"),
-    });
-  };
-
-  const handleExportMerchants = () => {
-    toast({
-      title: t("admin.merchants.toast.exportSuccess"),
-      description: t("admin.merchants.toast.exportSuccessDesc"),
-    });
-  };
-
-  const handleSuspendMerchant = (merchantId: string) => {
-    toast({
-      title: t("admin.merchants.toast.merchantSuspended"),
-      description: t("admin.merchants.toast.merchantSuspendedDesc"),
-    });
-  };
-
-  const handleActivateMerchant = (merchantId: string) => {
-    toast({
-      title: t("admin.merchants.toast.merchantActivated"),
-      description: t("admin.merchants.toast.merchantActivatedDesc"),
-    });
-  };
-
-  const handleVerifyMerchant = (merchantId: string) => {
-    toast({
-      title: t("admin.merchants.toast.merchantVerified"),
-      description: t("admin.merchants.toast.merchantVerifiedDesc"),
-    });
-  };
-
-  const handleViewEvents = (merchantId: string) => {
-    const merchant = merchants.find((m) => m.id === merchantId);
-    if (merchant) {
-      setSelectedMerchant(merchant);
-      setShowEventsDialog(true);
+    if (window.confirm(t("admin.merchants.toast.confirmDelete") || "Are you sure you want to delete this merchant?")) {
+      deleteMerchantMutation.mutate(merchantId);
     }
   };
 
-  const handleViewTransactions = (merchantId: string) => {
-    const merchant = merchants.find((m) => m.id === merchantId);
-    if (merchant) {
-      setSelectedMerchant(merchant);
-      setShowTransactionsDialog(true);
-    }
-  };
 
   const handleAddMerchant = () => {
-    toast({
-      title: t("admin.merchants.toast.merchantAdded"),
-      description: t("admin.merchants.toast.merchantAddedDesc"),
+    if (!newMerchant.businessName || !newMerchant.ownerName || !newMerchant.email || !newMerchant.phone) {
+      toast({
+        title: t("common.error"),
+        description: t("admin.merchants.toast.requiredFields") || "Business name, owner name, email, and phone are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createMerchantMutation.mutate({
+      business_name: newMerchant.businessName,
+      owner_name: newMerchant.ownerName,
+      email: newMerchant.email,
+      phone: newMerchant.phone,
+      location: newMerchant.location,
+      business_type: newMerchant.businessType,
+      commission_rate: newMerchant.commissionRate / 100, // Convert percentage to decimal
+      tax_id: newMerchant.taxId,
+      status: 'active',
+      verification_status: 'pending',
     });
-    setIsAddDialogOpen(false);
   };
 
   const handleSaveMerchantChanges = () => {
-    toast({
-      title: t("admin.merchants.toast.merchantUpdated"),
-      description: t("admin.merchants.toast.merchantUpdatedDesc"),
-    });
-    setIsEditDialogOpen(false);
+    if (!selectedMerchant) return;
+    
+    if (!editingMerchant.businessName || !editingMerchant.ownerName || !editingMerchant.email || !editingMerchant.phone) {
+      toast({
+        title: t("common.error"),
+        description: t("admin.merchants.toast.requiredFields") || "Business name, owner name, email, and phone are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const updateData: any = {
+      business_name: editingMerchant.businessName,
+      owner_name: editingMerchant.ownerName,
+      email: editingMerchant.email,
+      phone: editingMerchant.phone,
+      location: editingMerchant.location,
+      business_type: editingMerchant.businessType,
+      commission_rate: editingMerchant.commissionRate ? editingMerchant.commissionRate / 100 : undefined, // Convert percentage to decimal
+      tax_id: editingMerchant.taxId,
+      bank_account: editingMerchant.bankAccount,
+    };
+
+    if (editingMerchant.status) {
+      updateData.status = editingMerchant.status;
+    }
+    if (editingMerchant.verificationStatus) {
+      updateData.verification_status = editingMerchant.verificationStatus;
+    }
+
+    updateMerchantMutation.mutate({ id: selectedMerchant.id, data: updateData });
   };
 
   const handleTransferCards = () => {
@@ -769,7 +644,7 @@ const MerchantAccountsManagement: React.FC = () => {
               location: locationFilter,
               verification: verificationFilter,
             }}
-            onExport={(format) => {
+            onExport={() => {
               toast({
                 title: t("admin.merchants.toast.exportSuccess"),
                 description: t("admin.merchants.toast.exportSuccessDesc"),
@@ -818,7 +693,7 @@ const MerchantAccountsManagement: React.FC = () => {
                   {t("admin.merchants.stats.totalMerchants")}
                 </p>
                 <p className="text-2xl font-bold">
-                  {formatNumber(merchants.length)}
+                  {formatNumber(merchantsData?.count || merchants.length)}
                 </p>
               </div>
               <Building2 className="h-8 w-8 text-blue-600" />
@@ -975,13 +850,13 @@ const MerchantAccountsManagement: React.FC = () => {
         <CardHeader>
           <CardTitle className="rtl:text-right ltr:text-left">
             {t("admin.merchants.table.merchant")} (
-            {formatNumber(filteredMerchants.length)})
+            {formatNumber(merchantsData?.count || filteredMerchants.length)})
           </CardTitle>
           <div className="flex items-center gap-2 rtl:flex-row-reverse">
             <span className="text-sm text-muted-foreground">
               {t("admin.merchants.pagination.showing")} {startIndex + 1}-
-              {Math.min(endIndex, filteredMerchants.length)}{" "}
-              {t("admin.merchants.pagination.of")} {filteredMerchants.length}
+              {Math.min(endIndex, merchantsData?.count || filteredMerchants.length)}{" "}
+              {t("admin.merchants.pagination.of")} {merchantsData?.count || filteredMerchants.length}
             </span>
             <Select
               value={itemsPerPage.toString()}
@@ -1000,38 +875,47 @@ const MerchantAccountsManagement: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.merchant")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.contact")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.status")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.verification")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.registration")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.events")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.revenue")}
-                  </TableHead>
-                  <TableHead className="rtl:text-right ltr:text-left">
-                    {t("admin.merchants.table.actions")}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedMerchants.map((merchant) => (
+          {merchantsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">{t("common.loading")}</span>
+            </div>
+          ) : merchantsError ? (
+            <div className="flex items-center justify-center py-12">
+              <AlertCircle className="h-8 w-8 text-red-500" />
+              <span className="ml-2 text-red-500">
+                {t("common.error")}: {merchantsError instanceof Error ? merchantsError.message : t("admin.merchants.toast.error")}
+              </span>
+            </div>
+          ) : paginatedMerchants.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">{t("admin.merchants.noMerchantsFound") || "No merchants found"}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="rtl:text-right ltr:text-left">
+                      {t("admin.merchants.table.merchant")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right ltr:text-left">
+                      {t("admin.merchants.table.name") || "Name"}
+                    </TableHead>
+                    <TableHead className="rtl:text-right ltr:text-left">
+                      {t("admin.merchants.table.status")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right ltr:text-left">
+                      {t("admin.merchants.table.contact")}
+                    </TableHead>
+                    <TableHead className="rtl:text-right ltr:text-left">
+                      {t("admin.merchants.table.actions")}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedMerchants.map((merchant) => (
                   <TableRow key={merchant.id}>
                     <TableCell>
                       <div className="flex items-center space-x-3 rtl:space-x-reverse">
@@ -1045,26 +929,13 @@ const MerchantAccountsManagement: React.FC = () => {
                         />
                         <div className="rtl:text-right ltr:text-left">
                           <p className="font-medium">{merchant.businessName}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {t("admin.merchants.table.owner")}:{" "}
-                            {merchant.ownerName}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {merchant.businessType}
-                          </p>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="rtl:text-right ltr:text-left">
-                        <p className="text-sm">{merchant.email}</p>
-                        <p className="text-sm text-muted-foreground" dir="ltr">
-                          {formatPhone(merchant.phone)}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {merchant.location}
-                        </p>
-                      </div>
+                      <p className="text-sm rtl:text-right ltr:text-left">
+                        {merchant.ownerName}
+                      </p>
                     </TableCell>
                     <TableCell>
                       <Badge className={getStatusColor(merchant.status)}>
@@ -1072,38 +943,10 @@ const MerchantAccountsManagement: React.FC = () => {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        className={getVerificationColor(
-                          merchant.verificationStatus
-                        )}
-                      >
-                        {getVerificationText(merchant.verificationStatus)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <p className="text-sm rtl:text-right ltr:text-left">
-                        {formatDateForLocale(merchant.registrationDate)}
-                      </p>
-                    </TableCell>
-                    <TableCell>
                       <div className="rtl:text-right ltr:text-left">
-                        <p className="font-medium">
-                          {formatNumber(merchant.totalEvents)}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {t("admin.merchants.table.commission")}:{" "}
-                          {merchant.commissionRate}%
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="rtl:text-right ltr:text-left">
-                        <p className="font-medium">
-                          {formatCurrency(merchant.totalRevenue)}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {t("admin.merchants.table.payoutBalance")}:{" "}
-                          {formatCurrency(merchant.payoutBalance)}
+                        <p className="text-sm">{merchant.email}</p>
+                        <p className="text-sm text-muted-foreground" dir="ltr">
+                          {formatPhone(merchant.phone)}
                         </p>
                       </div>
                     </TableCell>
@@ -1135,49 +978,6 @@ const MerchantAccountsManagement: React.FC = () => {
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
-                            onClick={() => handleViewEvents(merchant.id)}
-                          >
-                            <Ticket className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                            {t("admin.merchants.actions.viewEvents")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleViewTransactions(merchant.id)}
-                          >
-                            <Receipt className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                            {t("admin.merchants.actions.viewTransactions")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {merchant.verificationStatus === "pending" && (
-                            <DropdownMenuItem
-                              onClick={() => handleVerifyMerchant(merchant.id)}
-                              className="text-green-600"
-                            >
-                              <CheckCircle className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                              {t("admin.merchants.actions.verify")}
-                            </DropdownMenuItem>
-                          )}
-                          {merchant.status === "active" && (
-                            <DropdownMenuItem
-                              onClick={() => handleSuspendMerchant(merchant.id)}
-                              className="text-yellow-600"
-                            >
-                              <Ban className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                              {t("admin.merchants.actions.suspend")}
-                            </DropdownMenuItem>
-                          )}
-                          {merchant.status === "suspended" && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                handleActivateMerchant(merchant.id)
-                              }
-                              className="text-green-600"
-                            >
-                              <UserCheck className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                              {t("admin.merchants.actions.activate")}
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
                             onClick={() => handleDeleteMerchant(merchant.id)}
                             className="text-red-600"
                           >
@@ -1188,28 +988,31 @@ const MerchantAccountsManagement: React.FC = () => {
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
           {/* Pagination */}
-          <ResponsivePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-            showInfo={true}
-            infoText={`${t("admin.merchants.pagination.showing")} ${
-              startIndex + 1
-            }-${Math.min(endIndex, filteredMerchants.length)} ${t(
-              "admin.merchants.pagination.of"
-            )} ${filteredMerchants.length}`}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={filteredMerchants.length}
-            itemsPerPage={itemsPerPage}
-            className="mt-4"
-          />
+          {!merchantsLoading && !merchantsError && (
+            <ResponsivePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              showInfo={true}
+              infoText={`${t("admin.merchants.pagination.showing")} ${
+                startIndex + 1
+              }-${Math.min(endIndex, merchantsData?.count || 0)} ${t(
+                "admin.merchants.pagination.of"
+              )} ${merchantsData?.count || 0}`}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              totalItems={merchantsData?.count || 0}
+              itemsPerPage={itemsPerPage}
+              className="mt-4"
+            />
+          )}
         </CardContent>
       </Card>
 
@@ -1397,7 +1200,7 @@ const MerchantAccountsManagement: React.FC = () => {
               </div>
 
               {/* Documents */}
-              {selectedMerchant.documents.length > 0 && (
+              {selectedMerchant.documents && selectedMerchant.documents.length > 0 && (
                 <div>
                   <h4 className="text-lg font-semibold mb-4 rtl:text-right ltr:text-left">
                     {t("admin.merchants.details.documents")}
@@ -1449,39 +1252,59 @@ const MerchantAccountsManagement: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                    {t("admin.merchants.form.businessName")}
+                    {t("admin.merchants.form.businessName")} *
                   </label>
-                  <Input defaultValue={selectedMerchant.businessName} />
+                  <Input 
+                    value={editingMerchant.businessName || selectedMerchant.businessName || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, businessName: e.target.value })}
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                    {t("admin.merchants.form.ownerName")}
+                    {t("admin.merchants.form.ownerName")} *
                   </label>
-                  <Input defaultValue={selectedMerchant.ownerName} />
+                  <Input 
+                    value={editingMerchant.ownerName || selectedMerchant.ownerName || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, ownerName: e.target.value })}
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                    {t("admin.merchants.form.email")}
+                    {t("admin.merchants.form.email")} *
                   </label>
-                  <Input type="email" defaultValue={selectedMerchant.email} />
+                  <Input 
+                    type="email" 
+                    value={editingMerchant.email || selectedMerchant.email || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, email: e.target.value })}
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                    {t("admin.merchants.form.phone")}
+                    {t("admin.merchants.form.phone")} *
                   </label>
-                  <Input defaultValue={selectedMerchant.phone} dir="ltr" />
+                  <Input 
+                    value={editingMerchant.phone || selectedMerchant.phone || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, phone: e.target.value })}
+                    dir="ltr" 
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
                     {t("admin.merchants.form.location")}
                   </label>
-                  <Input defaultValue={selectedMerchant.location} />
+                  <Input 
+                    value={editingMerchant.location || selectedMerchant.location || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, location: e.target.value })}
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
                     {t("admin.merchants.form.businessType")}
                   </label>
-                  <Input defaultValue={selectedMerchant.businessType} />
+                  <Input 
+                    value={editingMerchant.businessType || selectedMerchant.businessType || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, businessType: e.target.value })}
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
@@ -1489,14 +1312,20 @@ const MerchantAccountsManagement: React.FC = () => {
                   </label>
                   <Input
                     type="number"
-                    defaultValue={selectedMerchant.commissionRate.toString()}
+                    value={editingMerchant.commissionRate !== undefined ? editingMerchant.commissionRate : selectedMerchant.commissionRate}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, commissionRate: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
                     {t("admin.merchants.form.status")}
                   </label>
-                  <Select defaultValue={selectedMerchant.status}>
+                  <Select 
+                    value={editingMerchant.status || selectedMerchant.status || "active"}
+                    onValueChange={(value: "active" | "inactive" | "suspended") => 
+                      setEditingMerchant({ ...editingMerchant, status: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1510,9 +1339,6 @@ const MerchantAccountsManagement: React.FC = () => {
                       <SelectItem value="suspended">
                         {t("admin.merchants.status.suspended")}
                       </SelectItem>
-                      <SelectItem value="pending">
-                        {t("admin.merchants.status.pending")}
-                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1520,7 +1346,12 @@ const MerchantAccountsManagement: React.FC = () => {
                   <label className="text-sm font-medium rtl:text-right ltr:text-left">
                     {t("admin.merchants.form.verificationStatus")}
                   </label>
-                  <Select defaultValue={selectedMerchant.verificationStatus}>
+                  <Select 
+                    value={editingMerchant.verificationStatus || selectedMerchant.verificationStatus || "pending"}
+                    onValueChange={(value: "verified" | "pending" | "rejected") => 
+                      setEditingMerchant({ ...editingMerchant, verificationStatus: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1537,18 +1368,46 @@ const MerchantAccountsManagement: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
+                <div>
+                  <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                    {t("admin.merchants.form.taxId")}
+                  </label>
+                  <Input 
+                    value={editingMerchant.taxId || selectedMerchant.taxId || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, taxId: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                    {t("admin.merchants.form.bankAccount")}
+                  </label>
+                  <Input 
+                    value={editingMerchant.bankAccount || selectedMerchant.bankAccount || ""}
+                    onChange={(e) => setEditingMerchant({ ...editingMerchant, bankAccount: e.target.value })}
+                    dir="ltr"
+                  />
+                </div>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setIsEditDialogOpen(false)}
+              onClick={() => {
+                setIsEditDialogOpen(false);
+                setEditingMerchant({});
+                setSelectedMerchant(null);
+              }}
             >
               {t("admin.merchants.dialogs.cancel")}
             </Button>
-            <Button onClick={handleSaveMerchantChanges}>
-              {t("admin.merchants.dialogs.saveChanges")}
+            <Button 
+              onClick={handleSaveMerchantChanges}
+              disabled={updateMerchantMutation.isPending}
+            >
+              {updateMerchantMutation.isPending 
+                ? t("common.loading") 
+                : t("admin.merchants.dialogs.saveChanges")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1569,37 +1428,45 @@ const MerchantAccountsManagement: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.merchants.form.businessName")}
+                  {t("admin.merchants.form.businessName")} *
                 </label>
                 <Input
                   placeholder={t(
                     "admin.merchants.form.businessNamePlaceholder"
                   )}
+                  value={newMerchant.businessName}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, businessName: e.target.value })}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.merchants.form.ownerName")}
+                  {t("admin.merchants.form.ownerName")} *
                 </label>
                 <Input
                   placeholder={t("admin.merchants.form.ownerNamePlaceholder")}
+                  value={newMerchant.ownerName}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, ownerName: e.target.value })}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.merchants.form.email")}
+                  {t("admin.merchants.form.email")} *
                 </label>
                 <Input
                   type="email"
                   placeholder={t("admin.merchants.form.emailPlaceholder")}
+                  value={newMerchant.email}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, email: e.target.value })}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                  {t("admin.merchants.form.phone")}
+                  {t("admin.merchants.form.phone")} *
                 </label>
                 <Input
                   placeholder={t("admin.merchants.form.phonePlaceholder")}
+                  value={newMerchant.phone}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, phone: e.target.value })}
                   dir="ltr"
                 />
               </div>
@@ -1609,6 +1476,8 @@ const MerchantAccountsManagement: React.FC = () => {
                 </label>
                 <Input
                   placeholder={t("admin.merchants.form.locationPlaceholder")}
+                  value={newMerchant.location}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, location: e.target.value })}
                 />
               </div>
               <div>
@@ -1619,6 +1488,8 @@ const MerchantAccountsManagement: React.FC = () => {
                   placeholder={t(
                     "admin.merchants.form.businessTypePlaceholder"
                   )}
+                  value={newMerchant.businessType}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, businessType: e.target.value })}
                 />
               </div>
               <div>
@@ -1630,6 +1501,8 @@ const MerchantAccountsManagement: React.FC = () => {
                   placeholder={t(
                     "admin.merchants.form.commissionRatePlaceholder"
                   )}
+                  value={newMerchant.commissionRate || ""}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, commissionRate: parseFloat(e.target.value) || 0 })}
                 />
               </div>
               <div>
@@ -1638,176 +1511,38 @@ const MerchantAccountsManagement: React.FC = () => {
                 </label>
                 <Input
                   placeholder={t("admin.merchants.form.taxIdPlaceholder")}
+                  value={newMerchant.taxId}
+                  onChange={(e) => setNewMerchant({ ...newMerchant, taxId: e.target.value })}
                 />
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsAddDialogOpen(false);
+                setNewMerchant({
+                  businessName: "",
+                  ownerName: "",
+                  email: "",
+                  phone: "",
+                  location: "",
+                  businessType: "",
+                  commissionRate: 0,
+                  taxId: "",
+                });
+              }}
+            >
               {t("admin.merchants.dialogs.cancel")}
             </Button>
-            <Button onClick={handleAddMerchant}>
-              {t("admin.merchants.dialogs.addMerchantButton")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Merchant Events Dialog */}
-      <Dialog open={showEventsDialog} onOpenChange={setShowEventsDialog}>
-        <DialogContent className="max-w-4xl rtl:text-right ltr:text-left">
-          <DialogHeader>
-            <DialogTitle className="rtl:text-right ltr:text-left">
-              {t("admin.merchants.dialogs.merchantEvents")}
-            </DialogTitle>
-            <DialogDescription className="rtl:text-right ltr:text-left">
-              {selectedMerchant &&
-                `${t("admin.merchants.dialogs.merchantEventsSubtitle")} ${
-                  selectedMerchant.businessName
-                }`}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.events.eventTitle")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.events.date")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.events.revenue")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.events.commission")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.events.status")}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {merchantEvents.map((event) => (
-                    <TableRow key={event.id}>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        {event.eventTitle}
-                      </TableCell>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        {formatDateForLocale(event.date)}
-                      </TableCell>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        {formatCurrency(event.revenue)}
-                      </TableCell>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        {formatCurrency(event.commission)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(event.status)}>
-                          {event.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowEventsDialog(false)}
+            <Button 
+              onClick={handleAddMerchant}
+              disabled={createMerchantMutation.isPending}
             >
-              {t("admin.merchants.dialogs.close")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Merchant Transactions Dialog */}
-      <Dialog
-        open={showTransactionsDialog}
-        onOpenChange={setShowTransactionsDialog}
-      >
-        <DialogContent className="max-w-4xl rtl:text-right ltr:text-left">
-          <DialogHeader>
-            <DialogTitle className="rtl:text-right ltr:text-left">
-              {t("admin.merchants.dialogs.merchantTransactions")}
-            </DialogTitle>
-            <DialogDescription className="rtl:text-right ltr:text-left">
-              {selectedMerchant &&
-                `${t("admin.merchants.dialogs.merchantTransactionsSubtitle")} ${
-                  selectedMerchant.businessName
-                }`}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.transactions.type")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.transactions.description")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.transactions.amount")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.transactions.timestamp")}
-                    </TableHead>
-                    <TableHead className="rtl:text-right ltr:text-left">
-                      {t("admin.merchants.transactions.status")}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {merchantTransactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        <Badge variant="outline">{transaction.type}</Badge>
-                      </TableCell>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        {transaction.description}
-                      </TableCell>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        <span
-                          className={
-                            transaction.amount >= 0
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }
-                        >
-                          {formatCurrency(Math.abs(transaction.amount))}
-                        </span>
-                      </TableCell>
-                      <TableCell className="rtl:text-right ltr:text-left">
-                        {formatDateForLocale(
-                          transaction.timestamp,
-                          "MMM dd, yyyy HH:mm"
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(transaction.status)}>
-                          {transaction.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowTransactionsDialog(false)}
-            >
-              {t("admin.merchants.dialogs.close")}
+              {createMerchantMutation.isPending 
+                ? t("common.loading") 
+                : t("admin.merchants.dialogs.addMerchantButton")}
             </Button>
           </DialogFooter>
         </DialogContent>

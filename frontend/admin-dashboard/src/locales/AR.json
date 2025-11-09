@@ -1579,6 +1579,86 @@
         "payoutCreatedDesc": "تم إنشاء الدفعة الجديدة بنجاح"
       }
     },
+    "payments": {
+      "title": "المدفوعات",
+      "subtitle": "عرض وإدارة مدفوعات العملاء",
+      "stats": {
+        "totalPayments": "إجمالي المدفوعات",
+        "totalAmount": "إجمالي المبلغ",
+        "completedPayments": "مكتملة",
+        "pendingPayments": "معلقة",
+        "allTime": "طوال الوقت",
+        "completed": "مكتملة",
+        "awaiting": "في الانتظار"
+      },
+      "filters": {
+        "title": "المرشحات",
+        "searchPlaceholder": "البحث برقم المعاملة، العميل...",
+        "status": "الحالة",
+        "paymentMethod": "طريقة الدفع",
+        "allStatus": "جميع الحالات",
+        "allMethods": "جميع الطرق",
+        "dateFrom": "من",
+        "dateTo": "إلى",
+        "selectOrganizer": "اختر المنظم"
+      },
+      "status": {
+        "completed": "مكتملة",
+        "pending": "معلقة",
+        "processing": "قيد المعالجة",
+        "failed": "فشلت",
+        "refunded": "مستردة"
+      },
+      "methods": {
+        "creditCard": "بطاقة ائتمان",
+        "debitCard": "بطاقة خصم",
+        "nfcCard": "بطاقة NFC",
+        "digitalWallet": "محفظة رقمية",
+        "bankTransfer": "تحويل بنكي"
+      },
+      "table": {
+        "payments": "المدفوعات",
+        "transactionId": "رقم المعاملة",
+        "customer": "العميل",
+        "ticket": "التذكرة",
+        "event": "الحدث",
+        "amount": "المبلغ",
+        "method": "الطريقة",
+        "status": "الحالة",
+        "date": "التاريخ",
+        "actions": "الإجراءات",
+        "noPayment": "لا يوجد دفع"
+      },
+      "pagination": {
+        "showing": "عرض",
+        "of": "من",
+        "results": "نتيجة"
+      },
+      "actions": {
+        "export": "تصدير"
+      },
+      "toast": {
+        "exportSuccess": "تم التصدير بنجاح",
+        "exportSuccessDesc": "تم تصدير بيانات المدفوعات بنجاح",
+        "error": "حدث خطأ"
+      },
+      "noPaymentsFound": "لم يتم العثور على مدفوعات",
+      "dialogs": {
+        "paymentDetails": "تفاصيل الدفع",
+        "paymentDetailsSubtitle": "عرض معلومات الدفع التفصيلية"
+      },
+      "details": {
+        "transactionId": "رقم المعاملة",
+        "status": "الحالة",
+        "amount": "المبلغ",
+        "paymentMethod": "طريقة الدفع",
+        "customer": "العميل",
+        "ticket": "التذكرة",
+        "event": "الحدث",
+        "createdAt": "تاريخ الإنشاء",
+        "updatedAt": "تاريخ التحديث"
+      }
+    },
     "accountSettings": {
       "title": "إعدادات الحساب",
       "subtitle": "إدارة معلوماتك الشخصية وإعدادات الأمان وكلمة المرور",
@@ -2861,6 +2941,7 @@
         "logs": "سجلات النظام",
         "expenses": "المصروفات",
         "payouts": "المدفوعات",
+        "payments": "المدفوعات",
         "analytics": "التحليلات",
         "companyFinances": "المالية المؤسسية",
         "profitShare": "إدارة تقاسم الأرباح",
@@ -3452,6 +3533,13 @@
         "used": "مستخدم",
         "refunded": "مسترد",
         "banned": "محظور"
+      },
+      "paymentStatus": {
+        "completed": "مدفوع",
+        "pending": "معلق",
+        "processing": "قيد المعالجة",
+        "failed": "فشل",
+        "refunded": "مسترد"
       },
       "actions": {
         "checkInLogs": "سجلات تسجيل الدخول",
@@ -4417,7 +4505,12 @@
       "categories": "الفئات",
       "activeCategories": "الفئات النشطة",
       "paymentMethods": "طرق الدفع",
-      "activeMethods": "الطرق النشطة"
+      "activeMethods": "الطرق النشطة",
+      "highestExpense": "أعلى مصروف",
+      "noDescription": "لا يوجد وصف",
+      "noExpenses": "لا توجد مصروفات",
+      "totalCount": "إجمالي المصروفات",
+      "filteredCount": "المصروفات المفلترة"
     },
     "expenses": {
       "title": "المصروفات",
@@ -4492,6 +4585,7 @@
       "paidBy": "دفع بواسطة",
       "paymentMethod": "طريقة الدفع",
       "paymentDate": "تاريخ الدفع",
+      "date": "التاريخ",
       "status": "الحالة",
       "name": "الاسم",
       "description": "الوصف",
@@ -4506,7 +4600,14 @@
       "status": "الحالة",
       "allCategories": "جميع الفئات",
       "allMethods": "جميع الطرق",
-      "allStatuses": "جميع الحالات"
+      "allStatuses": "جميع الحالات",
+      "dateFrom": "من تاريخ",
+      "dateTo": "إلى تاريخ",
+      "minAmount": "الحد الأدنى للمبلغ",
+      "minAmountPlaceholder": "الحد الأدنى",
+      "maxAmount": "الحد الأقصى للمبلغ",
+      "maxAmountPlaceholder": "الحد الأقصى",
+      "clearFilters": "مسح المرشحات"
     },
     "status": {
       "paid": "مدفوع",
@@ -4546,6 +4647,9 @@
       "exportSuccessDesc": "تم تصدير البيانات بنجاح",
       "error": "خطأ",
       "errorDesc": "يرجى ملء جميع الحقول المطلوبة"
-    }
+    },
+    "confirmDelete": "هل أنت متأكد من حذف هذا المصروف؟",
+    "noExpensesFound": "لا توجد مصروفات",
+    "noCategoriesFound": "لا توجد فئات"
   }
 }

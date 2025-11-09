@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -77,25 +77,29 @@ import i18n from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { venuesApi } from "@/lib/api/adminApi";
 
 interface Venue {
   id: string;
   name: string;
-  description: string;
+  description?: string;
   address: string;
   city: string;
   capacity: number;
-  facilities: string[];
+  facilities?: string[];
   status: "active" | "inactive" | "maintenance";
-  rating: number;
-  totalEvents: number;
+  rating?: number;
+  totalEvents?: number;
   lastEventDate?: string;
-  contactPhone: string;
-  contactEmail: string;
+  contactPhone?: string;
+  contactEmail?: string;
   website?: string;
-  images: string[];
-  createdAt: string;
-  updatedAt: string;
+  images?: string[];
+  created_at?: string;
+  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 const VenueManagement: React.FC = () => {
@@ -134,87 +138,7 @@ const VenueManagement: React.FC = () => {
     i18n.reloadResources();
   }, [i18n]);
 
-  const [venues, setVenues] = useState<Venue[]>([
-    {
-      id: "1",
-      name: "Cairo International Convention Center",
-      description:
-        "A state-of-the-art convention center with multiple halls and modern facilities",
-      address: "Nasr City, Cairo",
-      city: "Cairo",
-      capacity: 5000,
-      facilities: [
-        "WiFi",
-        "Parking",
-        "Wheelchair Access",
-        "Catering",
-        "Audio/Visual",
-        "Security",
-      ],
-      status: "active",
-      rating: 4.8,
-      totalEvents: 45,
-      lastEventDate: "2024-01-15",
-      contactPhone: "+20 2 2268 0000",
-      contactEmail: "info@cicc.com.eg",
-      website: "https://cicc.com.eg",
-      images: ["/venues/cicc-1.jpg", "/venues/cicc-2.jpg"],
-      createdAt: "2023-01-01",
-      updatedAt: "2024-01-15",
-    },
-    {
-      id: "2",
-      name: "Opera House - Main Hall",
-      description:
-        "Historic venue with excellent acoustics for classical and contemporary performances",
-      address: "El Borg, Cairo",
-      city: "Cairo",
-      capacity: 1200,
-      facilities: [
-        "WiFi",
-        "Parking",
-        "Wheelchair Access",
-        "Catering",
-        "Audio/Visual",
-      ],
-      status: "active",
-      rating: 4.9,
-      totalEvents: 78,
-      lastEventDate: "2024-01-20",
-      contactPhone: "+20 2 2739 0114",
-      contactEmail: "info@cairoopera.org",
-      website: "https://cairoopera.org",
-      images: ["/venues/opera-1.jpg"],
-      createdAt: "2023-01-01",
-      updatedAt: "2024-01-20",
-    },
-    {
-      id: "3",
-      name: "Giza Pyramids Complex",
-      description:
-        "Outdoor venue with breathtaking views of the ancient pyramids",
-      address: "Giza Plateau, Giza",
-      city: "Giza",
-      capacity: 10000,
-      facilities: [
-        "Parking",
-        "Security",
-        "Catering",
-        "Audio/Visual",
-        "Transportation",
-      ],
-      status: "active",
-      rating: 4.7,
-      totalEvents: 23,
-      lastEventDate: "2024-01-10",
-      contactPhone: "+20 2 3380 0000",
-      contactEmail: "info@giza-pyramids.org",
-      images: ["/venues/pyramids-1.jpg"],
-      createdAt: "2023-01-01",
-      updatedAt: "2024-01-10",
-    },
-  ]);
-
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [cityFilter, setCityFilter] = useState("all");
@@ -227,38 +151,67 @@ const VenueManagement: React.FC = () => {
   const [editingVenue, setEditingVenue] = useState<Partial<Venue>>({});
   const [newVenue, setNewVenue] = useState<Partial<Venue>>({
     name: "",
-    description: "",
     address: "",
     city: "",
     capacity: 0,
-    facilities: [],
-    contactPhone: "",
-    contactEmail: "",
-    website: "",
-    images: [],
+    status: "active",
   });
 
-  const filteredVenues = useMemo(() => {
-    return venues.filter((venue) => {
-      const matchesSearch =
-        venue.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        venue.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        venue.address.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesStatus =
-        statusFilter === "all" || venue.status === statusFilter;
-      const matchesCity = cityFilter === "all" || venue.city === cityFilter;
+  // Fetch venues from API
+  const { data: venuesData, isLoading: venuesLoading, error: venuesError } = useQuery({
+    queryKey: ['venues', searchTerm, statusFilter, cityFilter, currentPage, itemsPerPage],
+    queryFn: async () => {
+      const params: any = {
+        page: currentPage,
+        page_size: itemsPerPage,
+      };
+      
+      if (searchTerm) params.search = searchTerm;
+      if (statusFilter !== 'all') params.status = statusFilter;
+      if (cityFilter !== 'all') params.city = cityFilter;
+      
+      const response = await venuesApi.getVenues(params);
+      return response;
+    },
+  });
 
-      return matchesSearch && matchesStatus && matchesCity;
-    });
-  }, [venues, searchTerm, statusFilter, cityFilter]);
+  // Transform API venues to match Venue interface
+  const venues: Venue[] = useMemo(() => {
+    if (!venuesData?.results) return [];
+    return venuesData.results.map((item: any) => ({
+      id: item.id?.toString() || '',
+      name: item.name || '',
+      description: item.description || '',
+      address: item.address || '',
+      city: item.city || '',
+      capacity: item.capacity || 0,
+      facilities: item.facilities || [],
+      status: item.status as "active" | "inactive" | "maintenance",
+      rating: item.rating || 0,
+      totalEvents: item.total_events || 0,
+      lastEventDate: item.last_event_date,
+      contactPhone: item.contact_phone || '',
+      contactEmail: item.contact_email || '',
+      website: item.website,
+      images: item.images || [],
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      createdAt: item.created_at,
+      updatedAt: item.updated_at,
+    }));
+  }, [venuesData]);
 
-  const totalPages = Math.ceil(filteredVenues.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedVenues = filteredVenues.slice(startIndex, endIndex);
+  // API handles filtering, so we use venues directly
+  const filteredVenues = venues;
+
+  // Pagination from API response
+  const totalPages = venuesData?.total_pages || 1;
+  const startIndex = venuesData?.page ? (venuesData.page - 1) * venuesData.page_size : 0;
+  const endIndex = startIndex + (venuesData?.page_size || itemsPerPage);
+  const paginatedVenues = filteredVenues;
 
   const cities = useMemo(() => {
-    const uniqueCities = [...new Set(venues.map((venue) => venue.city))];
+    const uniqueCities = [...new Set(venues.map((venue) => venue.city).filter(city => city && city.trim() !== ''))];
     return uniqueCities.sort();
   }, [venues]);
 
@@ -318,103 +271,152 @@ const VenueManagement: React.FC = () => {
     setIsViewDialogOpen(true);
   };
 
+  // Create venue mutation
+  const createVenueMutation = useMutation({
+    mutationFn: async (data: any) => {
+      return await venuesApi.createVenue(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+      toast({
+        title: t("venueManagement.toast.venueAdded"),
+        description: t("venueManagement.toast.venueAddedDesc"),
+      });
+      setIsAddDialogOpen(false);
+      // Reset form
+      setNewVenue({
+        name: "",
+        address: "",
+        city: "",
+        capacity: 0,
+        status: "active",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("venueManagement.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update venue mutation
+  const updateVenueMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      return await venuesApi.updateVenue(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+      toast({
+        title: t("venueManagement.toast.venueUpdated"),
+        description: t("venueManagement.toast.venueUpdatedDesc"),
+      });
+      setIsEditDialogOpen(false);
+      setEditingVenue({});
+      setSelectedVenue(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("venueManagement.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete venue mutation
+  const deleteVenueMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await venuesApi.deleteVenue(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['venues'] });
+      toast({
+        title: t("venueManagement.toast.venueDeleted"),
+        description: t("venueManagement.toast.venueDeletedDesc"),
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("venueManagement.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, cityFilter]);
+
   const handleEditVenue = (venue: Venue) => {
     setSelectedVenue(venue);
     setEditingVenue({
       name: venue.name,
-      description: venue.description,
-      facilities: [...venue.facilities],
+      address: venue.address,
+      city: venue.city,
+      capacity: venue.capacity,
+      status: venue.status,
     });
     setIsEditDialogOpen(true);
   };
 
   const handleDeleteVenue = (venueId: string) => {
-    setVenues(venues.filter((venue) => venue.id !== venueId));
-    toast({
-      title: t("venueManagement.toast.venueDeleted"),
-      description: t("venueManagement.toast.venueDeletedDesc"),
-    });
+    if (window.confirm(t("venueManagement.toast.confirmDelete"))) {
+      deleteVenueMutation.mutate(venueId);
+    }
   };
 
   const handleSaveNewVenue = () => {
-    if (!newVenue.name || !newVenue.description || !newVenue.address) {
+    // Validate required fields
+    if (!newVenue.name || !newVenue.address || !newVenue.city || !newVenue.capacity) {
       toast({
-        title: t("venueManagement.toast.error"),
-        description: t("venueManagement.toast.errorDesc"),
+        title: t("common.error"),
+        description: t("venueManagement.toast.requiredFields"),
         variant: "destructive",
       });
       return;
     }
 
-    const venue: Venue = {
-      id: Date.now().toString(),
-      name: newVenue.name!,
-      description: newVenue.description!,
-      address: newVenue.address!,
-      city: newVenue.city!,
-      capacity: newVenue.capacity!,
-      facilities: newVenue.facilities!,
-      status: "active",
-      rating: 0,
-      totalEvents: 0,
-      contactPhone: newVenue.contactPhone!,
-      contactEmail: newVenue.contactEmail!,
-      website: newVenue.website,
-      images: newVenue.images!,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    // Prepare data for API
+    const venueData: any = {
+      name: newVenue.name,
+      address: newVenue.address,
+      city: newVenue.city,
+      capacity: Number(newVenue.capacity),
+      status: newVenue.status || "active",
     };
 
-    setVenues([...venues, venue]);
-    setNewVenue({
-      name: "",
-      description: "",
-      address: "",
-      city: "",
-      capacity: 0,
-      facilities: [],
-      contactPhone: "",
-      contactEmail: "",
-      website: "",
-      images: [],
-    });
-    setIsAddDialogOpen(false);
-    toast({
-      title: t("venueManagement.toast.venueAdded"),
-      description: t("venueManagement.toast.venueAddedDesc"),
-    });
+    // Create venue
+    createVenueMutation.mutate(venueData);
   };
 
   const handleSaveVenueEdit = () => {
-    if (!editingVenue.name || !editingVenue.description) {
+    if (!selectedVenue) return;
+
+    // Validate required fields
+    if (!editingVenue.name || !editingVenue.address || !editingVenue.city || !editingVenue.capacity) {
       toast({
-        title: t("venueManagement.toast.error"),
-        description: t("venueManagement.toast.errorDesc"),
+        title: t("common.error"),
+        description: t("venueManagement.toast.requiredFields"),
         variant: "destructive",
       });
       return;
     }
 
-    if (selectedVenue) {
-      const updatedVenues = venues.map((venue) =>
-        venue.id === selectedVenue.id
-          ? {
-              ...venue,
-              name: editingVenue.name!,
-              description: editingVenue.description!,
-              facilities: editingVenue.facilities || [],
-              updatedAt: new Date().toISOString(),
-            }
-          : venue
-      );
-      setVenues(updatedVenues);
-      setIsEditDialogOpen(false);
-      setEditingVenue({});
-      toast({
-        title: t("venueManagement.toast.venueUpdated"),
-        description: t("venueManagement.toast.venueUpdatedDesc"),
-      });
-    }
+    // Prepare data for API
+    const venueData: any = {
+      name: editingVenue.name,
+      address: editingVenue.address,
+      city: editingVenue.city,
+      capacity: Number(editingVenue.capacity),
+      status: editingVenue.status || selectedVenue.status,
+    };
+
+    // Update venue
+    updateVenueMutation.mutate({ id: selectedVenue.id, data: venueData });
   };
 
   const handleNewVenueChange = (field: string, value: any) => {
@@ -584,7 +586,7 @@ const VenueManagement: React.FC = () => {
                   {t("venueManagement.filters.city.all")}
                 </SelectItem>
                 {cities.map((city) => (
-                  <SelectItem key={city} value={city}>
+                  <SelectItem key={city} value={city || "unknown"}>
                     {city}
                   </SelectItem>
                 ))}
@@ -619,16 +621,7 @@ const VenueManagement: React.FC = () => {
                     {t("venueManagement.table.headers.capacity")}
                   </TableHead>
                   <TableHead>
-                    {t("venueManagement.table.headers.facilities")}
-                  </TableHead>
-                  <TableHead>
                     {t("venueManagement.table.headers.status")}
-                  </TableHead>
-                  <TableHead>
-                    {t("venueManagement.table.headers.rating")}
-                  </TableHead>
-                  <TableHead>
-                    {t("venueManagement.table.headers.events")}
                   </TableHead>
                   <TableHead>
                     {t("venueManagement.table.headers.actions")}
@@ -636,110 +629,99 @@ const VenueManagement: React.FC = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginatedVenues.map((venue) => (
-                  <TableRow key={venue.id}>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{venue.name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {venue.description.substring(0, 50)}...
-                        </div>
+                {venuesLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8">
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                        <span className="ml-2">{t("common.loading")}</span>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 rtl:flex-row-reverse">
-                        <MapPin className="h-4 w-4 text-muted-foreground" />
-                        <div>
-                          <div className="font-medium">{venue.city}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {venue.address}
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 rtl:flex-row-reverse">
-                        <Users className="h-4 w-4 text-muted-foreground" />
-                        {formatNumberForLocale(venue.capacity, i18n.language)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {venue.facilities.slice(0, 3).map((facility, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className="text-xs"
-                          >
-                            {facility}
-                          </Badge>
-                        ))}
-                        {venue.facilities.length > 3 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{venue.facilities.length - 3}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getStatusColor(venue.status)}>
-                        {getStatusText(venue.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1 rtl:flex-row-reverse">
-                        <Star className="h-4 w-4 text-yellow-500" />
-                        <span>{venue.rating}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-center">
-                        <div className="font-medium">{venue.totalEvents}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {venue.lastEventDate
-                            ? `${t("venueManagement.details.lastEvent")}: ${
-                                venue.lastEventDate
-                              }`
-                            : t("venueManagement.details.noEvents")}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>
-                            {t("venueManagement.table.headers.actions")}
-                          </DropdownMenuLabel>
-                          <DropdownMenuItem
-                            onClick={() => handleViewVenue(venue)}
-                          >
-                            <Eye className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
-                            {t("venueManagement.actions.viewDetails")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleEditVenue(venue)}
-                          >
-                            <Edit className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
-                            {t("venueManagement.actions.editVenue")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteVenue(venue.id)}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
-                            {t("venueManagement.actions.deleteVenue")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : venuesError ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-red-600">
+                      {t("common.error")}: {venuesError instanceof Error ? venuesError.message : t("venueManagement.toast.error")}
+                    </TableCell>
+                  </TableRow>
+                ) : paginatedVenues.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                      {t("venueManagement.noVenuesFound")}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedVenues.map((venue) => (
+                    <TableRow key={venue.id}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{venue.name}</div>
+                          {venue.description && (
+                            <div className="text-sm text-muted-foreground">
+                              {venue.description.substring(0, 50)}...
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 rtl:flex-row-reverse">
+                          <MapPin className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <div className="font-medium">{venue.city}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {venue.address}
+                            </div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2 rtl:flex-row-reverse">
+                          <Users className="h-4 w-4 text-muted-foreground" />
+                          {formatNumberForLocale(venue.capacity, i18n.language)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusColor(venue.status)}>
+                          {getStatusText(venue.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="h-8 w-8 p-0">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>
+                              {t("venueManagement.table.headers.actions")}
+                            </DropdownMenuLabel>
+                            <DropdownMenuItem
+                              onClick={() => handleViewVenue(venue)}
+                            >
+                              <Eye className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
+                              {t("venueManagement.actions.viewDetails")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleEditVenue(venue)}
+                            >
+                              <Edit className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
+                              {t("venueManagement.actions.editVenue")}
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteVenue(venue.id)}
+                              className="text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4 rtl:ml-2 rtl:mr-0" />
+                              {t("venueManagement.actions.deleteVenue")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </div>
@@ -781,149 +763,104 @@ const VenueManagement: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium">
-                  {t("venueManagement.form.name")}
+                  {t("venueManagement.form.name")} *
                 </label>
                 <Input
-                  value={newVenue.name}
+                  value={newVenue.name || ""}
                   onChange={(e) => handleNewVenueChange("name", e.target.value)}
                   placeholder={t("venueManagement.form.placeholders.name")}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">
-                  {t("venueManagement.form.description")}
+                  {t("venueManagement.form.address")} *
                 </label>
                 <Textarea
-                  value={newVenue.description}
-                  onChange={(e) =>
-                    handleNewVenueChange("description", e.target.value)
-                  }
-                  placeholder={t(
-                    "venueManagement.form.placeholders.description"
-                  )}
-                  rows={3}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">
-                  {t("venueManagement.form.address")}
-                </label>
-                <Input
-                  value={newVenue.address}
+                  value={newVenue.address || ""}
                   onChange={(e) =>
                     handleNewVenueChange("address", e.target.value)
                   }
                   placeholder={t("venueManagement.form.placeholders.address")}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">
-                  {t("venueManagement.form.city")}
-                </label>
-                <Input
-                  value={newVenue.city}
-                  onChange={(e) => handleNewVenueChange("city", e.target.value)}
-                  placeholder={t("venueManagement.form.placeholders.city")}
+                  rows={3}
                 />
               </div>
             </div>
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium">
-                  {t("venueManagement.form.capacity")}
+                  {t("venueManagement.form.city")} *
+                </label>
+                <Input
+                  value={newVenue.city || ""}
+                  onChange={(e) => handleNewVenueChange("city", e.target.value)}
+                  placeholder={t("venueManagement.form.placeholders.city")}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">
+                  {t("venueManagement.form.capacity")} *
                 </label>
                 <Input
                   type="number"
-                  value={newVenue.capacity}
+                  min="1"
+                  value={newVenue.capacity || ""}
                   onChange={(e) =>
-                    handleNewVenueChange("capacity", parseInt(e.target.value))
+                    handleNewVenueChange("capacity", parseInt(e.target.value) || 0)
                   }
                   placeholder={t("venueManagement.form.placeholders.capacity")}
                 />
               </div>
               <div>
                 <label className="text-sm font-medium">
-                  {t("venueManagement.form.contactPhone")}
+                  {t("venueManagement.form.status")}
                 </label>
-                <Input
-                  value={newVenue.contactPhone}
-                  onChange={(e) =>
-                    handleNewVenueChange("contactPhone", e.target.value)
+                <Select
+                  value={newVenue.status || "active"}
+                  onValueChange={(value: "active" | "inactive" | "maintenance") =>
+                    handleNewVenueChange("status", value)
                   }
-                  placeholder={t(
-                    "venueManagement.form.placeholders.contactPhone"
-                  )}
-                />
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">
+                      {t("venueManagement.filters.status.active")}
+                    </SelectItem>
+                    <SelectItem value="inactive">
+                      {t("venueManagement.filters.status.inactive")}
+                    </SelectItem>
+                    <SelectItem value="maintenance">
+                      {t("venueManagement.filters.status.maintenance")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <label className="text-sm font-medium">
-                  {t("venueManagement.form.contactEmail")}
-                </label>
-                <Input
-                  type="email"
-                  value={newVenue.contactEmail}
-                  onChange={(e) =>
-                    handleNewVenueChange("contactEmail", e.target.value)
-                  }
-                  placeholder={t(
-                    "venueManagement.form.placeholders.contactEmail"
-                  )}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">
-                  {t("venueManagement.form.website")}
-                </label>
-                <Input
-                  value={newVenue.website}
-                  onChange={(e) =>
-                    handleNewVenueChange("website", e.target.value)
-                  }
-                  placeholder={t("venueManagement.form.placeholders.website")}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">
-                {t("venueManagement.form.facilities")}
-              </label>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {newVenue.facilities?.map((facility, index) => (
-                  <Badge
-                    key={index}
-                    variant="secondary"
-                    className="flex items-center gap-1"
-                  >
-                    {getFacilityIcon(facility)}
-                    {facility}
-                    <button
-                      onClick={() => handleRemoveFacility(index)}
-                      className="ml-1 hover:text-red-500 rtl:mr-1 rtl:ml-0"
-                    >
-                      ×
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleAddFacility}
-                className="mt-2"
-              >
-                <Plus className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                {t("venueManagement.actions.addFacility")}
-              </Button>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setIsAddDialogOpen(false);
+                setNewVenue({
+                  name: "",
+                  address: "",
+                  city: "",
+                  capacity: 0,
+                  status: "active",
+                });
+              }}
+            >
               {t("venueManagement.actions.cancel")}
             </Button>
-            <Button onClick={handleSaveNewVenue}>
-              {t("venueManagement.actions.saveVenue")}
+            <Button 
+              onClick={handleSaveNewVenue}
+              disabled={createVenueMutation.isPending}
+            >
+              {createVenueMutation.isPending 
+                ? t("common.loading") 
+                : t("venueManagement.actions.saveVenue")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -943,74 +880,107 @@ const VenueManagement: React.FC = () => {
               {t("venueManagement.dialogs.edit.subtitle")}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                {t("venueManagement.form.name")}
-              </label>
-              <Input
-                value={editingVenue.name}
-                onChange={(e) => handleEditVenueChange("name", e.target.value)}
-                placeholder={t("venueManagement.form.placeholders.name")}
-                className="rtl:text-right ltr:text-left"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                {t("venueManagement.form.description")}
-              </label>
-              <Textarea
-                value={editingVenue.description}
-                onChange={(e) =>
-                  handleEditVenueChange("description", e.target.value)
-                }
-                placeholder={t("venueManagement.form.placeholders.description")}
-                rows={3}
-                className="rtl:text-right ltr:text-left"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium rtl:text-right ltr:text-left">
-                {t("venueManagement.form.facilities")}
-              </label>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {editingVenue.facilities?.map((facility, index) => (
-                  <Badge
-                    key={index}
-                    variant="secondary"
-                    className="flex items-center gap-1"
-                  >
-                    {getFacilityIcon(facility)}
-                    {facility}
-                    <button
-                      onClick={() => handleEditRemoveFacility(index)}
-                      className="ml-1 hover:text-red-500 rtl:mr-1 rtl:ml-0"
-                    >
-                      ×
-                    </button>
-                  </Badge>
-                ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                  {t("venueManagement.form.name")} *
+                </label>
+                <Input
+                  value={editingVenue.name || ""}
+                  onChange={(e) => handleEditVenueChange("name", e.target.value)}
+                  placeholder={t("venueManagement.form.placeholders.name")}
+                  className="rtl:text-right ltr:text-left"
+                />
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleEditAddFacility}
-                className="mt-2"
-              >
-                <Plus className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
-                {t("venueManagement.actions.addFacility")}
-              </Button>
+              <div>
+                <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                  {t("venueManagement.form.address")} *
+                </label>
+                <Textarea
+                  value={editingVenue.address || ""}
+                  onChange={(e) =>
+                    handleEditVenueChange("address", e.target.value)
+                  }
+                  placeholder={t("venueManagement.form.placeholders.address")}
+                  rows={3}
+                  className="rtl:text-right ltr:text-left"
+                />
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                  {t("venueManagement.form.city")} *
+                </label>
+                <Input
+                  value={editingVenue.city || ""}
+                  onChange={(e) => handleEditVenueChange("city", e.target.value)}
+                  placeholder={t("venueManagement.form.placeholders.city")}
+                  className="rtl:text-right ltr:text-left"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                  {t("venueManagement.form.capacity")} *
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={editingVenue.capacity || ""}
+                  onChange={(e) =>
+                    handleEditVenueChange("capacity", parseInt(e.target.value) || 0)
+                  }
+                  placeholder={t("venueManagement.form.placeholders.capacity")}
+                  className="rtl:text-right ltr:text-left"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                  {t("venueManagement.form.status")}
+                </label>
+                <Select
+                  value={editingVenue.status || selectedVenue?.status || "active"}
+                  onValueChange={(value: "active" | "inactive" | "maintenance") =>
+                    handleEditVenueChange("status", value)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">
+                      {t("venueManagement.filters.status.active")}
+                    </SelectItem>
+                    <SelectItem value="inactive">
+                      {t("venueManagement.filters.status.inactive")}
+                    </SelectItem>
+                    <SelectItem value="maintenance">
+                      {t("venueManagement.filters.status.maintenance")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <DialogFooter className="rtl:flex-row-reverse">
             <Button
               variant="outline"
-              onClick={() => setIsEditDialogOpen(false)}
+              onClick={() => {
+                setIsEditDialogOpen(false);
+                setEditingVenue({});
+                setSelectedVenue(null);
+              }}
             >
               {t("venueManagement.actions.cancel")}
             </Button>
-            <Button onClick={handleSaveVenueEdit}>
-              {t("venueManagement.actions.saveChanges")}
+            <Button 
+              onClick={handleSaveVenueEdit}
+              disabled={updateVenueMutation.isPending}
+            >
+              {updateVenueMutation.isPending 
+                ? t("common.loading") 
+                : t("venueManagement.actions.saveChanges")}
             </Button>
           </DialogFooter>
         </DialogContent>

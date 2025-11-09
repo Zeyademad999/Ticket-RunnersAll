@@ -157,7 +157,7 @@ class Usher(models.Model):
         default='active',
         db_index=True
     )
-    location = models.CharField(max_length=200)
+    location = models.CharField(max_length=200, blank=True, default='')
     experience = models.PositiveIntegerField(default=0)  # in months
     hourly_rate = models.DecimalField(
         max_digits=8,
@@ -184,6 +184,12 @@ class Usher(models.Model):
     )
     hire_date = models.DateField(default=timezone.now, db_index=True)
     last_active = models.DateTimeField(null=True, blank=True, db_index=True)
+    events = models.ManyToManyField(
+        'events.Event',
+        related_name='ushers',
+        blank=True,
+        help_text="Events this usher is assigned to"
+    )
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     

@@ -1556,6 +1556,86 @@
         "payoutCreatedDesc": "New payout has been created successfully"
       }
     },
+    "payments": {
+      "title": "Payments",
+      "subtitle": "View and manage customer payments",
+      "stats": {
+        "totalPayments": "Total Payments",
+        "totalAmount": "Total Amount",
+        "completedPayments": "Completed",
+        "pendingPayments": "Pending",
+        "allTime": "All time",
+        "completed": "Completed",
+        "awaiting": "Awaiting"
+      },
+      "filters": {
+        "title": "Filters",
+        "searchPlaceholder": "Search by transaction ID, customer...",
+        "status": "Status",
+        "paymentMethod": "Payment Method",
+        "allStatus": "All Status",
+        "allMethods": "All Methods",
+        "dateFrom": "From",
+        "dateTo": "To",
+        "selectOrganizer": "Select Organizer"
+      },
+      "status": {
+        "completed": "Completed",
+        "pending": "Pending",
+        "processing": "Processing",
+        "failed": "Failed",
+        "refunded": "Refunded"
+      },
+      "methods": {
+        "creditCard": "Credit Card",
+        "debitCard": "Debit Card",
+        "nfcCard": "NFC Card",
+        "digitalWallet": "Digital Wallet",
+        "bankTransfer": "Bank Transfer"
+      },
+      "table": {
+        "payments": "Payments",
+        "transactionId": "Transaction ID",
+        "customer": "Customer",
+        "ticket": "Ticket",
+        "event": "Event",
+        "amount": "Amount",
+        "method": "Method",
+        "status": "Status",
+        "date": "Date",
+        "actions": "Actions",
+        "noPayment": "No Payment"
+      },
+      "pagination": {
+        "showing": "Showing",
+        "of": "of",
+        "results": "results"
+      },
+      "actions": {
+        "export": "Export"
+      },
+      "toast": {
+        "exportSuccess": "Export successful",
+        "exportSuccessDesc": "Payments data exported successfully",
+        "error": "An error occurred"
+      },
+      "noPaymentsFound": "No payments found",
+      "dialogs": {
+        "paymentDetails": "Payment Details",
+        "paymentDetailsSubtitle": "View detailed payment information"
+      },
+      "details": {
+        "transactionId": "Transaction ID",
+        "status": "Status",
+        "amount": "Amount",
+        "paymentMethod": "Payment Method",
+        "customer": "Customer",
+        "ticket": "Ticket",
+        "event": "Event",
+        "createdAt": "Created At",
+        "updatedAt": "Updated At"
+      }
+    },
     "accountSettings": {
       "title": "Account Settings",
       "subtitle": "Manage your personal information, security settings, and password",
@@ -2825,6 +2905,7 @@
         "logs": "System Logs",
         "expenses": "Expenses",
         "payouts": "Payouts",
+        "payments": "Payments",
         "analytics": "Analytics",
         "companyFinances": "Company Finances",
         "profitShare": "Profit Share Management",
@@ -3381,6 +3462,13 @@
         "used": "Used",
         "refunded": "Refunded",
         "banned": "Banned"
+      },
+      "paymentStatus": {
+        "completed": "Paid",
+        "pending": "Pending",
+        "processing": "Processing",
+        "failed": "Failed",
+        "refunded": "Refunded"
       },
       "actions": {
         "checkInLogs": "Check-in Logs",
@@ -4289,7 +4377,12 @@
       "categories": "Categories",
       "activeCategories": "Active Categories",
       "paymentMethods": "Payment Methods",
-      "activeMethods": "Active Methods"
+      "activeMethods": "Active Methods",
+      "highestExpense": "Highest Expense",
+      "noDescription": "No description",
+      "noExpenses": "No expenses",
+      "totalCount": "Total Expenses",
+      "filteredCount": "Filtered expenses"
     },
     "expenses": {
       "title": "Expenses",
@@ -4364,6 +4457,7 @@
       "paidBy": "Paid By",
       "paymentMethod": "Payment Method",
       "paymentDate": "Payment Date",
+      "date": "Date",
       "status": "Status",
       "name": "Name",
       "description": "Description",
@@ -4378,7 +4472,14 @@
       "status": "Status",
       "allCategories": "All Categories",
       "allMethods": "All Methods",
-      "allStatuses": "All Statuses"
+      "allStatuses": "All Statuses",
+      "dateFrom": "From Date",
+      "dateTo": "To Date",
+      "minAmount": "Min Amount",
+      "minAmountPlaceholder": "Min",
+      "maxAmount": "Max Amount",
+      "maxAmountPlaceholder": "Max",
+      "clearFilters": "Clear Filters"
     },
     "status": {
       "paid": "Paid",
@@ -4418,6 +4519,9 @@
       "exportSuccessDesc": "Data exported successfully",
       "error": "Error",
       "errorDesc": "Please fill in all required fields"
-    }
+    },
+    "confirmDelete": "Are you sure you want to delete this expense?",
+    "noExpensesFound": "No expenses found",
+    "noCategoriesFound": "No categories found"
   }
 }

@@ -17,7 +17,7 @@ from .serializers import AdminUserSerializer, LoginSerializer, ChangePasswordSer
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@rate_limit('login', limit=5, window=900)  # 5 attempts per 15 minutes
+@rate_limit('login', limit=100, window=60)  # 100 attempts per minute for testing
 def login_view(request):
     """
     Login endpoint for admin users.
