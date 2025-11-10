@@ -1,25 +1,11 @@
-import React, {
-  useReducer,
-  useMemo,
-  useCallback,
-  useEffect,
-  useState,
-} from "react";
+import { useReducer, useMemo, useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Header } from "@/components/Header";
 import { HeroSection } from "@/components/HeroSection";
 import { EventSection } from "@/components/EventSection";
 import { useEventFilters } from "@/lib/api";
-import { FilterEventsRequest } from "@/lib/api/types";
-import {
-  TrendingUp,
-  Calendar,
-  Heart,
-  Mail,
-  Info,
-  Sparkles,
-} from "lucide-react";
+import { FilteredEvent } from "@/lib/api/types";
+import { TrendingUp, Calendar, Mail, Info, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import "keen-slider/keen-slider.min.css";
@@ -80,16 +66,18 @@ const Index = () => {
   const { t } = useTranslation();
 
   // Use the API hook for events
-  const { events, loading, error, filterEvents } = useEventFilters();
-  const [featuredEvent, setFeaturedEvent] = useState(null);
+  const { events, filterEvents } = useEventFilters();
+  const [featuredEvent, setFeaturedEvent] = useState<FilteredEvent | null>(
+    null
+  );
 
   // Load initial events on component mount
   useEffect(() => {
     const loadInitialEvents = async () => {
       try {
-        // Load events (the API doesn't have a featured parameter, so we'll load all events)
+        // Load all events from admin dashboard (increase limit to show more events)
         await filterEvents({
-          limit: 6,
+          limit: 50, // Load more events to show in trending section
           page: 1,
         });
       } catch (err) {
@@ -103,12 +91,13 @@ const Index = () => {
     };
 
     loadInitialEvents();
-  }, [filterEvents]);
+  }, [filterEvents, toast]);
 
-  // Set featured event when events are loaded
+  // Set featured event when events are loaded (use first featured event or first event)
   useEffect(() => {
     if (events.length > 0 && !featuredEvent) {
-      setFeaturedEvent(events[0]);
+      const featured = events.find((e) => e.featured) || events[0];
+      setFeaturedEvent(featured);
     }
   }, [events, featuredEvent]);
 
@@ -116,14 +105,14 @@ const Index = () => {
   const apiEvents = useMemo(() => {
     return events.map((event) => ({
       id: event.id.toString(),
-      title: event.title,
-      image: event.thumbnail_path,
-      date: event.event_date,
-      time: event.event_time,
-      location: event.event_location,
+      title: event.title || "Untitled Event",
+      image: event.thumbnail_path || "/event-placeholder.jpg",
+      date: event.event_date || "",
+      time: event.event_time || "",
+      location: event.event_location || "",
       price: event.starting_price ? parseFloat(event.starting_price) : 0,
-      category: event.category_name,
-      isFeatured: event.featured,
+      category: event.category_name || "General",
+      isFeatured: event.featured || false,
     }));
   }, [events]);
 
@@ -150,16 +139,21 @@ const Index = () => {
   // 2️⃣  Derive the event buckets from the already‑filtered list
   const currentDisplayedEvents = useMemo(() => {
     if (state.showTrendingOnly) {
-      const trending = apiEvents.filter((e) => e.isFeatured);
+      // Show all events when trending only is selected
       return {
-        trending,
+        trending: apiEvents,
         upcoming: [],
         recommended: [],
-        filtered: trending,
+        filtered: apiEvents,
       } as const;
     }
 
-    const trending = apiEvents.filter((e) => e.isFeatured);
+    // Trending events: show ALL events from admin dashboard
+    // Featured events first if available, then all other events
+    const featuredEvents = apiEvents.filter((e) => e.isFeatured);
+    const nonFeaturedEvents = apiEvents.filter((e) => !e.isFeatured);
+    // Combine: featured first, then all others
+    const trending = [...featuredEvents, ...nonFeaturedEvents];
     const upcoming = apiEvents.filter((e) => !e.isFeatured);
     const recommended = apiEvents.slice(0, 6); // Show first 6 as recommendations
 
@@ -173,17 +167,21 @@ const Index = () => {
 
   /* -------------------------- Event Handlers (memo) ------------------------ */
 
-  const handleNavigation = (page: string) => {
-    navigate(`/${page.toLowerCase().replace(" ", "")}`);
-  };
+  const handleNavigation = useCallback(
+    (page: string) => {
+      navigate(`/${page.toLowerCase().replace(" ", "")}`);
+    },
+    [navigate]
+  );
 
   const handleShowTrending = useCallback(() => {
     dispatch({ type: "SHOW_TRENDING" });
   }, []);
 
-  const handleFilterChange = useCallback((filters: Filters) => {
-    dispatch({ type: "SET_FILTERS", payload: filters });
-  }, []);
+  // handleFilterChange is available for future use with EventFilters component
+  // const handleFilterChange = useCallback((filters: Filters) => {
+  //   dispatch({ type: "SET_FILTERS", payload: filters });
+  // }, []);
 
   /* -------------------------------- Render -------------------------------- */
 
@@ -209,7 +207,7 @@ const Index = () => {
                   image: "/public/event1.jpg",
                 }
           }
-          onShowTrending={() => {}}
+          onShowTrending={handleShowTrending}
         />
         {/* Trending Events Section */}
         <div id="trending-section">

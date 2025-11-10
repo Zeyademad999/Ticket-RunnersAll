@@ -25,6 +25,10 @@ adminApi.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // If data is FormData, don't set Content-Type header (let browser set it with boundary)
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
     return config;
   },
   (error: AxiosError) => {

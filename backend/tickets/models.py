@@ -29,7 +29,17 @@ class Ticket(models.Model):
         'customers.Customer',
         on_delete=models.CASCADE,
         related_name='tickets',
-        db_index=True
+        db_index=True,
+        help_text="Current ticket owner (may be buyer or assigned person)"
+    )
+    buyer = models.ForeignKey(
+        'customers.Customer',
+        on_delete=models.CASCADE,
+        related_name='purchased_tickets',
+        db_index=True,
+        null=True,
+        blank=True,
+        help_text="Original purchaser (who paid for the ticket)"
     )
     category = models.CharField(max_length=50)
     price = models.DecimalField(
@@ -47,6 +57,10 @@ class Ticket(models.Model):
     check_in_time = models.DateTimeField(null=True, blank=True)
     dependents = models.PositiveIntegerField(default=0)
     ticket_number = models.CharField(max_length=50, unique=True, db_index=True)
+    # Fields for ticket assignment to someone else
+    assigned_name = models.CharField(max_length=255, null=True, blank=True)
+    assigned_mobile = models.CharField(max_length=20, null=True, blank=True, db_index=True)
+    assigned_email = models.EmailField(null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     
     class Meta:

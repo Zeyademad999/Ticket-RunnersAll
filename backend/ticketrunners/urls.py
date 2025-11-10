@@ -3,6 +3,8 @@ URL configuration for ticketrunners project.
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 from core.url_aliases import (
     organizers_urlpatterns, ushers_urlpatterns, admins_urlpatterns, merchants_urlpatterns,
@@ -50,3 +52,7 @@ urlpatterns = [
     path('api/merchant/', include('apps.merchant_portal.urls')),
     path('api/v1/', include('apps.webapp.urls')),
 ]
+
+# Serve media files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

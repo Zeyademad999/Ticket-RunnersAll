@@ -165,12 +165,33 @@ export const useUnifiedProfileData = (): UseUnifiedProfileDataReturn => {
         return;
       }
 
+      // Import services dynamically to avoid circular dependencies
+      const { NFCCardsService } = await import("@/lib/api/services/nfcCards");
+      const { FavoritesService } = await import("@/lib/api/services/favorites");
+      
       // Fetch bookings, card details, and favorites in parallel
       const [bookingsResponse, cardDetailsResponse, favoritesResponse] =
         await Promise.allSettled([
           BookingsService.getCustomerBookings(1, 50),
-          BookingsService.getCustomerCardDetails(),
-          BookingsService.getCustomerFavorites(1, 50),
+          NFCCardsService.getUserCards().then(cards => {
+            // Transform cards to match CustomerCardDetailsResponse format
+            const activeCard = cards.find(c => c.status === "active");
+            if (!activeCard) return null;
+            return {
+              customer_first_name: "",
+              nfc_card: {
+                card_number: activeCard.serialNumber,
+                card_status: activeCard.status,
+                card_issue_date: activeCard.issueDate,
+                card_expiry_date: activeCard.expiryDate,
+              },
+              wallet: {
+                wallet_status: "active",
+                wallet_expiry_date: activeCard.expiryDate,
+              },
+            };
+          }),
+          FavoritesService.getFavorites({ page: 1, limit: 50 }),
         ]);
 
       // Process bookings data with better error handling
@@ -214,11 +235,16 @@ export const useUnifiedProfileData = (): UseUnifiedProfileDataReturn => {
       let favoriteEvents: any[] = [];
       let useFallbackFavorites = false;
 
-      if (
-        favoritesResponse.status === "fulfilled" &&
-        favoritesResponse.value?.favorites
-      ) {
-        favoriteEvents = favoritesResponse.value.favorites;
+      if (favoritesResponse.status === "fulfilled") {
+        const favoritesData = favoritesResponse.value;
+        // Handle both array response (from backend) and GetFavoritesResponse format
+        if (Array.isArray(favoritesData)) {
+          favoriteEvents = favoritesData;
+        } else if (favoritesData?.favorites && Array.isArray(favoritesData.favorites)) {
+          favoriteEvents = favoritesData.favorites;
+        } else {
+          favoriteEvents = [];
+        }
       } else if (favoritesResponse.status === "rejected") {
         const error = favoritesResponse.reason;
         // Use fallback data for database errors

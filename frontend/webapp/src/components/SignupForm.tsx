@@ -7,8 +7,6 @@ import {
   SignupStartRequest,
   SendMobileOtpRequest,
   VerifyMobileOtpRequest,
-  SendEmailOtpRequest,
-  VerifyEmailOtpRequest,
   SetPasswordRequest,
   UploadProfileImageRequest,
   SaveOptionalInfoRequest,
@@ -40,12 +38,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [emailOtpSent, setEmailOtpSent] = useState(false);
-  const [isSendingEmailOtp, setIsSendingEmailOtp] = useState(false);
   const [currentStep, setCurrentStep] = useState<
     | "signup"
     | "mobile-otp"
-    | "email-otp"
     | "password"
     | "profile-image"
     | "optional-info"
@@ -81,11 +76,13 @@ export const SignupForm: React.FC<SignupFormProps> = ({
 
     try {
       const response = await AuthService.signupStart(formData);
-      setSignupId(response.signup_id);
-      toast.success("Signup process started successfully!");
+      const signupIdValue = response.signup_id || response.mobile_number || formData.mobile_number;
+      setSignupId(signupIdValue);
 
-      // Automatically send mobile OTP after successful signup start
-      await sendMobileOtp(response.signup_id);
+      // Backend sends OTP automatically during registration
+      // Set otpSent to true so the OTP form is shown
+      setOtpSent(true);
+      toast.success(response.message || "OTP sent to your mobile number!");
       setCurrentStep("mobile-otp");
     } catch (error: any) {
       console.error("Signup error:", error);
@@ -115,25 +112,6 @@ export const SignupForm: React.FC<SignupFormProps> = ({
     }
   };
 
-  const sendEmailOtp = async (signupId: string) => {
-    setIsSendingEmailOtp(true);
-    try {
-      const otpData: SendEmailOtpRequest = {
-        signup_id: parseInt(signupId),
-        email: formData.email,
-        otp_code: otpCode || "123456", // For testing, in real app this would be empty initially
-      };
-
-      await AuthService.sendEmailOtp(otpData);
-      setEmailOtpSent(true);
-      toast.success("OTP sent to your email address!");
-    } catch (error: any) {
-      console.error("Email OTP send error:", error);
-      toast.error(error.message || "Failed to send email OTP");
-    } finally {
-      setIsSendingEmailOtp(false);
-    }
-  };
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,24 +133,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({
 
         if (response.mobile_verified) {
           toast.success("Mobile number verified successfully!");
-          // Move to email OTP step
-          setCurrentStep("email-otp");
-          setOtpCode(""); // Clear OTP code for next step
-          await sendEmailOtp(signupId!);
-        } else {
-          toast.error("Invalid OTP code. Please try again.");
-        }
-      } else if (currentStep === "email-otp") {
-        const verifyData: VerifyEmailOtpRequest = {
-          signup_id: parseInt(signupId!),
-          email: formData.email,
-          otp_code: otpCode.trim(),
-        };
-
-        const response = await AuthService.verifyEmailOtp(verifyData);
-
-        if (response.email_verified) {
-          toast.success("Email verified successfully!");
+          // Skip email OTP step, go directly to password
           setCurrentStep("password");
           setOtpCode(""); // Clear OTP code
         } else {
@@ -192,6 +153,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({
 
     if (!password.trim()) {
       toast.error("Please enter a password");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      toast.error("Passwords do not match");
       return;
     }
 
@@ -217,11 +183,21 @@ export const SignupForm: React.FC<SignupFormProps> = ({
         signup_id: parseInt(signupId!),
         password: password.trim(),
         password_confirmation: confirmPassword.trim(),
+        mobile_number: formData.mobile_number, // Add mobile_number for backend
       };
 
       const response = await AuthService.setPassword(passwordData);
 
-      if (response.password_set) {
+      // Backend completes registration and returns tokens
+      if (response.access && response.refresh) {
+        // Store tokens
+        await setSecureToken(response.access, response.refresh);
+        await setSecureUserData(response.user);
+        
+        toast.success("Registration completed successfully!");
+        onSignupSuccess(signupId!);
+        onClose();
+      } else if (response.password_set) {
         toast.success("Password set successfully!");
         setCurrentStep("profile-image");
       } else {
@@ -613,19 +589,12 @@ export const SignupForm: React.FC<SignupFormProps> = ({
     );
   }
 
-  if ((otpSent || emailOtpSent) && signupId) {
+  if (otpSent && signupId) {
     return (
       <div className="space-y-4">
-        <h2 className="text-xl font-bold">
-          {currentStep === "mobile-otp"
-            ? "Verify Mobile Number"
-            : "Verify Email Address"}
-        </h2>
+        <h2 className="text-xl font-bold">Verify Mobile Number</h2>
         <p className="text-sm text-gray-600">
-          We've sent a verification code to{" "}
-          {currentStep === "mobile-otp"
-            ? formData.mobile_number
-            : formData.email}
+          We've sent a verification code to {formData.mobile_number}
         </p>
 
         <form onSubmit={handleOtpSubmit} className="space-y-4">
@@ -655,15 +624,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({
         <div className="text-center">
           <Button
             variant="outline"
-            onClick={() =>
-              currentStep === "mobile-otp"
-                ? sendMobileOtp(signupId)
-                : sendEmailOtp(signupId)
-            }
-            disabled={isSendingOtp || isSendingEmailOtp}
+            onClick={() => sendMobileOtp(signupId)}
+            disabled={isSendingOtp}
             className="text-sm"
           >
-            {isSendingOtp || isSendingEmailOtp ? "Sending..." : "Resend OTP"}
+            {isSendingOtp ? "Sending..." : "Resend OTP"}
           </Button>
         </div>
 

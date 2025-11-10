@@ -320,13 +320,14 @@ export class AuthService {
 
   /**
    * Start signup process - create pending customer
+   * POST /api/v1/users/register/
    */
   static async signupStart(
     userData: SignupStartRequest
   ): Promise<SignupStartResponse> {
     return retryRequest(async () => {
       const response = await apiClient.post<SignupStartResponse>(
-        "/signup/start",
+        "/users/register/",
         userData
       );
       return handleApiResponse(response);
@@ -350,14 +351,18 @@ export class AuthService {
 
   /**
    * Verify mobile OTP for signup verification
+   * POST /api/v1/users/verify-otp/
    */
   static async verifyMobileOtp(
     otpData: VerifyMobileOtpRequest
   ): Promise<VerifyMobileOtpResponse> {
     return retryRequest(async () => {
       const response = await apiClient.post<VerifyMobileOtpResponse>(
-        "/signup/otp/mobile/verify",
-        otpData
+        "/users/verify-otp/",
+        {
+          mobile_number: otpData.mobile_number,
+          otp_code: otpData.otp_code,
+        }
       );
       return handleApiResponse(response);
     });
@@ -365,14 +370,22 @@ export class AuthService {
 
   /**
    * Send email OTP for signup verification
+   * POST /api/v1/users/send-email-otp/
    */
   static async sendEmailOtp(
     otpData: SendEmailOtpRequest
   ): Promise<SendEmailOtpResponse> {
     return retryRequest(async () => {
+      // signup_id is actually the mobile_number string, not an integer
+      // Use mobile_number if provided, otherwise use signup_id as string
+      const mobile_number = otpData.mobile_number || String(otpData.signup_id);
+      
       const response = await apiClient.post<SendEmailOtpResponse>(
-        "/signup/otp/email/send",
-        otpData
+        "/users/send-email-otp/",
+        {
+          mobile_number: mobile_number,
+          email: otpData.email,
+        }
       );
       return handleApiResponse(response);
     });
@@ -380,29 +393,45 @@ export class AuthService {
 
   /**
    * Verify email OTP for signup verification
+   * POST /api/v1/users/verify-email-otp/
    */
   static async verifyEmailOtp(
     otpData: VerifyEmailOtpRequest
   ): Promise<VerifyEmailOtpResponse> {
     return retryRequest(async () => {
+      // signup_id is actually the mobile_number string, not an integer
+      // Use mobile_number if provided, otherwise use signup_id as string
+      const mobile_number = otpData.mobile_number || String(otpData.signup_id);
+      
       const response = await apiClient.post<VerifyEmailOtpResponse>(
-        "/signup/otp/email/verify",
-        otpData
+        "/users/verify-email-otp/",
+        {
+          mobile_number: mobile_number,
+          email: otpData.email,
+          otp_code: otpData.otp_code,
+        }
       );
       return handleApiResponse(response);
     });
   }
 
   /**
-   * Set password for signup account
+   * Set password and complete registration
+   * POST /api/v1/users/complete-registration/
    */
   static async setPassword(
     passwordData: SetPasswordRequest
   ): Promise<SetPasswordResponse> {
     return retryRequest(async () => {
+      // Backend expects mobile_number and password
+      // signup_id is the mobile_number in our case
+      const mobile_number = passwordData.mobile_number || passwordData.signup_id?.toString() || "";
       const response = await apiClient.post<SetPasswordResponse>(
-        "/signup/password",
-        passwordData
+        "/users/complete-registration/",
+        {
+          mobile_number: mobile_number,
+          password: passwordData.password,
+        }
       );
       return handleApiResponse(response);
     });
@@ -502,7 +531,7 @@ export class AuthService {
         const response = await apiClient.post<
           ApiResponse<RefreshTokenResponse>
         >("/auth/refresh", {
-          refresh_token: refreshToken,
+          refresh: refreshToken, // TokenRefreshView expects 'refresh' not 'refresh_token'
         });
         const data = handleApiResponse(response);
 
@@ -963,7 +992,7 @@ export class AuthService {
     return retryRequest(async () => {
       const response = await apiClient.post<
         ApiResponse<VerifyPasswordResetOtpResponse>
-      >("/auth/password/reset/verify", {
+      >("/users/forgot-password/verify-otp/", {
         mobile_number: mobileNumber,
         otp_code: otpCode,
       });

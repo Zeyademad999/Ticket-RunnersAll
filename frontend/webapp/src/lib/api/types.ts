@@ -232,6 +232,17 @@ export interface Ticket {
   dependents: number;
   ticketNumber: string;
   qrCode: string;
+  // Buyer information (who purchased the ticket)
+  buyer_name?: string;
+  buyer_mobile?: string;
+  buyer_email?: string;
+  // Assigned person information (if ticket was assigned to someone else)
+  assigned_name?: string;
+  assigned_mobile?: string;
+  assigned_email?: string;
+  // Flags
+  is_assigned_to_me?: boolean;
+  is_assigned_to_other?: boolean;
 }
 
 export interface TicketTier {

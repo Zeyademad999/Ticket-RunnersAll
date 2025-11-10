@@ -25,6 +25,14 @@ export class TicketsService {
     category: string;
     quantity: number;
     payment_method: string;
+    ticket_details?: Array<{
+      name?: string;
+      mobile?: string;
+      email?: string;
+      is_owner?: boolean;
+      category?: string;
+      price?: number;
+    }>;
   }): Promise<ApiResponse<any>> {
     return retryRequest(async () => {
       // Convert event_id to integer if it's a string
@@ -53,7 +61,10 @@ export class TicketsService {
    * Get ticket details
    * GET /api/v1/users/tickets/:id/
    */
-  static async getTicketDetail(ticketId: string): Promise<Ticket> {
+  static async getTicketDetail(ticketId: string): Promise<{
+    ticket: Ticket;
+    related_tickets: Ticket[];
+  }> {
     return retryRequest(async () => {
       const response = await apiClient.get(`/users/tickets/${ticketId}/`);
       return handleApiResponse(response);

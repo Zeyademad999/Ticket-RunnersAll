@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -215,19 +215,54 @@ const EventDetail: React.FC = () => {
     return items;
   }, [event]);
 
-  const date = new Date(event.date);
-  const formattedDate =
-    isNaN(date.getTime()) || !event.date
-      ? t("common.invalidDate") // fallback text
-      : new Intl.DateTimeFormat(locale, {
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        }).format(date);
+  // Format date properly - handle both YYYY-MM-DD and other formats
+  const formatDate = useCallback(
+    (dateStr: string): string => {
+      if (!dateStr) return t("common.invalidDate");
+
+      // Try parsing as ISO date (YYYY-MM-DD)
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) {
+        // Try parsing as date string with time
+        const dateParts = dateStr.split("T")[0].split("-");
+        if (dateParts.length === 3) {
+          const [year, month, day] = dateParts;
+          const parsedDate = new Date(
+            parseInt(year),
+            parseInt(month) - 1,
+            parseInt(day)
+          );
+          if (!isNaN(parsedDate.getTime())) {
+            return new Intl.DateTimeFormat(locale, {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }).format(parsedDate);
+          }
+        }
+        return t("common.invalidDate");
+      }
+
+      return new Intl.DateTimeFormat(locale, {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }).format(date);
+    },
+    [locale, t]
+  );
+
+  // Format time
+  const formatTime = useCallback((timeStr: string | undefined): string => {
+    if (!timeStr) return "";
+    // Handle HH:MM:SS format and convert to HH:MM
+    return timeStr.split(":").slice(0, 2).join(":");
+  }, []);
 
   const handleBooking = () => navigate(`/booking/${id}`);
 
   const handleAddToCalendar = () => {
+    if (!event) return;
     // 1. Build ICS content
     const startDate = new Date(`${event.date} ${event.time}`);
     const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000); // assume 2‑hour event
@@ -267,8 +302,10 @@ const EventDetail: React.FC = () => {
     toast({ title: t("eventDetail.calendarToast") });
   };
 
-  const goToOrganizer = () =>
+  const goToOrganizer = () => {
+    if (!event?.organizer?.id) return;
     navigate(`/view-organizers/${event.organizer.id}`);
+  };
 
   // Show loading state
   if (loading) {
@@ -298,6 +335,13 @@ const EventDetail: React.FC = () => {
       </div>
     );
   }
+
+  // Format date and time after loading/error checks
+  const formattedDate = formatDate(event.date);
+  const formattedTime = formatTime(event.time);
+  const formattedGatesOpenTime = event.gatesOpenTime
+    ? formatTime(event.gatesOpenTime)
+    : undefined;
 
   return (
     <div className="min-h-screen bg-gradient-dark">
@@ -484,78 +528,90 @@ const EventDetail: React.FC = () => {
                 <div className="flex items-center text-muted-foreground">
                   <Calendar className="h-5 w-5 mx-3" />
                   <div dir={locale.startsWith("ar") ? "rtl" : "ltr"}>
-                    {formattedDate} {event.time}
+                    {formattedDate} {formattedTime && `at ${formattedTime}`}
                   </div>
                 </div>
 
-                <div className="flex items-center text-muted-foreground">
-                  <MapPin className="h-5 w-5 mx-3" />
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-                      event?.location
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-muted-foreground hover:text-primary transition-colors"
-                  >
-                    {event?.location}
-                  </a>
-                </div>
-                <div className="flex items-center text-muted-foreground">
-                  <Clock className="h-5 w-5 mx-3" />
-                  <span className="text-sm text-muted-foreground">
-                    {t("eventDetail.gateOpen")} {event.time}
-                  </span>
-                </div>
+                {event.location && (
+                  <div className="flex items-center text-muted-foreground">
+                    <MapPin className="h-5 w-5 mx-3" />
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+                        event.location
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      {event.location}
+                    </a>
+                  </div>
+                )}
+
+                {formattedGatesOpenTime && (
+                  <div className="flex items-center text-muted-foreground">
+                    <Clock className="h-5 w-5 mx-3" />
+                    <span className="text-sm text-muted-foreground">
+                      {t("eventDetail.gateOpen")} {formattedGatesOpenTime}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Description */}
-              <div className="prose prose-gray dark:prose-invert max-w-none">
-                <h2 className="text-xl font-semibold text-foreground mb-3">
-                  {t("eventDetail.aboutEvent")}
-                </h2>
-                <div
-                  className="text-muted-foreground leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: event.description }}
-                />
-              </div>
-              <div
-                className="pt-6 space-y-2 relative"
-                dir={locale.startsWith("ar") ? "rtl" : "ltr"}
-              >
-                <h2 className="text-xl font-semibold text-foreground mb-3">
-                  {t("eventDetail.venueInfoTitle")}
-                </h2>
-                <div
-                  className="text-muted-foreground leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: event.venueInfo }}
-                />
-                {event.layoutImageUrl && (
+              {event.description && (
+                <div className="prose prose-gray dark:prose-invert max-w-none">
+                  <h2 className="text-xl font-semibold text-foreground mb-3">
+                    {t("eventDetail.aboutEvent")}
+                  </h2>
                   <div
-                    className="mt-4 flex w-full"
-                    dir={locale.startsWith("ar") ? "rtl" : "ltr"}
-                  >
-                    <Button
-                      variant="gradient"
-                      onClick={() => setShowLayout(true)}
-                      className={
-                        locale.startsWith("ar") ? "ml-auto" : "mr-auto"
-                      }
+                    className="text-muted-foreground leading-relaxed whitespace-pre-wrap"
+                    dangerouslySetInnerHTML={{ __html: event.description }}
+                  />
+                </div>
+              )}
+
+              {/* About the Venue */}
+              {event.venueInfo && (
+                <div
+                  className="pt-6 space-y-2 relative"
+                  dir={locale.startsWith("ar") ? "rtl" : "ltr"}
+                >
+                  <h2 className="text-xl font-semibold text-foreground mb-3">
+                    {t("eventDetail.venueInfoTitle")}
+                  </h2>
+                  <div
+                    className="text-muted-foreground leading-relaxed whitespace-pre-wrap"
+                    dangerouslySetInnerHTML={{ __html: event.venueInfo }}
+                  />
+                  {event.layoutImageUrl && (
+                    <div
+                      className="mt-4 flex w-full"
+                      dir={locale.startsWith("ar") ? "rtl" : "ltr"}
                     >
-                      {t("eventDetail.showLayout")}
-                    </Button>
-                  </div>
-                )}
-                <Dialog open={showLayout} onOpenChange={setShowLayout}>
-                  <DialogContent className="max-w-3xl p-0 overflow-hidden">
-                    <img
-                      src={event.layoutImageUrl}
-                      alt="Venue Layout"
-                      className="w-full h-auto object-contain"
-                    />
-                  </DialogContent>
-                </Dialog>
-              </div>
+                      <Button
+                        variant="gradient"
+                        onClick={() => setShowLayout(true)}
+                        className={
+                          locale.startsWith("ar") ? "ml-auto" : "mr-auto"
+                        }
+                      >
+                        {t("eventDetail.showLayout")}
+                      </Button>
+                    </div>
+                  )}
+                  <Dialog open={showLayout} onOpenChange={setShowLayout}>
+                    <DialogContent className="max-w-3xl p-0 overflow-hidden">
+                      <img
+                        src={event.layoutImageUrl}
+                        alt="Venue Layout"
+                        className="w-full h-auto object-contain"
+                      />
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              )}
+
               {event.facilities && event.facilities.length > 0 && (
                 <div className="pt-6">
                   <h2 className="text-xl font-semibold text-foreground mb-3">
@@ -1002,40 +1058,28 @@ const EventDetail: React.FC = () => {
           </div>
 
           {/* Terms and Conditions Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
-            <div className="lg:col-span-2">
-              <section>
-                <h2 className="text-xl font-semibold text-foreground mb-3">
-                  {t("eventDetail.eventTermsTitle")}
-                </h2>
-                <div
-                  className="space-y-4 text-sm"
-                  dir={locale.startsWith("ar") ? "rtl" : "ltr"}
-                >
-                  <p className="text-muted-foreground leading-relaxed">
-                    {t("eventDetail.termsContent")}
-                  </p>
-                  <ul
-                    className={`space-y-2 ${
-                      locale.startsWith("ar")
-                        ? "list-disc pr-4"
-                        : "list-disc pl-4"
-                    }`}
+          {event.termsAndConditions && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+              <div className="lg:col-span-2">
+                <section>
+                  <h2 className="text-xl font-semibold text-foreground mb-3">
+                    {t("eventDetail.eventTermsTitle")}
+                  </h2>
+                  <div
+                    className="space-y-4 text-sm"
+                    dir={locale.startsWith("ar") ? "rtl" : "ltr"}
                   >
-                    {(
-                      t("eventDetail.termsBullets", {
-                        returnObjects: true,
-                      }) as string[]
-                    ).map((item, idx) => (
-                      <li key={idx} className="text-muted-foreground">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </section>
+                    <div
+                      className="text-muted-foreground leading-relaxed whitespace-pre-wrap"
+                      dangerouslySetInnerHTML={{
+                        __html: event.termsAndConditions,
+                      }}
+                    />
+                  </div>
+                </section>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </main>
       <ShareModal

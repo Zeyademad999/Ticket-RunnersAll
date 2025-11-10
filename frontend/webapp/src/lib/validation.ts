@@ -182,9 +182,8 @@ export class ValidationService {
         return { isValid: false, error: "Invalid token payload" };
       }
 
-      if (!payload.sub) {
-        return { isValid: false, error: "Missing user ID in token" };
-      }
+      // Don't require 'sub' field - some tokens might use different user identifier fields
+      // Just check that payload exists and is an object
 
       // Basic signature validation (in production, use proper JWT library)
       if (secret) {
@@ -275,13 +274,27 @@ export class ValidationService {
 
       // Validate token structure without logging sensitive data
 
-      const validation = this.validateJWT(token);
-      if (!validation.isValid || !validation.payload) {
-        // Token validation failed
-        return true; // Token validation failed, consider it expired
+      // Try to parse payload directly first (faster and more lenient)
+      let payload: any;
+      try {
+        payload = JSON.parse(atob(parts[1]));
+      } catch (parseError) {
+        // If we can't parse, try validation
+        const validation = this.validateJWT(token);
+        if (!validation.isValid || !validation.payload) {
+          // Token validation failed - but don't assume expired, assume invalid format
+          // Only mark as expired if we can't parse at all
+          console.warn("Token validation failed, but not marking as expired:", validation.error);
+          return false; // Don't clear auth on validation errors, let the server decide
+        }
+        payload = validation.payload;
       }
 
-      const payload = validation.payload;
+      if (!payload || typeof payload !== "object") {
+        // Invalid payload structure
+        return false; // Don't mark as expired, let server handle it
+      }
+
       if (!payload.exp) {
         // Token has no expiration, assume valid
         return false; // No expiration means never expires

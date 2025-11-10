@@ -131,6 +131,43 @@ export function AuthProvider({ children }: AuthProviderProps) {
     };
 
     initializeUser();
+
+    // Listen for logout-all events from other tabs
+    let logoutChannel: BroadcastChannel | null = null;
+    try {
+      logoutChannel = new BroadcastChannel('auth-logout');
+      logoutChannel.onmessage = (event) => {
+        if (event.data.type === 'logout-all') {
+          console.log("Received logout-all broadcast from another tab");
+          clearSecureAuth();
+          setUser(null);
+        }
+      };
+    } catch (error) {
+      console.warn("BroadcastChannel not supported, using storage event fallback");
+      // Fallback: listen for storage events
+      const handleStorageChange = (e: StorageEvent) => {
+        if (e.key === 'logout-all') {
+          console.log("Received logout-all event from another tab");
+          clearSecureAuth();
+          setUser(null);
+        }
+      };
+      window.addEventListener('storage', handleStorageChange);
+      
+      return () => {
+        window.removeEventListener('storage', handleStorageChange);
+        if (logoutChannel) {
+          logoutChannel.close();
+        }
+      };
+    }
+
+    return () => {
+      if (logoutChannel) {
+        logoutChannel.close();
+      }
+    };
   }, []);
 
   // Listen for auth-required events from API errors
@@ -791,7 +828,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const logoutAll = async () => {
     try {
-      // Call the logout all API to invalidate all sessions
+      // Call the logout all API to invalidate all sessions on server
       const response = await AuthService.logoutAll();
 
       // Show success message
@@ -808,9 +845,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
         variant: "destructive",
       });
     } finally {
-      // Always clear secure storage and update state
+      // Clear this tab's session
       clearSecureAuth();
       setUser(null);
+      
+      // Broadcast logout to all other tabs using BroadcastChannel API
+      try {
+        const channel = new BroadcastChannel('auth-logout');
+        channel.postMessage({ type: 'logout-all' });
+        channel.close();
+      } catch (broadcastError) {
+        console.warn("BroadcastChannel not supported, using storage event fallback");
+        // Fallback: use localStorage event to notify other tabs
+        localStorage.setItem('logout-all', Date.now().toString());
+        localStorage.removeItem('logout-all');
+      }
     }
   };
 

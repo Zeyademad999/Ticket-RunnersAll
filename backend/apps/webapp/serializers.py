@@ -162,6 +162,16 @@ class PublicEventSerializer(serializers.ModelSerializer):
         return str(min_price) if min_price else None
 
 
+class TicketDetailSerializer(serializers.Serializer):
+    """Serializer for individual ticket details."""
+    name = serializers.CharField(required=False, allow_blank=True)
+    mobile = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    is_owner = serializers.BooleanField(default=False)
+    category = serializers.CharField(required=False, allow_blank=True)  # Ticket category for this specific ticket
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)  # Price for this specific ticket
+
+
 class TicketBookingSerializer(serializers.Serializer):
     """Serializer for ticket booking."""
     event_id = serializers.IntegerField(required=True)
@@ -171,6 +181,7 @@ class TicketBookingSerializer(serializers.Serializer):
         choices=['credit_card', 'debit_card', 'nfc_card', 'digital_wallet'],
         required=True
     )
+    ticket_details = TicketDetailSerializer(many=True, required=False, allow_empty=True)
 
 
 class TicketSerializer(serializers.ModelSerializer):
@@ -179,11 +190,79 @@ class TicketSerializer(serializers.ModelSerializer):
     event_date = serializers.DateField(source='event.date', read_only=True)
     event_time = serializers.TimeField(source='event.time', read_only=True)
     
+    # Buyer information (who purchased the ticket)
+    buyer_name = serializers.SerializerMethodField()
+    buyer_mobile = serializers.SerializerMethodField()
+    buyer_email = serializers.SerializerMethodField()
+    
+    # Assigned person information (if ticket was assigned to someone else)
+    assigned_name = serializers.CharField(read_only=True)
+    assigned_mobile = serializers.CharField(read_only=True)
+    assigned_email = serializers.EmailField(read_only=True)
+    
+    # Check if this ticket was assigned to current user
+    is_assigned_to_me = serializers.SerializerMethodField()
+    
+    # Check if this ticket was assigned to someone else
+    is_assigned_to_other = serializers.SerializerMethodField()
+    
+    def get_buyer_name(self, obj):
+        """Get buyer's name (original purchaser)."""
+        # Use buyer field if available, otherwise fallback to customer
+        buyer = obj.buyer if hasattr(obj, 'buyer') and obj.buyer else obj.customer
+        if buyer:
+            return buyer.name or ''
+        return ''
+    
+    def get_buyer_mobile(self, obj):
+        """Get buyer's mobile number."""
+        buyer = obj.buyer if hasattr(obj, 'buyer') and obj.buyer else obj.customer
+        if buyer:
+            return buyer.mobile_number or ''
+        return ''
+    
+    def get_buyer_email(self, obj):
+        """Get buyer's email."""
+        buyer = obj.buyer if hasattr(obj, 'buyer') and obj.buyer else obj.customer
+        if buyer:
+            return buyer.email or ''
+        return ''
+    
+    def get_is_assigned_to_me(self, obj):
+        """Check if ticket was assigned to current user."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'customer'):
+            return False
+        current_customer = request.customer
+        if not current_customer:
+            return False
+        # Ticket is assigned to me if:
+        # 1. assigned_mobile matches my mobile, OR
+        # 2. I am the customer but there's an assigned_mobile (meaning it was assigned to me)
+        # 3. I am the customer and buyer is different from me (meaning someone else bought it for me)
+        is_assigned_by_mobile = (obj.assigned_mobile and 
+                                 current_customer.mobile_number and 
+                                 obj.assigned_mobile == current_customer.mobile_number)
+        is_assigned_to_me = (obj.customer == current_customer and 
+                            obj.assigned_mobile and 
+                            obj.buyer and 
+                            obj.buyer != current_customer)
+        return is_assigned_by_mobile or is_assigned_to_me
+    
+    def get_is_assigned_to_other(self, obj):
+        """Check if ticket was assigned to someone else."""
+        return bool(obj.assigned_mobile and obj.assigned_name)
+    
+    event_id = serializers.IntegerField(source='event.id', read_only=True)
+    
     class Meta:
         model = Ticket
         fields = [
-            'id', 'event', 'event_title', 'event_date', 'event_time',
-            'category', 'price', 'status', 'purchase_date', 'ticket_number'
+            'id', 'event', 'event_id', 'event_title', 'event_date', 'event_time',
+            'category', 'price', 'status', 'purchase_date', 'ticket_number',
+            'check_in_time', 'assigned_name', 'assigned_mobile', 'assigned_email',
+            'buyer_name', 'buyer_mobile', 'buyer_email',
+            'is_assigned_to_me', 'is_assigned_to_other'
         ]
 
 

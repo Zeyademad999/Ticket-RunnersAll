@@ -25,12 +25,14 @@ import {
 import { TicketsService } from "@/lib/api/services/tickets";
 import { Ticket as TicketType } from "@/lib/api/types";
 import { format } from "date-fns";
+import { useAuth } from "@/Contexts/AuthContext";
 
 export default function TicketDetails() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [ticket, setTicket] = useState<TicketType | null>(null);
   const [relatedTickets, setRelatedTickets] = useState<TicketType[]>([]);
@@ -47,24 +49,13 @@ export default function TicketDetails() {
 
       try {
         setLoading(true);
-        // Fetch the ticket detail
-        const ticketData = await TicketsService.getTicketDetail(id);
-        setTicket(ticketData);
-
-        // Fetch all user tickets to find related ones (same event, same purchase date)
-        const allTickets = await TicketsService.getUserTickets();
+        // Fetch the ticket detail (now returns ticket and related_tickets)
+        const response = await TicketsService.getTicketDetail(id);
+        setTicket(response.ticket);
         
-        // Filter tickets from the same event and purchase date
-        const purchaseDate = ticketData.purchaseDate?.split('T')[0]; // Get date part only
-        const related = allTickets.filter(
-          (t) =>
-            t.eventId === ticketData.eventId &&
-            t.purchaseDate?.split('T')[0] === purchaseDate &&
-            t.id !== ticketData.id
-        );
-        
-        // Store related tickets (excluding the main ticket)
-        setRelatedTickets(related);
+        // Use related_tickets from the API response (all tickets from same booking)
+        // These include tickets assigned to others
+        setRelatedTickets(response.related_tickets || []);
       } catch (error: any) {
         console.error("Error fetching ticket details:", error);
         toast({
@@ -224,7 +215,8 @@ export default function TicketDetails() {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      {ticketItem.status === "valid" && (
+                      {/* Only allow selection of buyer's own tickets (not assigned to others) */}
+                      {ticketItem.status === "valid" && !ticketItem.is_assigned_to_other && (
                         <input
                           type="checkbox"
                           checked={selectedTicketIndexes.includes(ticketItem.id)}
@@ -245,7 +237,8 @@ export default function TicketDetails() {
                       )}
                     </div>
 
-                    {ticketItem.status === "valid" && (
+                    {/* Only show transfer button for buyer's own tickets (not assigned to others) */}
+                    {ticketItem.status === "valid" && !ticketItem.is_assigned_to_other && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -260,11 +253,77 @@ export default function TicketDetails() {
 
                   {/* Ticket Information */}
                   <div className="bg-muted/50 rounded-lg p-3 space-y-2">
-                    <div className="flex items-center gap-2 text-sm">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium text-foreground">
-                        {ticketItem.customerName || ticket.customerName}
+                    {/* Check if this is the buyer's own ticket (not assigned to someone else) */}
+                    {!ticketItem.is_assigned_to_other && ticketItem.buyer_name && ticketItem.buyer_name === ticketItem.customerName && (
+                      <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                        <User className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        <Badge variant="outline" className="text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-300 dark:border-green-700">
+                          {t("ticketDetails.tickets.myTicket", "My Ticket")}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {t("ticketDetails.tickets.thisIsMyTicket", "This is your ticket")}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Show assigned person name if ticket was assigned to someone else (read-only) */}
+                    {ticketItem.is_assigned_to_other && ticketItem.assigned_name && (
+                      <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
+                        <User className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        <div className="flex-1">
+                          <span className="text-xs text-muted-foreground">
+                            {t("ticketDetails.tickets.assignedTo", "Assigned to")}:
+                          </span>
+                          <span className="font-medium text-amber-700 dark:text-amber-300 ml-1">
+                            {ticketItem.assigned_name}
+                          </span>
+                          {ticketItem.assigned_mobile && (
+                            <span className="text-xs text-muted-foreground ml-2">
+                              ({ticketItem.assigned_mobile})
+                            </span>
+                          )}
+                        </div>
+                        <Badge variant="outline" className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
+                          {t("ticketDetails.tickets.readOnly", "Read Only")}
+                        </Badge>
+                      </div>
+                    )}
+                    
+                    {/* Show buyer info if ticket was assigned to current user (buyer is different from current user) */}
+                    {ticketItem.is_assigned_to_me && ticketItem.buyer_name && ticketItem.buyer_name !== ticketItem.customerName && (
+                      <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                        <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <div className="flex-1">
+                          <span className="text-xs text-muted-foreground">
+                            {t("ticketDetails.tickets.purchasedBy", "Purchased by")}:
+                          </span>
+                          <span className="font-medium text-blue-700 dark:text-blue-300 ml-1">
+                            {ticketItem.buyer_name}
+                          </span>
+                          {ticketItem.buyer_mobile && (
+                            <span className="text-xs text-muted-foreground ml-2">
+                              ({ticketItem.buyer_mobile})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Show ticket owner name if not already shown above */}
+                    {!ticketItem.is_assigned_to_other && !ticketItem.is_assigned_to_me && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium text-foreground">
+                          {ticketItem.customerName || ticket.customerName}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        {t("ticketDetails.tickets.category")}:
                       </span>
+                      <span className="font-medium">{ticketItem.category || "-"}</span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">

@@ -4,6 +4,7 @@ Custom exception classes for consistent error handling.
 from rest_framework import status
 from rest_framework.exceptions import APIException
 from rest_framework.views import exception_handler
+from django.conf import settings
 
 
 def custom_exception_handler(exc, context):
@@ -30,6 +31,9 @@ def custom_exception_handler(exc, context):
                     }
                 }
             response.data = custom_response_data
+    
+    # Note: We don't handle non-DRF exceptions here to avoid circular issues
+    # Let Django's default handler deal with them, or handle them in views
     
     return response
 

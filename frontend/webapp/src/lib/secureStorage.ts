@@ -270,11 +270,11 @@ class SecureStorage {
 
       const storageKey = this.PREFIX + key;
 
-      // Use localStorage for persistent storage (tokens should survive page refresh)
-      // Use sessionStorage only for temporary data
+      // Use sessionStorage for auth tokens to make them tab-specific
+      // This allows each tab to have its own independent session
       if (key === "authToken" || key === "refreshToken" || key === "userData") {
-        localStorage.setItem(storageKey, JSON.stringify(data));
-        console.log(`Stored ${key} in localStorage for persistence`);
+        sessionStorage.setItem(storageKey, JSON.stringify(data));
+        console.log(`Stored ${key} in sessionStorage for tab-specific session`);
         console.log(`Storage key: ${storageKey}`);
         console.log(
           `Data preview: ${JSON.stringify(data).substring(0, 100)}...`
@@ -294,17 +294,14 @@ class SecureStorage {
     try {
       const storageKey = this.PREFIX + key;
 
-      // Check localStorage first for persistent data, then sessionStorage
-      let stored = localStorage.getItem(storageKey);
-      console.log(`Getting ${key} from localStorage:`, !!stored);
-      if (
-        !stored &&
-        key !== "authToken" &&
-        key !== "refreshToken" &&
-        key !== "userData"
-      ) {
-        stored = sessionStorage.getItem(storageKey);
-        console.log(`Getting ${key} from sessionStorage:`, !!stored);
+      // Check sessionStorage first for tab-specific data
+      let stored = sessionStorage.getItem(storageKey);
+      console.log(`Getting ${key} from sessionStorage:`, !!stored);
+      
+      // Fallback to localStorage for backward compatibility (only for non-auth keys)
+      if (!stored && key !== "authToken" && key !== "refreshToken" && key !== "userData") {
+        stored = localStorage.getItem(storageKey);
+        console.log(`Getting ${key} from localStorage (fallback):`, !!stored);
       }
 
       if (!stored) {

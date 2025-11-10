@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookingsService } from "@/lib/api/services/bookings";
+import { FavoritesService } from "@/lib/api/services/favorites";
 import {
   AddToFavoritesRequest,
   AddToFavoritesResponse,
@@ -39,7 +39,7 @@ export const useFavorites = (): UseFavoritesReturn => {
       };
 
       const response: AddToFavoritesResponse =
-        await BookingsService.addToFavorites(eventId, requestData);
+        await FavoritesService.addToFavorites(requestData);
 
       if (response.favorited) {
         toast({
@@ -83,7 +83,7 @@ export const useFavorites = (): UseFavoritesReturn => {
       }
 
       const response: RemoveFromFavoritesResponse =
-        await BookingsService.removeFromFavorites(eventId, eventIdNumber);
+        await FavoritesService.removeFromFavorites(eventId);
 
       if (!response.favorited) {
         toast({

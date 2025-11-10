@@ -63,7 +63,7 @@ export const LogoutConfirmationDialog: React.FC<
             disabled={isLoading}
             className="w-full sm:w-auto bg-red-600 hover:bg-red-700 focus:ring-red-600"
           >
-            {isLoading ? t("auth.loggingOut") : t("auth.logout")}
+            {isLoading ? t("auth.loggingOut") : t("auth.logout", "Logout")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

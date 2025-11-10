@@ -4607,7 +4607,7 @@ For questions about this event, please contact the organizer.`;
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right">
-                  Starting Ticket Price (E£)
+                  {t("admin.events.form.startingPrice")}
                 </label>
                 <Input
                   type="number"
@@ -4615,7 +4615,7 @@ For questions about this event, please contact the organizer.`;
                   min="0"
                   value={newEvent.startingPrice}
                   onChange={(e) => handleNewEventChange("startingPrice", e.target.value)}
-                  placeholder="0.00"
+                  placeholder={t("admin.events.form.startingPricePlaceholder")}
                 />
               </div>
               <div>
@@ -4652,7 +4652,7 @@ For questions about this event, please contact the organizer.`;
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">
-                  Main Event Image
+                  {t("admin.events.form.mainEventImage")}
                 </label>
                 <Input
                   type="file"
@@ -4666,7 +4666,7 @@ For questions about this event, please contact the organizer.`;
                   className="cursor-pointer"
                 />
                 <p className="text-xs text-muted-foreground mt-1 rtl:text-right">
-                  This image will be displayed as the main event image on the web app
+                  {t("admin.events.form.mainEventImageDescription")}
                 </p>
               </div>
               <div className="col-span-2">
@@ -4709,7 +4709,7 @@ For questions about this event, please contact the organizer.`;
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">
-                  Gates Open Time
+                  {t("admin.events.form.gatesOpenTime")}
                 </label>
                 <Input
                   type="time"
@@ -4717,32 +4717,32 @@ For questions about this event, please contact the organizer.`;
                   onChange={(e) =>
                     handleNewEventChange("gatesOpenTime", e.target.value)
                   }
-                  placeholder="18:00"
+                  placeholder={t("admin.events.form.gatesOpenTimePlaceholder")}
                 />
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">
-                  About The Venue
+                  {t("admin.events.form.aboutVenue")}
                 </label>
                 <Textarea
                   value={newEvent.aboutVenue}
                   onChange={(e) =>
                     handleNewEventChange("aboutVenue", e.target.value)
                   }
-                  placeholder="Enter information about the venue..."
+                  placeholder={t("admin.events.form.aboutVenuePlaceholder")}
                   rows={4}
                 />
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">
-                  Event Terms and Conditions
+                  {t("admin.events.form.termsAndConditions")}
                 </label>
                 <Textarea
                   value={newEvent.termsAndConditions}
                   onChange={(e) =>
                     handleNewEventChange("termsAndConditions", e.target.value)
                   }
-                  placeholder="Enter terms and conditions for this event..."
+                  placeholder={t("admin.events.form.termsAndConditionsPlaceholder")}
                   rows={4}
                 />
               </div>
@@ -4765,18 +4765,18 @@ For questions about this event, please contact the organizer.`;
                   handleNewEventChange("childrenAllowed", checked)
                 }
               />
-              <span className="text-sm">Allow Children</span>
+              <span className="text-sm">{t("admin.events.form.allowChildren")}</span>
             </div>
 
             {/* Commission Rate Configuration */}
             <div className="border-t pt-4">
               <h4 className="text-sm font-medium mb-3 rtl:text-right">
-                Commission Rate Configuration
+                {t("admin.events.form.commissionRateConfiguration")}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium rtl:text-right">
-                    Commission Type
+                    {t("admin.events.form.commissionType")}
                   </label>
                   <Select
                     value={newEvent.commissionRate.type}
@@ -4791,14 +4791,14 @@ For questions about this event, please contact the organizer.`;
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="percentage">Percentage (%)</SelectItem>
-                      <SelectItem value="flat">Flat Fee (E£)</SelectItem>
+                      <SelectItem value="percentage">{t("admin.events.form.commissionTypePercentage")}</SelectItem>
+                      <SelectItem value="flat">{t("admin.events.form.commissionTypeFlat")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <label className="text-sm font-medium rtl:text-right">
-                    Commission Value
+                    {t("admin.events.form.commissionValue")}
                   </label>
                   <Input
                     type="number"

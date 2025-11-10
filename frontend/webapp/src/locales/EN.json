@@ -460,7 +460,9 @@
     "reference": "Booking Reference #{{id}}",
     "notFound": "Booking not found.",
     "eventInfo": {
-      "title": "Event Information"
+      "title": "Event Information",
+      "category": "Category",
+      "purchaseDate": "Purchase Date"
     },
     "tickets": {
       "title": "Your Tickets",
@@ -468,13 +470,31 @@
       "ticketNumber": "Ticket #{{index}}",
       "transferred": "Transferred (Code: {{code}})",
       "transfer": "Transfer",
-      "transferSelected": "Transfer Selected Tickets"
+      "transferSelected": "Transfer Selected Tickets",
+      "category": "Category",
+      "price": "Price",
+      "checkedIn": "Checked In",
+      "assignedTo": "Assigned to",
+      "purchasedBy": "Purchased by",
+      "myTicket": "My Ticket",
+      "thisIsMyTicket": "This is your ticket",
+      "readOnly": "Read Only"
     },
     "summary": {
       "title": "Order Summary",
       "subtotal": "Subtotal",
       "vat": "VAT (14%)",
       "total": "Total"
+    },
+    "status": {
+      "valid": "Valid",
+      "used": "Used",
+      "refunded": "Refunded",
+      "banned": "Banned"
+    },
+    "error": {
+      "title": "Error",
+      "description": "Failed to load ticket details"
     }
   },
   "transferTicket": {
@@ -874,6 +894,7 @@
     "logoutConfirmationMessage": "Are you sure you want to logout? You will need to sign in again to access your account.",
     "loggingOut": "Logging out...",
     "cancel": "Cancel",
+    "logout": "Logout",
     "logoutAll": "Logout from All Devices",
     "tryOtpLogin": "Try OTP Login",
     "otpLoginSuggestion": "You can also try logging in with OTP instead of password to avoid rate limiting.",

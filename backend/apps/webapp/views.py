@@ -266,6 +266,29 @@ def user_complete_registration(request):
     customer.set_password(password)
     customer.save()
     
+    # Link any tickets assigned to this mobile number
+    from tickets.models import Ticket
+    assigned_tickets = Ticket.objects.filter(
+        assigned_mobile=mobile_number,
+        status='valid'
+    ).exclude(customer=customer)
+    
+    if assigned_tickets.exists():
+        # Update customer but keep buyer as original purchaser
+        # NEVER overwrite buyer field - it should always be the original purchaser
+        # Only set buyer if it's null (for tickets created before buyer field was added)
+        for ticket in assigned_tickets:
+            # Store the original buyer before updating customer
+            original_buyer = ticket.buyer if ticket.buyer else ticket.customer
+            ticket.customer = customer
+            # Only set buyer if it's null, otherwise preserve it
+            if not ticket.buyer:
+                ticket.buyer = original_buyer
+            ticket.save(update_fields=['customer', 'buyer'])
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Linked {assigned_tickets.count()} tickets to new customer {customer.id}")
+    
     # Clear cache
     cache.delete(cache_key)
     
@@ -345,6 +368,29 @@ def user_verify_login_otp(request):
     
     customer.last_login = timezone.now()
     customer.save(update_fields=['last_login'])
+    
+    # Link any tickets assigned to this mobile number that aren't already linked
+    from tickets.models import Ticket
+    assigned_tickets = Ticket.objects.filter(
+        assigned_mobile=mobile_number,
+        status='valid'
+    ).exclude(customer=customer)
+    
+    if assigned_tickets.exists():
+        # Update customer but keep buyer as original purchaser
+        # NEVER overwrite buyer field - it should always be the original purchaser
+        # Only set buyer if it's null (for tickets created before buyer field was added)
+        for ticket in assigned_tickets:
+            # Store the original buyer before updating customer
+            original_buyer = ticket.buyer if ticket.buyer else ticket.customer
+            ticket.customer = customer
+            # Only set buyer if it's null, otherwise preserve it
+            if not ticket.buyer:
+                ticket.buyer = original_buyer
+            ticket.save(update_fields=['customer', 'buyer'])
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Linked {assigned_tickets.count()} tickets to customer {customer.id} on login")
     
     refresh = RefreshToken()
     refresh['customer_id'] = str(customer.id)
@@ -499,7 +545,7 @@ def public_events_list(request):
     Fetches all events from the same Event model used by admin dashboard.
     """
     # Show all events except cancelled ones (same as admin dashboard)
-    events = Event.objects.exclude(status='cancelled').select_related('organizer', 'venue', 'category').order_by('-date', '-time')
+    events = Event.objects.exclude(status='cancelled').select_related('organizer', 'venue', 'category').prefetch_related('ticket_categories').order_by('-date', '-time')
     
     # Filtering
     category = request.query_params.get('category')
@@ -535,7 +581,7 @@ def public_event_detail(request, event_id):
     GET /api/v1/public/events/:id/
     """
     try:
-        event = Event.objects.select_related('organizer', 'venue', 'category').get(id=event_id)
+        event = Event.objects.select_related('organizer', 'venue', 'category').prefetch_related('ticket_categories').get(id=event_id)
     except Event.DoesNotExist:
         return Response({
             'error': {'code': 'NOT_FOUND', 'message': 'Event not found'}
@@ -627,17 +673,78 @@ def ticket_book(request):
             transaction_id=str(uuid.uuid4())
         )
         
-        # Create tickets
+        # Create tickets with assignment details
         tickets = []
+        ticket_details = serializer.validated_data.get('ticket_details', [])
+        
         for i in range(quantity):
-            ticket = Ticket.objects.create(
-                event=event,
-                customer=customer,
-                category=category,
-                price=price_per_ticket,
-                status='valid',
-                ticket_number=f"{event.id}-{customer.id}-{uuid.uuid4().hex[:8]}"
-            )
+            # Start with default category and price from booking
+            ticket_category = category
+            ticket_price = price_per_ticket
+            
+            # If ticket details provided and this ticket has details, use specific category/price for this ticket
+            if ticket_details and i < len(ticket_details):
+                detail = ticket_details[i]
+                
+                # Use ticket-specific category if provided
+                if detail.get('category'):
+                    ticket_category = detail.get('category')
+                    # Get price for this specific category
+                    try:
+                        from events.models import TicketCategory
+                        specific_category = TicketCategory.objects.get(event=event, name=ticket_category)
+                        ticket_price = Decimal(str(specific_category.price))
+                    except TicketCategory.DoesNotExist:
+                        # Fallback to default price if category not found
+                        if event.starting_price:
+                            ticket_price = Decimal(str(event.starting_price))
+                        else:
+                            ticket_price = Decimal('300.00')
+                # Use ticket-specific price if provided (overrides category price)
+                elif detail.get('price') is not None:
+                    ticket_price = Decimal(str(detail.get('price')))
+            
+            ticket_data = {
+                'event': event,
+                'buyer': customer,  # Original buyer (who paid)
+                'category': ticket_category,  # Use ticket-specific category
+                'price': ticket_price,  # Use ticket-specific price
+                'status': 'valid',
+                'ticket_number': f"{event.id}-{customer.id}-{uuid.uuid4().hex[:8]}"
+            }
+            
+            # If ticket details provided and this ticket has details
+            if ticket_details and i < len(ticket_details):
+                detail = ticket_details[i]
+                # Only assign if it's not the owner's ticket
+                if not detail.get('is_owner', False):
+                    ticket_data['assigned_name'] = detail.get('name', '').strip() or None
+                    ticket_data['assigned_mobile'] = detail.get('mobile', '').strip() or None
+                    ticket_data['assigned_email'] = detail.get('email', '').strip() or None
+                    
+                    # If ticket is assigned to someone else, try to link it to their account if they exist
+                    if ticket_data['assigned_mobile']:
+                        try:
+                            assigned_customer = Customer.objects.filter(mobile_number=ticket_data['assigned_mobile']).first()
+                            if assigned_customer:
+                                # Link ticket to assigned customer, but keep buyer as original purchaser
+                                ticket_data['customer'] = assigned_customer
+                            else:
+                                # Keep ticket with buyer until assigned person registers
+                                ticket_data['customer'] = customer
+                        except Exception as e:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"Could not link ticket to assigned customer: {e}")
+                            ticket_data['customer'] = customer
+                else:
+                    # Owner's ticket - customer is the buyer
+                    ticket_data['customer'] = customer
+            else:
+                # No details provided - assume owner's ticket
+                ticket_data['customer'] = customer
+            
+            ticket = Ticket.objects.create(**ticket_data)
             tickets.append(ticket)
         
         # Update transaction status
@@ -686,8 +793,8 @@ def user_tickets_list(request):
             'error': {'code': 'UNAUTHORIZED', 'message': 'Authentication required'}
         }, status=status.HTTP_401_UNAUTHORIZED)
     
-    tickets = Ticket.objects.filter(customer=customer).select_related('event').order_by('-purchase_date')
-    serializer = TicketSerializer(tickets, many=True)
+    tickets = Ticket.objects.filter(customer=customer).select_related('event', 'buyer').order_by('-purchase_date')
+    serializer = TicketSerializer(tickets, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -1272,21 +1379,53 @@ def user_ticket_detail(request, ticket_id):
     Get ticket details.
     GET /api/v1/users/tickets/:id/
     """
-    customer_id = request.user.id if hasattr(request.user, 'id') else None
-    if not customer_id:
+    # Get customer from request (set by CustomerJWTAuthentication)
+    customer = getattr(request, 'customer', None)
+    if not customer:
+        # Fallback: try to get from user.id (for compatibility)
+        customer_id = request.user.id if hasattr(request.user, 'id') else None
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id)
+            except Customer.DoesNotExist:
+                pass
+    
+    if not customer:
         return Response({
             'error': {'code': 'UNAUTHORIZED', 'message': 'Authentication required'}
         }, status=status.HTTP_401_UNAUTHORIZED)
     
     try:
-        ticket = Ticket.objects.select_related('event', 'customer').get(id=ticket_id, customer_id=customer_id)
-    except Ticket.DoesNotExist:
+        # Allow viewing ticket if user is the buyer OR the customer
+        # This allows buyers to see tickets they purchased even if assigned to others
+        ticket = Ticket.objects.select_related('event', 'customer', 'buyer').filter(
+            Q(id=ticket_id) & (Q(customer=customer) | Q(buyer=customer))
+        ).first()
+        if not ticket:
+            return Response({
+                'error': {'code': 'NOT_FOUND', 'message': 'Ticket not found'}
+            }, status=status.HTTP_404_NOT_FOUND)
+    except Exception:
         return Response({
             'error': {'code': 'NOT_FOUND', 'message': 'Ticket not found'}
         }, status=status.HTTP_404_NOT_FOUND)
     
-    serializer = TicketSerializer(ticket)
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    # Get all tickets from the same booking (same event, same purchase date)
+    # Show ALL tickets where current user is the buyer (who purchased them)
+    # This includes tickets assigned to others
+    purchase_date = ticket.purchase_date.date()
+    all_booking_tickets = Ticket.objects.filter(
+        event=ticket.event,
+        purchase_date__date=purchase_date,
+        buyer=customer  # Show all tickets purchased by this user
+    ).select_related('customer', 'buyer').order_by('purchase_date')
+    
+    serializer = TicketSerializer(all_booking_tickets, many=True, context={'request': request})
+    return Response({
+        'ticket': TicketSerializer(ticket, context={'request': request}).data,
+        'related_tickets': serializer.data,
+        'total_tickets': all_booking_tickets.count()
+    }, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])

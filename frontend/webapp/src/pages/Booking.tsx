@@ -96,34 +96,50 @@ const Booking = () => {
     ticketCategories: [],
   };
 
-  // Use real ticket categories from event or fallback to single default ticket
-  const ticketTiers = eventData.ticketCategories && eventData.ticketCategories.length > 0
-    ? eventData.ticketCategories.map((cat, index) => ({
-        key: (cat.name?.toLowerCase().replace(/\s+/g, '_') || `tier_${index}`) as any,
-        label: cat.name || `Tier ${index + 1}`, // Use name as label - this matches TicketCategory.name in backend
-        price: cat.price || 250,
-        description: cat.description || t("booking.tierDescriptions.regular"),
-        ticketsAvailable: cat.ticketsAvailable || 0, // Track available tickets per category
-      }))
-    : [
-        // Single default ticket when no categories are configured
-        {
-          key: "regular", // Use "regular" key to match existing styling and translations
-          label: t("booking.tiers.regular", "Regular Ticket"),
-          price: eventData.startingPrice || 300, // Use starting_price from event or default to 300
-          description: t("booking.tierDescriptions.regular", "Standard ticket"),
-          ticketsAvailable: apiEvent?.ticketsAvailable || 0,
-        },
-      ] as const;
+  // Always show default ticket first, then custom ticket categories
+  const defaultTicket = {
+    key: "regular" as const,
+    label: t("booking.tiers.regular", "Regular Ticket"),
+    price: typeof eventData.startingPrice === 'number' && !isNaN(eventData.startingPrice) 
+      ? eventData.startingPrice 
+      : (eventData.startingPrice ? parseFloat(String(eventData.startingPrice)) || 300 : 300),
+    description: t("booking.tierDescriptions.regular", "Standard ticket"),
+    ticketsAvailable: apiEvent?.ticketsAvailable || 0,
+  };
+
+  // Map custom ticket categories
+  const customTickets = (eventData.ticketCategories || []).map((cat, index) => ({
+    key: (cat.name?.toLowerCase().replace(/\s+/g, '_') || `tier_${index}`) as any,
+    label: cat.name || `Tier ${index + 1}`, // Use name as label - this matches TicketCategory.name in backend
+    price: typeof cat.price === 'number' ? cat.price : (parseFloat(String(cat.price || 0)) || 0),
+    description: cat.description || t("booking.tierDescriptions.regular"),
+    ticketsAvailable: cat.ticketsAvailable || 0, // Track available tickets per category
+  }));
+
+  // Combine: default ticket first, then custom categories
+  const ticketTiers = [defaultTicket, ...customTickets] as const;
   
   type TierKey = (typeof ticketTiers)[number]["key"];
-  const [quantities, setQuantities] = useState<Record<TierKey, number>>(() => {
-    const initial: any = {};
+  const [quantities, setQuantities] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
     ticketTiers.forEach(tier => {
       initial[tier.key] = 0;
     });
     return initial;
   });
+
+  // Update quantities when ticketTiers change (e.g., when event data loads)
+  useEffect(() => {
+    setQuantities((prev) => {
+      const updated: Record<string, number> = { ...prev };
+      ticketTiers.forEach(tier => {
+        if (!(tier.key in updated) || isNaN(updated[tier.key])) {
+          updated[tier.key] = 0;
+        }
+      });
+      return updated;
+    });
+  }, [ticketTiers.length, ticketTiers.map(t => t.key).join(',')]);
 
   const onConfirmPayment = () => {
     setShowTerms(true);
@@ -137,7 +153,10 @@ const Booking = () => {
   const proceedWithPayment = async () => {
     try {
       // Determine the main ticket category (use the first selected tier)
-      const selectedTier = ticketTiers.find(t => quantities[t.key] > 0);
+      const selectedTier = ticketTiers.find(t => {
+        const qty = typeof quantities[t.key] === 'number' && !isNaN(quantities[t.key]) ? quantities[t.key] : 0;
+        return qty > 0;
+      });
       if (!selectedTier) {
         toast({
           title: t("booking.errorTitle"),
@@ -158,13 +177,60 @@ const Booking = () => {
       }
 
       // Book tickets using TicketsService
-      // Use the actual category name from the ticket tier, not the key
-      const categoryName = selectedTier.label; // Use label which matches the TicketCategory name
+      // For default ticket (regular), send "regular" as category name
+      // For custom categories, use the actual category name (label)
+      const categoryName = selectedTier.key === "regular" 
+        ? "regular" 
+        : selectedTier.label; // Use label which matches the TicketCategory name
+      
+      // Prepare ticket details for assignment
+      // Map tickets array to ticket_details, ensuring we have details for all tickets
+      // Include category and price for each ticket based on ticketType
+      const ticketDetails = tickets.slice(0, totalTickets).map((t, index) => {
+        // Get the ticket type (category) for this ticket from addOrder
+        const ticketTypeKey = addOrder[index] || selectedTier.key;
+        const ticketTier = ticketTiers.find(tier => tier.key === ticketTypeKey) || selectedTier;
+        
+        // Determine category name
+        const ticketCategory = ticketTier.key === "regular" 
+          ? "regular" 
+          : ticketTier.label;
+        
+        return {
+          name: (t.name || '').trim(),
+          mobile: (t.mobile || '').trim(),
+          email: (t.email || '').trim(),
+          is_owner: t.isOwnerTicket || false,
+          category: ticketCategory,  // Ticket-specific category
+          price: ticketTier.price,  // Ticket-specific price
+        };
+      });
+      
+      // If we have fewer ticket details than total tickets, pad with empty details
+      while (ticketDetails.length < totalTickets) {
+        const index = ticketDetails.length;
+        const ticketTypeKey = addOrder[index] || selectedTier.key;
+        const ticketTier = ticketTiers.find(tier => tier.key === ticketTypeKey) || selectedTier;
+        const ticketCategory = ticketTier.key === "regular" 
+          ? "regular" 
+          : ticketTier.label;
+        
+        ticketDetails.push({
+          name: '',
+          mobile: '',
+          email: '',
+          is_owner: false,
+          category: ticketCategory,
+          price: ticketTier.price,
+        });
+      }
+      
       const bookingResponse = await TicketsService.bookTickets({
         event_id: parseInt(eventId!, 10),
         category: categoryName,
         quantity: totalTickets,
         payment_method: selectedPaymentMethod,
+        ticket_details: ticketDetails.length > 0 ? ticketDetails : undefined,
       });
 
       // Extract ticket IDs from booking response
@@ -242,7 +308,7 @@ const Booking = () => {
   const [userTicketType, setUserTicketType] = useState<TierKey | "">("");
   const [addOrder, setAddOrder] = useState<TierKey[]>([]);
 
-  const ticketTypeColors: Record<TierKey, string> = {
+  const ticketTypeColors: Record<string, string> = {
     platinum:
       "bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 border-l-4 border-gray-400 dark:border-gray-300", // platinum
     gold: "bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/30 border-l-4 border-yellow-400 dark:border-yellow-300", // gold
@@ -250,9 +316,11 @@ const Booking = () => {
       "bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 border-l-4 border-green-400 dark:border-green-300", // green
     default:
       "bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 border-l-4 border-green-400 dark:border-green-300", // green (same as regular)
+    standard:
+      "bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 border-l-4 border-green-400 dark:border-green-300", // green (same as regular)
   };
 
-  const ticketTypeBadges: Record<TierKey, { text: string; color: string }> = {
+  const ticketTypeBadges: Record<string, { text: string; color: string }> = {
     platinum: { text: "VIP", color: "bg-gray-600 dark:bg-gray-500 text-white" },
     gold: {
       text: "Premium",
@@ -266,15 +334,36 @@ const Booking = () => {
       text: "Standard",
       color: "bg-green-600 dark:bg-green-500 text-white",
     },
+    standard: {
+      text: "Standard",
+      color: "bg-green-600 dark:bg-green-500 text-white",
+    },
+  };
+
+  // Helper function to get ticket type color with fallback
+  const getTicketTypeColor = (key: string): string => {
+    return ticketTypeColors[key] || ticketTypeColors.regular;
+  };
+
+  // Helper function to get ticket type badge with fallback
+  const getTicketTypeBadge = (key: string): { text: string; color: string } => {
+    return ticketTypeBadges[key] || ticketTypeBadges.regular;
   };
 
   // eventData is now defined above using real API data
 
-  const totalTickets = Object.values(quantities).reduce((s, n) => s + n, 0);
+  const totalTickets = Object.values(quantities).reduce((s, n) => {
+    const num = typeof n === 'number' && !isNaN(n) ? n : 0;
+    return s + num;
+  }, 0);
 
   // Calculate base ticket price
   const baseTicketPrice = ticketTiers.reduce(
-    (sum, t) => sum + t.price * quantities[t.key],
+    (sum, t) => {
+      const price = typeof t.price === 'number' && !isNaN(t.price) ? t.price : 0;
+      const qty = quantities[t.key] || 0;
+      return sum + (price * qty);
+    },
     0
   );
 
@@ -301,7 +390,7 @@ const Booking = () => {
     let freeTicketsValue = 0;
 
     for (const tier of ticketTiers) {
-      const tierQuantity = quantities[tier.key];
+      const tierQuantity = typeof quantities[tier.key] === 'number' && !isNaN(quantities[tier.key]) ? quantities[tier.key] : 0;
       if (tierQuantity > 0) {
         const ticketsToMakeFree = Math.min(tierQuantity, 2 - freeTicketsCount);
         if (ticketsToMakeFree > 0) {
@@ -322,7 +411,8 @@ const Booking = () => {
 
   const changeQty = (tier: TierKey, delta: number) => {
     setQuantities((prev) => {
-      const newQty = Math.max(0, prev[tier] + delta);
+      const currentQty = typeof prev[tier] === 'number' && !isNaN(prev[tier]) ? prev[tier] : 0;
+      const newQty = Math.max(0, currentQty + delta);
       setAddOrder((prevOrder) => {
         if (delta > 0) {
           // Add ticket
@@ -536,26 +626,27 @@ const Booking = () => {
                   <CardTitle>{t("booking.ticketQuantities")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {ticketTiers.map((tier) => (
+                  {ticketTiers.map((tier) => {
+                    const badge = getTicketTypeBadge(tier.key);
+                    const color = getTicketTypeColor(tier.key);
+                    return (
                     <div
                       key={tier.key}
-                      className={`p-4 rounded-lg ${
-                        ticketTypeColors[tier.key]
-                      } transition-all duration-200 hover:shadow-md`}
+                      className={`p-4 rounded-lg ${color} transition-all duration-200 hover:shadow-md`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex-1 space-y-2">
                           <div className="flex items-center gap-2">
-                            <Badge className={ticketTypeBadges[tier.key].color}>
-                              {ticketTypeBadges[tier.key].text}
+                            <Badge className={badge.color}>
+                              {badge.text}
                             </Badge>
                             <h3 className="font-semibold text-lg">
-                              {t(`booking.tiers.${tier.key}`)}
+                              {tier.label}
                             </h3>
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-2xl font-bold text-primary">
-                              {tier.price}
+                              {typeof tier.price === 'number' && !isNaN(tier.price) ? tier.price : 0}
                             </span>
                             <span className="text-sm text-muted-foreground">
                               {t("currency.egp")} {t("booking.perTicket")}
@@ -567,13 +658,13 @@ const Booking = () => {
                             variant="outline"
                             size="icon"
                             onClick={() => changeQty(tier.key, -1)}
-                            disabled={quantities[tier.key] === 0}
+                            disabled={(typeof quantities[tier.key] === 'number' && !isNaN(quantities[tier.key]) ? quantities[tier.key] : 0) === 0}
                             className="hover:bg-destructive hover:text-destructive-foreground"
                           >
                             <Minus className="h-4 w-4" />
                           </Button>
                           <span className="font-bold text-xl w-12 text-center bg-background/50 dark:bg-background/20 rounded-lg py-2">
-                            {quantities[tier.key]}
+                            {typeof quantities[tier.key] === 'number' && !isNaN(quantities[tier.key]) ? quantities[tier.key] : 0}
                           </span>
                           <Button
                             variant="outline"
@@ -605,7 +696,8 @@ const Booking = () => {
                         </AccordionItem>
                       </Accordion>
                     </div>
-                  ))}
+                    );
+                  })}
 
                   <div className="flex justify-between pt-2">
                     <span className="font-medium">{t("booking.subtotal")}</span>
@@ -636,7 +728,7 @@ const Booking = () => {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {addOrder.map((ticketType, index) => {
-                      const bgClass = ticketTypeColors[ticketType];
+                      const bgClass = getTicketTypeColor(ticketType);
                       const ticketRaw = tickets[index] || {};
                       const ticket = {
                         assigned: true,
@@ -716,7 +808,7 @@ const Booking = () => {
                             <div className="space-y-2">
                               <Label>{t("booking.ticketType")}</Label>
                               <Input
-                                value={t(`booking.tiers.${ticketType}`) || ""}
+                                value={ticketTiers.find(t => t.key === ticketType)?.label || ticketType || ""}
                                 disabled
                               />
 

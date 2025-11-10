@@ -65,8 +65,9 @@ export function EventCard({
   const formattedTime = formatTime(time, currentLocale);
 
   // Helper to normalize category for translation
-  const normalizedCategory =
-    category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
+  const normalizedCategory = category
+    ? category.charAt(0).toUpperCase() + category.slice(1).toLowerCase()
+    : "General";
 
   const eventUrl = `${window.location.origin}/event/${id}`;
 

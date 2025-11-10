@@ -128,18 +128,51 @@ class EventCreateSerializer(serializers.ModelSerializer):
         ]
     
     def to_internal_value(self, data):
-        """Handle ticket_categories as JSON string from FormData."""
+        """Handle ticket_categories as JSON string from FormData or as list from JSON."""
+        import json
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Handle QueryDict (from FormData) - convert to regular dict
+        if hasattr(data, 'getlist'):
+            # It's a QueryDict, convert to dict
+            data_dict = {}
+            for key in data.keys():
+                values = data.getlist(key)
+                if len(values) == 1:
+                    data_dict[key] = values[0]
+                else:
+                    data_dict[key] = values
+            data = data_dict
+        
+        # Make a mutable copy if needed
+        if not isinstance(data, dict):
+            data = dict(data) if hasattr(data, '__iter__') else {}
+        
         # If ticket_categories is a string (JSON from FormData), parse it
         if 'ticket_categories' in data:
             ticket_categories_value = data.get('ticket_categories')
+            logger.info(f"Processing ticket_categories: type={type(ticket_categories_value)}, value={ticket_categories_value}")
+            
             if isinstance(ticket_categories_value, str):
-                import json
                 try:
-                    data = data.copy()  # Make mutable copy
-                    data['ticket_categories'] = json.loads(ticket_categories_value)
-                except (json.JSONDecodeError, TypeError):
+                    parsed = json.loads(ticket_categories_value)
+                    logger.info(f"Parsed ticket_categories from JSON string: {parsed}")
+                    data['ticket_categories'] = parsed
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.error(f"Failed to parse ticket_categories JSON: {e}")
                     # If parsing fails, treat as empty list
                     data['ticket_categories'] = []
+            elif isinstance(ticket_categories_value, list):
+                # Already a list (from JSON request)
+                logger.info(f"ticket_categories already a list: {ticket_categories_value}")
+                data['ticket_categories'] = ticket_categories_value
+            else:
+                # Not a string or list, set to empty list
+                logger.warning(f"ticket_categories is unexpected type: {type(ticket_categories_value)}, setting to empty list")
+                data['ticket_categories'] = []
+        else:
+            logger.info("No ticket_categories in data")
         
         return super().to_internal_value(data)
     
@@ -156,14 +189,27 @@ class EventCreateSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         """Create event and associated ticket categories."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         ticket_categories_data = validated_data.pop('ticket_categories', [])
+        logger.info(f"Creating event with ticket_categories: {ticket_categories_data}")
         
         # Create the event
         event = Event.objects.create(**validated_data)
+        logger.info(f"Created event: {event.id} - {event.title}")
         
         # Create ticket categories
-        for category_data in ticket_categories_data:
-            TicketCategory.objects.create(event=event, **category_data)
+        if isinstance(ticket_categories_data, list) and len(ticket_categories_data) > 0:
+            for category_data in ticket_categories_data:
+                try:
+                    TicketCategory.objects.create(event=event, **category_data)
+                    logger.info(f"Created ticket category: {category_data.get('name')} for event {event.id}")
+                except Exception as e:
+                    logger.error(f"Error creating ticket category: {e}, data: {category_data}")
+                    raise
+        else:
+            logger.info(f"No ticket categories to create (data: {ticket_categories_data})")
         
         return event
     
@@ -176,14 +222,21 @@ class EventCreateSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         
-        # Update ticket categories if provided
+        # Update ticket categories if provided (even if empty list, to clear existing)
         if ticket_categories_data is not None:
             # Delete existing ticket categories
             TicketCategory.objects.filter(event=instance).delete()
             
-            # Create new ticket categories
-            for category_data in ticket_categories_data:
-                TicketCategory.objects.create(event=instance, **category_data)
+            # Create new ticket categories if list is not empty
+            if isinstance(ticket_categories_data, list) and len(ticket_categories_data) > 0:
+                for category_data in ticket_categories_data:
+                    try:
+                        TicketCategory.objects.create(event=instance, **category_data)
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error creating ticket category: {e}, data: {category_data}")
+                        raise
         
         return instance
 

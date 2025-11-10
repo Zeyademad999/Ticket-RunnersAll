@@ -81,25 +81,19 @@ export class EventsService {
 
   /**
    * Get individual event details by ID
-   * This is a more detailed version for event detail pages
-   * Returns comprehensive event details including gallery, venue, organizer, tickets, gates, and personalized card/wallet requirements
+   * This uses the public event detail endpoint
+   * GET /api/v1/public/events/:id/
    */
-  static async getEventDetails(eventId: string): Promise<EventData> {
+  static async getEventDetails(eventId: string | number): Promise<EventData> {
     return retryRequest(async () => {
-      // Validate eventId parameter
-      const eventIdNumber = parseInt(eventId, 10);
-      if (isNaN(eventIdNumber) || eventIdNumber < 1) {
-        throw new Error("Event ID must be a valid integer >= 1");
-      }
-
-      const response = await apiClient.get<any>(`/events/${eventId}/details`, {
-        params: {
-          event_id: eventIdNumber,
-        },
-      });
+      // Convert eventId to integer if it's a string (URL params come as strings)
+      const id = typeof eventId === 'string' ? parseInt(eventId, 10) : eventId;
+      // Use the public event detail endpoint
+      const response = await apiClient.get<any>(`/public/events/${id}/`);
       const apiData = handleApiResponse(response);
 
-      // Transform API response to EventData format
+      // Transform API response to EventData format if needed
+      // The backend returns PublicEventSerializer format
       return this.transformEventDetails(apiData);
     });
   }
@@ -109,8 +103,24 @@ export class EventsService {
    */
   private static getFullImageUrl(path: string): string {
     if (!path) return "";
+    // Convert localhost:8000 URLs to relative URLs for Vite proxy
+    if (path.includes("localhost:8000")) {
+      // Extract the path part after the domain
+      const url = new URL(path);
+      return url.pathname; // Returns /media/events/images/...
+    }
     if (path.startsWith("http")) return path;
-    return `https://trapi.flokisystems.com/storage/${path}`;
+    // If path already starts with /media/ or /storage/, use it as-is
+    if (path.startsWith("/media/") || path.startsWith("/storage/")) {
+      return path;
+    }
+    // For Django media files, use /media/ path
+    // For other storage paths, use /storage/
+    if (path.startsWith("media/") || path.includes("events/images/") || path.includes("organizers/")) {
+      return `/${path.startsWith("media/") ? path : `media/${path}`}`;
+    }
+    // Default to /storage/ for other paths
+    return `/storage/${path}`;
   }
 
   /**
@@ -121,34 +131,54 @@ export class EventsService {
       id: apiData.id?.toString(),
       title: apiData.title || "",
       videoUrl: undefined, // Not provided in API
-      images:
-        apiData.gallery?.map((img: any) => ({
-          url: this.getFullImageUrl(img.path || img.url || ""),
+      images: (() => {
+        const images: Array<{ url: string; isPrimary: boolean }> = [];
+        
+        // Add main event image first (if available)
+        if (apiData.image) {
+          images.push({
+            url: this.getFullImageUrl(apiData.image),
+            isPrimary: true,
+          });
+        } else if (apiData.thumbnail_path) {
+          images.push({
+            url: this.getFullImageUrl(apiData.thumbnail_path),
+            isPrimary: true,
+          });
+        }
+        
+        // Add gallery images
+        if (apiData.gallery && Array.isArray(apiData.gallery)) {
+          apiData.gallery.forEach((img: any) => {
+            const imgUrl = img.path || img.url || "";
+            if (imgUrl) {
+              images.push({
+                url: this.getFullImageUrl(imgUrl),
           isPrimary: false,
-        })) ||
-        (apiData.thumbnail
-          ? [
-              {
-                url: this.getFullImageUrl(
-                  apiData.thumbnail.path || apiData.thumbnail.url || ""
-                ),
-                isPrimary: true,
-              },
-            ]
-          : []),
+              });
+            }
+          });
+        }
+        
+        // If no images at all, return empty array (will show placeholder)
+        return images.length > 0 ? images : [];
+      })(),
       layoutImageUrl: apiData.venue?.layout_image?.path
         ? this.getFullImageUrl(apiData.venue.layout_image.path)
         : undefined,
-      date: apiData.event_date || "",
-      time: apiData.event_time || "",
-      location: apiData.event_location || "",
+      date: apiData.date || apiData.event_date || "",
+      time: apiData.time || apiData.event_time || "",
+      gatesOpenTime: apiData.gates_open_time || undefined,
+      location: apiData.location || apiData.venue_address || apiData.event_location || "",
       price: parseFloat(apiData.starting_price) || 0,
+      startingPrice: parseFloat(apiData.starting_price) || 300, // Default ticket price (300 if not set)
       originalPrice: undefined, // Not provided in API
-      category: apiData.category?.name || "",
+      category: apiData.category_name || apiData.category?.name || "",
       rating: apiData.ratings?.event_rating || 0,
       attendees: 0, // Not provided in API
-      description: apiData.about_event_html || "",
-      venueInfo: apiData.venue?.about_html || "",
+      description: apiData.description || apiData.about_event_html || "",
+      venueInfo: apiData.about_venue || apiData.venue?.about_html || "",
+      termsAndConditions: apiData.terms_and_conditions || undefined,
       facilities:
         apiData.venue?.facilities?.map((facility: any) => ({
           name: facility.name || facility,
@@ -157,10 +187,11 @@ export class EventsService {
         })) || [],
       isFeatured: apiData.featured || false,
       organizer: {
-        id: apiData.organizer?.id?.toString() || "",
-        name: apiData.organizer?.name || "",
-        logoUrl:
-          apiData.organizer?.logo?.path || apiData.organizer?.logo?.url || "",
+        id: (apiData.organizer?.id || apiData.organizer_id)?.toString() || "",
+        name: apiData.organizer?.name || apiData.organizer_name || "",
+        logoUrl: apiData.organizer?.logo 
+          ? this.getFullImageUrl(apiData.organizer.logo)
+          : (apiData.organizer?.logoUrl ? this.getFullImageUrl(apiData.organizer.logoUrl) : ""),
         bio: "", // Not provided in API
         events: [], // Not provided in API
       },
@@ -172,13 +203,18 @@ export class EventsService {
       totalPayoutPending: 0, // Not provided in API
       totalPayoutPaid: 0, // Not provided in API
       ticketCategories:
-        apiData.tickets?.map((ticket: any) => ({
-          name: ticket.title || "",
-          price: parseFloat(ticket.price) || 0,
-          totalTickets: 0, // Not provided in API
-          ticketsSold: 0, // Not provided in API
-          ticketsAvailable: 0, // Not provided in API
-        })) || [],
+        apiData.ticket_categories?.map((cat: any) => {
+          const price = parseFloat(cat.price);
+          return {
+            id: cat.id?.toString() || "",
+            name: cat.name || "",
+            price: (typeof price === 'number' && !isNaN(price)) ? price : 0,
+            totalTickets: cat.total_tickets || 0,
+            ticketsSold: cat.sold_tickets || 0,
+            ticketsAvailable: cat.tickets_available || 0,
+            description: cat.description || "",
+          };
+        }) || [],
       gallery:
         apiData.gallery?.map((img: any) => ({
           url: img.path || img.url || "",
@@ -579,6 +615,47 @@ export class EventsService {
         }>
       >("/events/statistics");
       return handleApiResponse(response).data;
+    });
+  }
+
+  /**
+   * Get public organizer details
+   * GET /api/v1/public/organizers/:id/
+   */
+  static async getOrganizerDetail(organizerId: string): Promise<{
+    id: string;
+    name: string;
+    logo?: string;
+    bio?: string;
+    contact_mobile?: string;
+    events_count?: number;
+  }> {
+    return retryRequest(async () => {
+      const response = await apiClient.get(`/public/organizers/${organizerId}/`);
+      return handleApiResponse(response);
+    });
+  }
+
+  /**
+   * Get public venues list
+   * GET /api/v1/public/venues/
+   */
+  static async getPublicVenues(params?: {
+    search?: string;
+    city?: string;
+  }): Promise<Array<{
+    id: string;
+    name: string;
+    address: string;
+    city: string;
+    capacity: number;
+  }>> {
+    return retryRequest(async () => {
+      const queryString = buildQueryParams(params || {});
+      const url = queryString ? `/public/venues/?${queryString}` : "/public/venues/";
+      const response = await apiClient.get(url);
+      const data = handleApiResponse(response);
+      return Array.isArray(data) ? data : [];
     });
   }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { BookingsService } from "@/lib/api/services/bookings";
-import { CustomerBookingItem } from "@/lib/api/types";
+import { DependentsService } from "@/lib/api/services/dependents";
+import { Dependent } from "@/lib/api/types";
 import { toast } from "@/hooks/use-toast";
 import { getSecureToken } from "@/lib/secureStorage";
 
@@ -41,30 +41,20 @@ export const useDependants = (): UseDependantsReturn => {
         return;
       }
 
-      // For now, we'll use the customer bookings and filter for dependant tickets
-      // In the future, this should be a dedicated API endpoint
-      const response = await BookingsService.getCustomerBookings(1, 50);
+      // Use the dedicated dependents API endpoint
+      const dependents: Dependent[] = await DependentsService.getDependents();
 
-      // Check if response and items exist
-      if (!response || !response.items || !Array.isArray(response.items)) {
-        console.warn("Invalid response structure for dependants");
-        setDependants([]);
-        return;
-      }
-
-      // Transform booking items to dependant tickets
-      const dependantTickets: DependantTicket[] = response.items
-        .filter((item) => (item.quantity || 0) > 1) // Only show bookings with multiple tickets (dependants)
-        .map((item, index) => ({
+      // Transform dependents to dependant tickets format
+      const dependantTickets: DependantTicket[] = dependents.map((dependent, index) => ({
           id: index + 1,
-          eventTitle: item.event_title || "",
-          date: item.event_date || "",
-          time: item.event_time || "",
-          location: item.event_location || "TBD",
-          ticketPrice: (item.total_amount || 0) / (item.quantity || 1),
-          quantity: (item.quantity || 1) - 1, // Exclude the main ticket holder
-          qrEnabled: item.status === "confirmed",
-          status: item.status === "confirmed" ? "claimed" : "pending",
+        eventTitle: dependent.name || "",
+        date: dependent.date_of_birth || "",
+        time: "",
+        location: "TBD",
+        ticketPrice: 0,
+        quantity: 1,
+        qrEnabled: false,
+        status: "pending" as const,
         }));
 
       setDependants(dependantTickets);

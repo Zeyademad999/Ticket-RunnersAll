@@ -141,14 +141,19 @@ export class ApiErrorHandler {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
-      } catch (error) {
+      } catch (error: any) {
         lastError = error;
+
+        // Get status from error object or axios response
+        const status = error.status || error.response?.status;
 
         // Don't retry on certain error types
         if (
-          error.status === 401 ||
-          error.status === 403 ||
-          error.status === 404
+          status === 401 ||
+          status === 403 ||
+          status === 404 ||
+          error.isAuthError ||
+          (error.message && error.message.includes("Authentication failed"))
         ) {
           throw error;
         }

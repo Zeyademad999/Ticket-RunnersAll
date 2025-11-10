@@ -401,7 +401,9 @@
     "reference": "رقم الحجز #{{id}}",
     "notFound": "لم يتم العثور على الحجز.",
     "eventInfo": {
-      "title": "معلومات الفعالية"
+      "title": "معلومات الفعالية",
+      "category": "الفئة",
+      "purchaseDate": "تاريخ الشراء"
     },
     "tickets": {
       "title": "تذاكرك",
@@ -409,13 +411,31 @@
       "ticketNumber": "تذكرة #{{index}}",
       "transferred": "تم النقل (الرمز: {{code}})",
       "transfer": "نقل",
-      "transferSelected": "نقل التذاكر المحددة"
+      "transferSelected": "نقل التذاكر المحددة",
+      "category": "الفئة",
+      "price": "السعر",
+      "checkedIn": "تم تسجيل الدخول",
+      "assignedTo": "مخصصة لـ",
+      "purchasedBy": "تم الشراء بواسطة",
+      "myTicket": "تذكرتي",
+      "thisIsMyTicket": "هذه تذكرتك",
+      "readOnly": "للقراءة فقط"
     },
     "summary": {
       "title": "ملخص الطلب",
       "subtotal": "الإجمالي",
       "vat": "ضريبة القيمة المضافة (14%)",
       "total": "الإجمالي الكلي"
+    },
+    "status": {
+      "valid": "صالحة",
+      "used": "مستخدمة",
+      "refunded": "مستردة",
+      "banned": "محظورة"
+    },
+    "error": {
+      "title": "خطأ",
+      "description": "فشل تحميل تفاصيل التذكرة"
     }
   },
   "subscriptions": {

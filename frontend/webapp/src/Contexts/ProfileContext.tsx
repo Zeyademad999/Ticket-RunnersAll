@@ -123,8 +123,8 @@ export const ProfileProvider: React.FC<ProfileProviderProps> = ({
   };
 
   const refetchFavorites = async () => {
-    // TODO: Implement favorites refetch when API is available
-    console.log("Refetching favorites...");
+    // Refetch favorites using the unified hook
+    await refetch();
   };
 
   const refetchCardDetails = async () => {
