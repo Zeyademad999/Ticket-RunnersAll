@@ -117,6 +117,9 @@ interface Event {
   usheringAccounts: number;
   imageUrl: string;
   description: string;
+  aboutVenue?: string;
+  gatesOpenTime?: string;
+  termsAndConditions?: string;
   gallery?: GalleryImage[];
 }
 
@@ -126,6 +129,7 @@ interface GalleryImage {
   order: number;
   isThumbnail: boolean;
   alt?: string;
+  file?: File; // Store original file for upload
 }
 
 interface VenueSection {
@@ -182,6 +186,11 @@ const EventsManagement: React.FC = () => {
     totalTickets: 0,
     ticketLimit: 1,
     description: "",
+    aboutVenue: "",
+    gatesOpenTime: "",
+    termsAndConditions: "",
+    startingPrice: "",
+    mainImageFile: null as File | null,
     ticketTransferEnabled: false,
     childrenAllowed: true,
     commissionRate: {
@@ -194,6 +203,14 @@ const EventsManagement: React.FC = () => {
     },
     imageUrl: "",
     gallery: [] as GalleryImage[],
+    ticketCategories: [] as Array<{
+      id: string;
+      name: string;
+      price: number;
+      totalTickets: number;
+      soldTickets: number;
+      description: string;
+    }>,
   });
 
   // Edit event state for new features
@@ -207,6 +224,9 @@ const EventsManagement: React.FC = () => {
     totalTickets: 0,
     ticketLimit: 1,
     description: "",
+    aboutVenue: "",
+    gatesOpenTime: "",
+    termsAndConditions: "",
     ticketTransferEnabled: false,
     childrenAllowed: true,
     commissionRate: {
@@ -218,7 +238,6 @@ const EventsManagement: React.FC = () => {
       value: 5,
     },
     imageUrl: "",
-    termsAndConditions: "",
     gallery: [] as GalleryImage[],
     venueLayouts: [
       {
@@ -429,10 +448,13 @@ const EventsManagement: React.FC = () => {
       },
       ticketTransferEnabled: true, // Default, will be fetched from detail
       childrenAllowed: true, // Default
-      ticketLimit: 10, // Default, will be fetched from detail
-      usheringAccounts: 0, // Default
-      imageUrl: "/public/placeholderLogo.png",
-      description: '', // Will be fetched from detail if needed
+      ticketLimit: item.ticket_limit || 10,
+      usheringAccounts: 0,
+      imageUrl: item.thumbnail_path || '/public/placeholderLogo.png',
+      description: item.description || '',
+      aboutVenue: item.about_venue || '',
+      gatesOpenTime: item.gates_open_time || '',
+      termsAndConditions: item.terms_and_conditions || '',
       gallery: [],
     }));
   }, [eventsData]);
@@ -1229,155 +1251,79 @@ const EventsManagement: React.FC = () => {
     }
   };
 
-  const handleEditEvent = (event: Event) => {
+  const handleEditEvent = async (event: Event) => {
     setSelectedEvent(event);
-    setEditEventData({
-      title: event.title,
-      organizer: event.organizer,
-      date: event.date,
-      time: event.time,
-      location: event.location,
-      category: event.category,
-      totalTickets: event.totalTickets,
-      ticketLimit: event.ticketLimit,
-      description: event.description,
-      ticketTransferEnabled: event.ticketTransferEnabled,
-      childrenAllowed: event.childrenAllowed,
-      commissionRate: event.commissionRate,
-      transferFee: event.transferFee,
-      imageUrl: event.imageUrl,
-      termsAndConditions: "",
-      gallery: event.gallery || [],
-      venueLayouts: [
-        {
-          id: "1",
-          name: "Main Hall Layout",
-          description:
-            "Standard layout for the main event hall with multiple sections",
-          totalCapacity: 500,
-          imageUrl:
-            "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&h=300&fit=crop",
-          gateOpeningTime: "17:00",
-          gateClosingTime: "23:00",
-          sections: [
-            {
-              id: "1",
-              name: "VIP Section",
-              capacity: 100,
-              price: 500,
-              color: "#8B5CF6",
-              description:
-                "Premium seating with exclusive benefits and dedicated service",
-              isActive: true,
-            },
-            {
-              id: "2",
-              name: "Regular Section",
-              capacity: 300,
-              price: 250,
-              color: "#3B82F6",
-              description: "Standard seating arrangement with good view",
-              isActive: true,
-            },
-            {
-              id: "3",
-              name: "Early Bird Section",
-              capacity: 100,
-              price: 200,
-              color: "#10B981",
-              description:
-                "Limited time discounted seating with basic amenities",
-              isActive: true,
-            },
-          ],
-        },
-        {
-          id: "2",
-          name: "Outdoor Arena Layout",
-          description: "Open-air venue layout for outdoor events",
-          totalCapacity: 800,
-          imageUrl:
-            "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?w=400&h=300&fit=crop",
-          gateOpeningTime: "18:00",
-          gateClosingTime: "22:30",
-          sections: [
-            {
-              id: "4",
-              name: "Premium Boxes",
-              capacity: 50,
-              price: 800,
-              color: "#DC2626",
-              description:
-                "Private boxes with premium amenities and exclusive access",
-              isActive: true,
-            },
-            {
-              id: "5",
-              name: "General Admission",
-              capacity: 750,
-              price: 150,
-              color: "#F59E0B",
-              description:
-                "General admission with standing room and basic seating",
-              isActive: true,
-            },
-          ],
-        },
-      ] as VenueLayout[],
-      ticketCategories: [
-        {
-          id: "1",
-          name: "VIP",
-          price: 500,
-          totalTickets: 100,
-          soldTickets: 0,
-          description: "Premium seating with exclusive benefits",
-        },
-        {
-          id: "2",
-          name: "Regular",
-          price: 250,
-          totalTickets: 300,
-          soldTickets: 0,
-          description: "Standard seating",
-        },
-        {
-          id: "3",
-          name: "Early Bird",
-          price: 200,
-          totalTickets: 200,
-          soldTickets: 0,
-          description: "Limited time discounted tickets",
-        },
-      ],
-      discounts: [
-        {
-          id: "1",
-          name: "Student Discount",
-          type: "percentage",
-          value: 20,
-          code: "STUDENT20",
-          validFrom: "",
-          validTo: "",
-          maxUses: 100,
-          usedCount: 0,
-          applicableCategories: ["Regular", "Early Bird"],
-        },
-        {
-          id: "2",
-          name: "Group Discount",
-          type: "percentage",
-          value: 15,
-          code: "GROUP15",
-          validFrom: "",
-          validTo: "",
-          maxUses: 50,
-          usedCount: 0,
-          applicableCategories: ["VIP", "Regular"],
-          minQuantity: 5,
-        },
-      ],
-    });
+    
+    // Fetch full event details including ticket categories
+    try {
+      const eventDetails = await eventsApi.getEvent(event.id);
+      
+      // Map ticket categories from API response
+      const ticketCategories = eventDetails.ticket_categories?.map((cat: any) => ({
+        id: cat.id?.toString() || Date.now().toString(),
+        name: cat.name || '',
+        price: parseFloat(cat.price) || 0,
+        totalTickets: cat.total_tickets || 0,
+        soldTickets: cat.sold_tickets || 0,
+        description: cat.description || '',
+      })) || [];
+      
+      setEditEventData({
+        title: eventDetails.title || event.title,
+        organizer: eventDetails.organizer?.id?.toString() || event.organizer,
+        date: eventDetails.date || event.date,
+        time: eventDetails.time || event.time,
+        location: eventDetails.venue?.id?.toString() || event.location,
+        category: eventDetails.category?.id?.toString() || event.category,
+        totalTickets: eventDetails.total_tickets || event.totalTickets,
+        ticketLimit: eventDetails.ticket_limit || event.ticketLimit,
+        description: eventDetails.description || event.description || '',
+        aboutVenue: eventDetails.about_venue || event.aboutVenue || '',
+        gatesOpenTime: eventDetails.gates_open_time || event.gatesOpenTime || '',
+        termsAndConditions: eventDetails.terms_and_conditions || event.termsAndConditions || '',
+        ticketTransferEnabled: eventDetails.ticket_transfer_enabled !== undefined ? eventDetails.ticket_transfer_enabled : event.ticketTransferEnabled,
+        childrenAllowed: event.childrenAllowed,
+        commissionRate: event.commissionRate,
+        transferFee: event.transferFee,
+        imageUrl: eventDetails.image || event.imageUrl || '',
+        gallery: event.gallery || [],
+        venueLayouts: event.venueLayouts || [],
+        ticketCategories: ticketCategories, // Use ticket categories from API
+        discounts: event.discounts || [],
+      });
+    } catch (error) {
+      console.error('Error fetching event details:', error);
+      // Fallback to basic event data if API call fails
+      setEditEventData({
+        title: event.title,
+        organizer: event.organizer,
+        date: event.date,
+        time: event.time,
+        location: event.location,
+        category: event.category,
+        totalTickets: event.totalTickets,
+        ticketLimit: event.ticketLimit,
+        description: event.description || '',
+        aboutVenue: event.aboutVenue || '',
+        gatesOpenTime: event.gatesOpenTime || '',
+        termsAndConditions: event.termsAndConditions || '',
+        ticketTransferEnabled: event.ticketTransferEnabled,
+        childrenAllowed: event.childrenAllowed,
+        commissionRate: event.commissionRate,
+        transferFee: event.transferFee,
+        imageUrl: event.imageUrl,
+        gallery: event.gallery || [],
+        venueLayouts: [],
+        ticketCategories: [], // Empty if fetch fails
+        discounts: [],
+      });
+      toast({
+        title: "Warning",
+        description: "Could not load full event details. Some fields may be missing.",
+        variant: "destructive",
+      });
+    }
+    
     setIsEditDialogOpen(true);
   };
 
@@ -1470,12 +1416,27 @@ const EventsManagement: React.FC = () => {
       return;
     }
 
+    // Ensure time format is correct (HH:MM:SS)
+    let timeValue = editEventData.time || "00:00:00";
+    if (timeValue.length === 5) {
+      timeValue = timeValue + ":00";
+    }
+
+    // Ensure gates_open_time format is correct (HH:MM:SS)
+    let gatesOpenTimeValue = editEventData.gatesOpenTime || null;
+    if (gatesOpenTimeValue && gatesOpenTimeValue.length === 5) {
+      gatesOpenTimeValue = gatesOpenTimeValue + ":00";
+    }
+
     // Prepare data for API
     const updateData: any = {
       title: editEventData.title,
-      description: editEventData.description,
+      description: editEventData.description || '',
+      about_venue: editEventData.aboutVenue || '',
+      gates_open_time: gatesOpenTimeValue,
+      terms_and_conditions: editEventData.termsAndConditions || '',
       date: editEventData.date,
-      time: editEventData.time,
+      time: timeValue,
       total_tickets: editEventData.totalTickets,
       ticket_limit: editEventData.ticketLimit,
       ticket_transfer_enabled: editEventData.ticketTransferEnabled,
@@ -1498,6 +1459,19 @@ const EventsManagement: React.FC = () => {
     if (editEventData.category) {
       updateData.category = editEventData.category;
     }
+    
+    // Add ticket categories
+    if (editEventData.ticketCategories && editEventData.ticketCategories.length > 0) {
+      updateData.ticket_categories = editEventData.ticketCategories.map((cat: any) => ({
+        name: cat.name || '',
+        price: cat.price || 0,
+        total_tickets: cat.totalTickets || 0,
+        description: cat.description || '',
+      }));
+    } else {
+      // If no ticket categories, send empty array to clear existing ones
+      updateData.ticket_categories = [];
+    }
 
     updateEventMutation.mutate({ id: selectedEvent.id, data: updateData });
     setIsEditDialogOpen(false);
@@ -1511,18 +1485,33 @@ const EventsManagement: React.FC = () => {
     }));
   };
 
-  const handleAddGalleryImage = (imageUrl: string) => {
-    // Basic URL validation
-    if (!imageUrl.trim()) {
+  const handleAddGalleryImage = (file: File) => {
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
       toast({
-        title: "Invalid URL",
-        description: "Please enter a valid image URL",
+        title: "Invalid File",
+        description: "Please select an image file",
         variant: "destructive",
       });
       return;
     }
 
-    // Check if URL is already in gallery
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Image size must be less than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Convert file to base64 data URL for preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string;
+      
+      // Check if image is already in gallery (by comparing data URLs)
     if (editEventData.gallery.some((image) => image.url === imageUrl)) {
       toast({
         title: "Duplicate Image",
@@ -1545,6 +1534,7 @@ const EventsManagement: React.FC = () => {
             url: imageUrl,
             order: newOrder,
             isThumbnail: isFirstImage, // First image becomes thumbnail automatically
+              file: file, // Store the original file for upload
           },
         ],
       };
@@ -1554,6 +1544,15 @@ const EventsManagement: React.FC = () => {
       title: "Image Added",
       description: "Image has been added to the gallery",
     });
+    };
+    reader.onerror = () => {
+      toast({
+        title: "Error",
+        description: "Failed to read image file",
+        variant: "destructive",
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRemoveGalleryImage = (index: number) => {
@@ -1671,6 +1670,42 @@ const EventsManagement: React.FC = () => {
 
   const handleRemoveTicketCategory = (index: number) => {
     setEditEventData((prev) => ({
+      ...prev,
+      ticketCategories: prev.ticketCategories.filter((_, i) => i !== index),
+    }));
+  };
+
+  // Handlers for new event ticket categories
+  const handleAddNewEventTicketCategory = () => {
+    const newCategory = {
+      id: Date.now().toString(),
+      name: "",
+      price: 0,
+      totalTickets: 0,
+      soldTickets: 0,
+      description: "",
+    };
+    setNewEvent((prev) => ({
+      ...prev,
+      ticketCategories: [...prev.ticketCategories, newCategory],
+    }));
+  };
+
+  const handleUpdateNewEventTicketCategory = (
+    index: number,
+    field: string,
+    value: any
+  ) => {
+    setNewEvent((prev) => ({
+      ...prev,
+      ticketCategories: prev.ticketCategories.map((category, i) =>
+        i === index ? { ...category, [field]: value } : category
+      ),
+    }));
+  };
+
+  const handleRemoveNewEventTicketCategory = (index: number) => {
+    setNewEvent((prev) => ({
       ...prev,
       ticketCategories: prev.ticketCategories.filter((_, i) => i !== index),
     }));
@@ -1897,24 +1932,62 @@ const EventsManagement: React.FC = () => {
       timeValue = timeValue + ":00";
     }
 
-    const eventData: any = {
-      title: newEvent.title.trim(),
-      description: (newEvent.description || '').trim(),
-      organizer: organizerId,
-      venue: venueId && !isNaN(venueId) ? venueId : null,
-      date: newEvent.date,
-      time: timeValue,
-      category: categoryId && !isNaN(categoryId) ? categoryId : null,
-      total_tickets: newEvent.totalTickets,
-      ticket_limit: newEvent.ticketLimit,
-      ticket_transfer_enabled: newEvent.ticketTransferEnabled,
-    };
+    // Ensure gates_open_time format is correct (HH:MM:SS)
+    let gatesOpenTimeValue = newEvent.gatesOpenTime || null;
+    if (gatesOpenTimeValue && gatesOpenTimeValue.length === 5) {
+      // If format is HH:MM, add :00
+      gatesOpenTimeValue = gatesOpenTimeValue + ":00";
+    }
+
+    // Create FormData for file upload
+    const formData = new FormData();
+    formData.append('title', newEvent.title.trim());
+    formData.append('description', (newEvent.description || '').trim());
+    formData.append('about_venue', (newEvent.aboutVenue || '').trim());
+    if (gatesOpenTimeValue) {
+      formData.append('gates_open_time', gatesOpenTimeValue);
+    }
+    formData.append('terms_and_conditions', (newEvent.termsAndConditions || '').trim());
+    formData.append('organizer', organizerId.toString());
+    if (venueId && !isNaN(venueId)) {
+      formData.append('venue', venueId.toString());
+    }
+    formData.append('date', newEvent.date);
+    formData.append('time', timeValue);
+    if (categoryId && !isNaN(categoryId)) {
+      formData.append('category', categoryId.toString());
+    }
+    formData.append('total_tickets', newEvent.totalTickets.toString());
+    formData.append('ticket_limit', newEvent.ticketLimit.toString());
+    formData.append('ticket_transfer_enabled', newEvent.ticketTransferEnabled.toString());
+    
+    // Add starting price if provided
+    if (newEvent.startingPrice) {
+      formData.append('starting_price', newEvent.startingPrice);
+    }
+    
+    // Add main image file if provided
+    if (newEvent.mainImageFile) {
+      formData.append('image', newEvent.mainImageFile);
+    }
+    
+    // Add ticket categories as JSON string (FormData doesn't handle nested objects well)
+    if (newEvent.ticketCategories && newEvent.ticketCategories.length > 0) {
+      const ticketCategoriesData = newEvent.ticketCategories.map((cat: any) => ({
+        name: cat.name || '',
+        price: cat.price || 0,
+        total_tickets: cat.totalTickets || 0,
+        description: cat.description || '',
+      }));
+      formData.append('ticket_categories', JSON.stringify(ticketCategoriesData));
+    }
 
     // Log the data being sent for debugging
-    console.log('Creating event with data:', eventData);
+    console.log('Creating event with FormData');
     console.log('Raw form data:', newEvent);
+    console.log('Ticket categories:', newEvent.ticketCategories);
 
-    createEventMutation.mutate(eventData);
+    createEventMutation.mutate(formData);
 
     // Reset form
     setNewEvent({
@@ -1927,6 +2000,11 @@ const EventsManagement: React.FC = () => {
       totalTickets: 0,
       ticketLimit: 1,
       description: "",
+      aboutVenue: "",
+      gatesOpenTime: "",
+      termsAndConditions: "",
+      startingPrice: "",
+      mainImageFile: null,
       ticketTransferEnabled: false,
       childrenAllowed: true,
       commissionRate: {
@@ -1939,6 +2017,7 @@ const EventsManagement: React.FC = () => {
       },
       imageUrl: "",
       gallery: [],
+      ticketCategories: [],
     });
   };
 
@@ -1957,18 +2036,33 @@ const EventsManagement: React.FC = () => {
   };
 
   // Gallery management functions for new event
-  const handleAddNewEventGalleryImage = (imageUrl: string) => {
-    // Basic URL validation
-    if (!imageUrl.trim()) {
+  const handleAddNewEventGalleryImage = (file: File) => {
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
       toast({
-        title: "Invalid URL",
-        description: "Please enter a valid image URL",
+        title: "Invalid File",
+        description: "Please select an image file",
         variant: "destructive",
       });
       return;
     }
 
-    // Check if URL is already in gallery
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File Too Large",
+        description: "Image size must be less than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Convert file to base64 data URL for preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string;
+      
+      // Check if image is already in gallery (by comparing data URLs)
     if (newEvent.gallery.some((image) => image.url === imageUrl)) {
       toast({
         title: "Duplicate Image",
@@ -1991,6 +2085,7 @@ const EventsManagement: React.FC = () => {
             url: imageUrl,
             order: newOrder,
             isThumbnail: isFirstImage, // First image becomes thumbnail automatically
+              file: file, // Store the original file for upload
           },
         ],
       };
@@ -2000,6 +2095,15 @@ const EventsManagement: React.FC = () => {
       title: "Image Added",
       description: "Image has been added to the gallery",
     });
+    };
+    reader.onerror = () => {
+      toast({
+        title: "Error",
+        description: "Failed to read image file",
+        variant: "destructive",
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRemoveNewEventGalleryImage = (index: number) => {
@@ -2948,7 +3052,7 @@ const EventsManagement: React.FC = () => {
                     </div>
                     <div className="col-span-2">
                       <label className="text-sm font-medium rtl:text-right">
-                        {t("admin.events.form.description")}
+                        {t("admin.events.form.description")} (About This Event)
                       </label>
                       <Textarea
                         value={editEventData.description}
@@ -2959,6 +3063,33 @@ const EventsManagement: React.FC = () => {
                           )
                         }
                         placeholder="Enter event description..."
+                        rows={4}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium rtl:text-right">
+                        Gates Open Time
+                      </label>
+                      <Input
+                        type="time"
+                        value={editEventData.gatesOpenTime}
+                        onChange={(e) =>
+                          handleEditEventDataChange("gatesOpenTime", e.target.value)
+                        }
+                        placeholder="18:00"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium rtl:text-right">
+                        About The Venue
+                      </label>
+                      <Textarea
+                        value={editEventData.aboutVenue}
+                        onChange={(e) =>
+                          handleEditEventDataChange("aboutVenue", e.target.value)
+                        }
+                        placeholder="Enter information about the venue..."
+                        rows={4}
                       />
                     </div>
                   </div>
@@ -3170,64 +3301,33 @@ const EventsManagement: React.FC = () => {
                     {/* Add Image Section */}
                     <Card className="mb-4">
                       <CardHeader>
-                        <CardTitle className="text-sm">Add New Image</CardTitle>
+                        <CardTitle className="text-sm">Upload Images</CardTitle>
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-4">
                           <div>
-                            <label className="text-sm font-medium rtl:text-right">
-                              Image URL
+                            <label className="text-sm font-medium rtl:text-right mb-2 block">
+                              Select Image Files
                             </label>
-                            <div className="flex gap-2 mt-1">
                               <Input
-                                placeholder="Enter image URL (e.g., https://example.com/image.jpg)"
-                                onKeyPress={(e) => {
-                                  if (e.key === "Enter") {
-                                    const input = e.target as HTMLInputElement;
-                                    if (input.value.trim()) {
-                                      handleAddGalleryImage(input.value.trim());
-                                      input.value = "";
-                                    }
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              onChange={(e) => {
+                                const files = e.target.files;
+                                if (files) {
+                                  Array.from(files).forEach((file) => {
+                                    handleAddGalleryImage(file);
+                                  });
+                                  // Reset input to allow selecting the same file again
+                                  e.target.value = "";
                                   }
                                 }}
-                              />
-                              <Button
-                                onClick={(e) => {
-                                  const input = e.currentTarget
-                                    .previousElementSibling as HTMLInputElement;
-                                  if (input && input.value.trim()) {
-                                    handleAddGalleryImage(input.value.trim());
-                                    input.value = "";
-                                  }
-                                }}
-                              >
-                                Add
-                              </Button>
-                            </div>
-                          </div>
-
-                          {/* Sample Image URLs for testing */}
-                          <div>
-                            <label className="text-sm font-medium rtl:text-right">
-                              Quick Add Sample Images
-                            </label>
-                            <div className="flex flex-wrap gap-2 mt-1">
-                              {[
-                                "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&h=300&fit=crop",
-                                "https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=400&h=300&fit=crop",
-                                "https://images.unsplash.com/photo-1501281669025-7ec9d6aec993?w=400&h=300&fit=crop",
-                                "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400&h=300&fit=crop",
-                              ].map((url, index) => (
-                                <Button
-                                  key={index}
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleAddGalleryImage(url)}
-                                >
-                                  Sample {index + 1}
-                                </Button>
-                              ))}
-                            </div>
+                              className="cursor-pointer"
+                            />
+                            <p className="text-xs text-muted-foreground mt-2 rtl:text-right">
+                              Supported formats: JPG, PNG, GIF, WebP. Max file size: 5MB per image.
+                            </p>
                           </div>
                         </div>
                       </CardContent>
@@ -4507,6 +4607,19 @@ For questions about this event, please contact the organizer.`;
               </div>
               <div>
                 <label className="text-sm font-medium rtl:text-right">
+                  Starting Ticket Price (E£)
+                </label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={newEvent.startingPrice}
+                  onChange={(e) => handleNewEventChange("startingPrice", e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium rtl:text-right">
                   {t("admin.events.form.totalTickets")}
                 </label>
                 <Input
@@ -4539,6 +4652,25 @@ For questions about this event, please contact the organizer.`;
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">
+                  Main Event Image
+                </label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleNewEventChange("mainImageFile", file);
+                    }
+                  }}
+                  className="cursor-pointer"
+                />
+                <p className="text-xs text-muted-foreground mt-1 rtl:text-right">
+                  This image will be displayed as the main event image on the web app
+                </p>
+              </div>
+              <div className="col-span-2">
+                <label className="text-sm font-medium rtl:text-right">
                   {t("admin.events.form.location")}
                 </label>
                 <Select
@@ -4564,14 +4696,54 @@ For questions about this event, please contact the organizer.`;
               </div>
               <div className="col-span-2">
                 <label className="text-sm font-medium rtl:text-right">
-                  {t("admin.events.form.description")}
+                  {t("admin.events.form.description")} (About This Event)
                 </label>
-                <Input
+                <Textarea
                   value={newEvent.description}
                   onChange={(e) =>
                     handleNewEventChange("description", e.target.value)
                   }
                   placeholder={t("admin.events.form.enterEventDescription")}
+                  rows={4}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-sm font-medium rtl:text-right">
+                  Gates Open Time
+                </label>
+                <Input
+                  type="time"
+                  value={newEvent.gatesOpenTime}
+                  onChange={(e) =>
+                    handleNewEventChange("gatesOpenTime", e.target.value)
+                  }
+                  placeholder="18:00"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-sm font-medium rtl:text-right">
+                  About The Venue
+                </label>
+                <Textarea
+                  value={newEvent.aboutVenue}
+                  onChange={(e) =>
+                    handleNewEventChange("aboutVenue", e.target.value)
+                  }
+                  placeholder="Enter information about the venue..."
+                  rows={4}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-sm font-medium rtl:text-right">
+                  Event Terms and Conditions
+                </label>
+                <Textarea
+                  value={newEvent.termsAndConditions}
+                  onChange={(e) =>
+                    handleNewEventChange("termsAndConditions", e.target.value)
+                  }
+                  placeholder="Enter terms and conditions for this event..."
+                  rows={4}
                 />
               </div>
             </div>
@@ -4729,6 +4901,114 @@ For questions about this event, please contact the organizer.`;
               </div>
             </div>
 
+            {/* Ticket Categories */}
+            <div className="border-t pt-4">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-sm font-medium rtl:text-right">
+                  Ticket Categories ({newEvent.ticketCategories.length})
+                </h4>
+                <Button onClick={handleAddNewEventTicketCategory} size="sm">
+                  <Plus className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                  Add Category
+                </Button>
+              </div>
+              <div className="space-y-4">
+                {newEvent.ticketCategories.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
+                    <p>No ticket categories added yet</p>
+                    <p className="text-sm">Click "Add Category" to create ticket categories</p>
+                  </div>
+                ) : (
+                  newEvent.ticketCategories.map((category, index) => (
+                    <Card key={category.id}>
+                      <CardHeader>
+                        <div className="flex justify-between items-center">
+                          <Input
+                            placeholder="Category name (e.g., VIP, Regular, Early Bird)"
+                            value={category.name}
+                            onChange={(e) =>
+                              handleUpdateNewEventTicketCategory(
+                                index,
+                                "name",
+                                e.target.value
+                              )
+                            }
+                            className="max-w-xs"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRemoveNewEventTicketCategory(index)}
+                            className="text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm font-medium rtl:text-right">
+                              Price (E£)
+                            </label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={category.price}
+                              onChange={(e) =>
+                                handleUpdateNewEventTicketCategory(
+                                  index,
+                                  "price",
+                                  parseFloat(e.target.value) || 0
+                                )
+                              }
+                              placeholder="0.00"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-sm font-medium rtl:text-right">
+                              Total Tickets
+                            </label>
+                            <Input
+                              type="number"
+                              min="1"
+                              value={category.totalTickets}
+                              onChange={(e) =>
+                                handleUpdateNewEventTicketCategory(
+                                  index,
+                                  "totalTickets",
+                                  parseInt(e.target.value) || 0
+                                )
+                              }
+                              placeholder="0"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="text-sm font-medium rtl:text-right">
+                              Description
+                            </label>
+                            <Textarea
+                              value={category.description}
+                              onChange={(e) =>
+                                handleUpdateNewEventTicketCategory(
+                                  index,
+                                  "description",
+                                  e.target.value
+                                )
+                              }
+                              placeholder="Enter category description..."
+                              rows={2}
+                            />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
+
             {/* Event Gallery */}
             <div className="border-t pt-4">
               <h4 className="text-sm font-medium mb-3 rtl:text-right">
@@ -4738,66 +5018,33 @@ For questions about this event, please contact the organizer.`;
               {/* Add Image Section */}
               <Card className="mb-4">
                 <CardHeader>
-                  <CardTitle className="text-sm">Add New Image</CardTitle>
+                  <CardTitle className="text-sm">Upload Images</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     <div>
-                      <label className="text-sm font-medium rtl:text-right">
-                        Image URL
+                      <label className="text-sm font-medium rtl:text-right mb-2 block">
+                        Select Image Files
                       </label>
-                      <div className="flex gap-2 mt-1">
                         <Input
-                          placeholder="Enter image URL (e.g., https://example.com/image.jpg)"
-                          onKeyPress={(e) => {
-                            if (e.key === "Enter") {
-                              const input = e.target as HTMLInputElement;
-                              if (input.value.trim()) {
-                                handleAddNewEventGalleryImage(
-                                  input.value.trim()
-                                );
-                                input.value = "";
-                              }
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files) {
+                            Array.from(files).forEach((file) => {
+                              handleAddNewEventGalleryImage(file);
+                            });
+                            // Reset input to allow selecting the same file again
+                            e.target.value = "";
                             }
                           }}
-                        />
-                        <Button
-                          onClick={(e) => {
-                            const input = e.currentTarget
-                              .previousElementSibling as HTMLInputElement;
-                            if (input && input.value.trim()) {
-                              handleAddNewEventGalleryImage(input.value.trim());
-                              input.value = "";
-                            }
-                          }}
-                        >
-                          Add
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Sample Image URLs for testing */}
-                    <div>
-                      <label className="text-sm font-medium rtl:text-right">
-                        Quick Add Sample Images
-                      </label>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {[
-                          "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&h=300&fit=crop",
-                          "https://images.unsplash.com/photo-1515187029135-18ee286d815b?w=400&h=300&fit=crop",
-                          "https://images.unsplash.com/photo-1501281669025-7ec9d6aec993?w=400&h=300&fit=crop",
-                          "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=400&h=300&fit=crop",
-                        ].map((url, index) => (
-                          <Button
-                            key={index}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAddNewEventGalleryImage(url)}
-                          >
-                            Sample {index + 1}
-                          </Button>
-                        ))}
-                      </div>
+                        className="cursor-pointer"
+                      />
+                      <p className="text-xs text-muted-foreground mt-2 rtl:text-right">
+                        Supported formats: JPG, PNG, GIF, WebP. Max file size: 5MB per image.
+                      </p>
                     </div>
                   </div>
                 </CardContent>

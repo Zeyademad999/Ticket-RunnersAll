@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -20,69 +20,77 @@ import {
   Phone,
   CheckCircle,
   Clock,
+  Loader2,
 } from "lucide-react";
-
-/* -------------------------------------------------------------------------- */
-/*                              Mock Booking Data                             */
-/* -------------------------------------------------------------------------- */
-
-const bookings = [
-  {
-    id: "1",
-    title: "Cairo Jazz Festival 2024",
-    date: "2024-02-15",
-    time: "20:00",
-    location: "Cairo Opera House",
-    price: 250,
-    quantity: 2,
-  },
-  {
-    id: "2",
-    title: "Comedy Night with Ahmed Ahmed",
-    date: "2024-02-20",
-    time: "21:00",
-    location: "Al-Azhar Park",
-    price: 150,
-    quantity: 1,
-  },
-];
-
-type TicketState = {
-  index: number;
-  transferred: boolean;
-  code?: string;
-  owner: {
-    name: string;
-    mobile: string;
-  };
-  status: "claimed" | "pending";
-};
+import { TicketsService } from "@/lib/api/services/tickets";
+import { Ticket as TicketType } from "@/lib/api/types";
+import { format } from "date-fns";
 
 export default function TicketDetails() {
   const { t } = useTranslation();
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [selectedTicketIndexes, setSelectedTicketIndexes] = useState<number[]>(
+  const [loading, setLoading] = useState(true);
+  const [ticket, setTicket] = useState<TicketType | null>(null);
+  const [relatedTickets, setRelatedTickets] = useState<TicketType[]>([]);
+  const [selectedTicketIndexes, setSelectedTicketIndexes] = useState<string[]>(
     []
   );
 
-  const booking = bookings.find((b) => b.id === id);
-  const [tickets, setTickets] = useState<TicketState[]>(() => {
-    if (!booking) return [];
-    return Array.from({ length: booking.quantity }, (_, i) => ({
-      index: i + 1,
-      transferred: false,
-      code: undefined,
-      owner: {
-        name: i === 0 ? "Ahmed Hassan" : "Fatima Ali",
-        mobile: i === 0 ? "+20 123 456 7890" : "+20 987 654 3210",
-      },
-      status: i === 0 ? "claimed" : "pending",
-    }));
-  });
+  useEffect(() => {
+    const fetchTicketData = async () => {
+      if (!id) {
+        setLoading(false);
+        return;
+      }
 
-  if (!booking) {
+      try {
+        setLoading(true);
+        // Fetch the ticket detail
+        const ticketData = await TicketsService.getTicketDetail(id);
+        setTicket(ticketData);
+
+        // Fetch all user tickets to find related ones (same event, same purchase date)
+        const allTickets = await TicketsService.getUserTickets();
+        
+        // Filter tickets from the same event and purchase date
+        const purchaseDate = ticketData.purchaseDate?.split('T')[0]; // Get date part only
+        const related = allTickets.filter(
+          (t) =>
+            t.eventId === ticketData.eventId &&
+            t.purchaseDate?.split('T')[0] === purchaseDate &&
+            t.id !== ticketData.id
+        );
+        
+        // Store related tickets (excluding the main ticket)
+        setRelatedTickets(related);
+      } catch (error: any) {
+        console.error("Error fetching ticket details:", error);
+        toast({
+          title: t("ticketDetails.error.title", "Error"),
+          description:
+            error?.message ||
+            t("ticketDetails.error.description", "Failed to load ticket details"),
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTicketData();
+  }, [id, toast, t]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-dark text-foreground">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!ticket) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-dark text-foreground">
         {t("ticketDetails.notFound")}
@@ -90,44 +98,62 @@ export default function TicketDetails() {
     );
   }
 
-  const handleSelect = (index: number) => {
-    const ticket = tickets.find((t) => t.index === index);
-    // Only allow selection of non-claimed tickets
-    if (ticket && ticket.status !== "claimed") {
+  const allTickets = [ticket, ...relatedTickets.filter(t => t.id !== ticket.id)];
+  const totalAmount = allTickets.reduce((sum, t) => {
+    const price = typeof t.price === 'number' ? t.price : parseFloat(String(t.price || 0));
+    return sum + (isNaN(price) ? 0 : price);
+  }, 0);
+
+  const handleSelect = (ticketId: string) => {
+    const ticket = allTickets.find((t) => t.id === ticketId);
+    // Only allow selection of valid tickets (not used, refunded, or banned)
+    if (ticket && ticket.status === "valid") {
       setSelectedTicketIndexes((prev) =>
-        prev.includes(index)
-          ? prev.filter((i) => i !== index)
-          : [...prev, index]
+        prev.includes(ticketId)
+          ? prev.filter((id) => id !== ticketId)
+          : [...prev, ticketId]
       );
     }
   };
 
   const handleNavigateToTransfer = () => {
     navigate("/transfer-tickets", {
-      state: { ticketIndexes: selectedTicketIndexes, bookingId: booking.id },
+      state: { ticketIds: selectedTicketIndexes, bookingId: ticket.id },
     });
   };
 
-  const handleTransfer = (idx: number) => {
-    navigate(`/transfer/${booking.id}/${idx}`);
+  const handleTransfer = (ticketId: string) => {
+    navigate(`/transfer/${ticket.id}/${ticketId}`);
   };
 
-  const getStatusBadge = (status: "claimed" | "pending") => {
-    if (status === "claimed") {
+  const getStatusBadge = (status: TicketType["status"]) => {
+    if (status === "used") {
       return (
         <Badge variant="default" className="bg-green-600 hover:bg-green-700">
           <CheckCircle className="h-3 w-3 mr-1" />
-          Claimed
+          {t("ticketDetails.status.used", "Used")}
         </Badge>
       );
-    } else {
+    } else if (status === "valid") {
       return (
         <Badge
           variant="secondary"
           className="bg-yellow-600 hover:bg-yellow-700"
         >
           <Clock className="h-3 w-3 mr-1" />
-          Pending
+          {t("ticketDetails.status.valid", "Valid")}
+        </Badge>
+      );
+    } else if (status === "refunded") {
+      return (
+        <Badge variant="destructive">
+          {t("ticketDetails.status.refunded", "Refunded")}
+        </Badge>
+      );
+    } else {
+      return (
+        <Badge variant="destructive">
+          {t("ticketDetails.status.banned", "Banned")}
         </Badge>
       );
     }
@@ -143,7 +169,7 @@ export default function TicketDetails() {
               {t("ticketDetails.title")}
             </h1>
             <p className="text-muted-foreground">
-              {t("ticketDetails.reference", { id: booking.id })}
+              {t("ticketDetails.reference", { id: ticket.id })}
             </p>
           </div>
 
@@ -151,12 +177,32 @@ export default function TicketDetails() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Ticket className="h-5 w-5 text-primary" /> {booking.title}
+                <Ticket className="h-5 w-5 text-primary" /> {ticket.eventTitle}
               </CardTitle>
               <CardDescription>
                 {t("ticketDetails.eventInfo.title")}
               </CardDescription>
             </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">
+                    {t("ticketDetails.eventInfo.category")}:{" "}
+                  </span>
+                  <span className="font-medium">{ticket.category}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">
+                    {t("ticketDetails.eventInfo.purchaseDate")}:{" "}
+                  </span>
+                  <span className="font-medium">
+                    {ticket.purchaseDate
+                      ? format(new Date(ticket.purchaseDate), "MMM dd, yyyy")
+                      : "-"}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
           </Card>
 
           {/* Tickets */}
@@ -164,48 +210,46 @@ export default function TicketDetails() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
-                {t("ticketDetails.tickets.title")}
+                {t("ticketDetails.tickets.title")} ({allTickets.length})
               </CardTitle>
               <CardDescription>
                 {t("ticketDetails.tickets.description")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {tickets.map((ticket) => (
+              {allTickets.map((ticketItem, index) => (
                 <div
-                  key={ticket.index}
+                  key={ticketItem.id}
                   className="border border-border rounded-lg p-4"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      {!ticket.transferred && ticket.status !== "claimed" && (
+                      {ticketItem.status === "valid" && (
                         <input
                           type="checkbox"
-                          checked={selectedTicketIndexes.includes(ticket.index)}
-                          onChange={() => handleSelect(ticket.index)}
+                          checked={selectedTicketIndexes.includes(ticketItem.id)}
+                          onChange={() => handleSelect(ticketItem.id)}
                           className="form-checkbox h-4 w-4 text-primary"
                         />
                       )}
                       <Badge variant="outline">
                         {t("ticketDetails.tickets.ticketNumber", {
-                          index: ticket.index,
+                          index: index + 1,
                         })}
                       </Badge>
-                      {getStatusBadge(ticket.status)}
-                      {ticket.transferred && ticket.code && (
+                      {getStatusBadge(ticketItem.status)}
+                      {ticketItem.ticketNumber && (
                         <span className="text-xs text-muted-foreground">
-                          {t("ticketDetails.tickets.transferred", {
-                            code: ticket.code,
-                          })}
+                          #{ticketItem.ticketNumber}
                         </span>
                       )}
                     </div>
 
-                    {!ticket.transferred && ticket.status !== "claimed" && (
+                    {ticketItem.status === "valid" && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleTransfer(ticket.index)}
+                        onClick={() => handleTransfer(ticketItem.id)}
                         className="group"
                       >
                         {t("ticketDetails.tickets.transfer")}
@@ -214,20 +258,29 @@ export default function TicketDetails() {
                     )}
                   </div>
 
-                  {/* Owner Information */}
+                  {/* Ticket Information */}
                   <div className="bg-muted/50 rounded-lg p-3 space-y-2">
                     <div className="flex items-center gap-2 text-sm">
                       <User className="h-4 w-4 text-muted-foreground" />
                       <span className="font-medium text-foreground">
-                        {ticket.owner.name}
+                        {ticketItem.customerName || ticket.customerName}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Phone className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">
-                        {ticket.owner.mobile}
+                        {t("ticketDetails.tickets.price")}:
                       </span>
+                      <span className="font-medium">{ticketItem.price || 0} EGP</span>
                     </div>
+                    {ticketItem.checkInTime && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                        <span className="text-muted-foreground">
+                          {t("ticketDetails.tickets.checkedIn")}:{" "}
+                          {format(new Date(ticketItem.checkInTime), "MMM dd, yyyy HH:mm")}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -251,19 +304,15 @@ export default function TicketDetails() {
             <CardContent className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span>{t("ticketDetails.summary.subtotal")}</span>
-                <span>{booking.price * booking.quantity} EGP</span>
+                <span>{Number(totalAmount).toFixed(2)} EGP</span>
               </div>
               <div className="flex justify-between">
                 <span>{t("ticketDetails.summary.vat")}</span>
-                <span>
-                  {(booking.price * booking.quantity * 0.14).toFixed(2)} EGP
-                </span>
+                <span>{(Number(totalAmount) * 0.14).toFixed(2)} EGP</span>
               </div>
               <div className="flex justify-between font-semibold text-foreground">
                 <span>{t("ticketDetails.summary.total")}</span>
-                <span>
-                  {(booking.price * booking.quantity * 1.14).toFixed(2)} EGP
-                </span>
+                <span>{(Number(totalAmount) * 1.14).toFixed(2)} EGP</span>
               </div>
             </CardContent>
           </Card>
@@ -272,3 +321,4 @@ export default function TicketDetails() {
     </div>
   );
 }
+

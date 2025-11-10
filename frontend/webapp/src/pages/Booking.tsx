@@ -23,6 +23,10 @@ import {
 } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/Contexts/AuthContext";
+import { TicketsService } from "@/lib/api/services/tickets";
+import { PaymentsService } from "@/lib/api/services/payments";
+import { EventsService } from "@/lib/api/services/events";
+import { useEventDetails } from "@/lib/api/hooks/useEventDetails";
 import {
   Ticket,
   User,
@@ -48,36 +52,78 @@ import i18n from "@/lib/i18n";
 const Booking = () => {
   const { t } = useTranslation();
   const { user, isVip } = useAuth();
-  const ticketTiers = [
-    {
-      key: "regular",
-      label: t("booking.tiers.regular"),
-      price: 250,
-      description: t("booking.tierDescriptions.regular"),
-    },
-    {
-      key: "gold",
-      label: t("booking.tiers.gold"),
-      price: 400,
-      description: t("booking.tierDescriptions.gold"),
-    },
-    {
-      key: "platinum",
-      label: t("booking.tiers.platinum"),
-      price: 600,
-      description: t("booking.tierDescriptions.platinum"),
-    },
-  ] as const;
-  type TierKey = (typeof ticketTiers)[number]["key"];
-  const [quantities, setQuantities] = useState<Record<TierKey, number>>({
-    regular: 0,
-    gold: 0,
-    platinum: 0,
-  });
-  const { id } = useParams();
+  const { eventId } = useParams<{ eventId: string }>();
+  const { event: apiEvent, loading: eventLoading, error: eventError, fetchEvent } = useEventDetails();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [showTerms, setShowTerms] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("credit_card");
+
+  // Fetch event details when component mounts
+  useEffect(() => {
+    if (eventId) {
+      console.log("Fetching event for booking page, eventId:", eventId);
+      fetchEvent(eventId);
+    } else {
+      console.warn("No eventId in URL params");
+    }
+  }, [eventId, fetchEvent]);
+
+  // Use real event data or fallback to defaults
+  const eventData = apiEvent ? {
+    title: apiEvent.title || "Event",
+    date: apiEvent.date || new Date().toISOString().split('T')[0],
+    time: apiEvent.time || "10:00",
+    location: apiEvent.location || apiEvent.venueInfo || "Venue",
+    minimumAge: apiEvent.minimumAge?.toString() || undefined,
+    price: apiEvent.price || 250,
+    startingPrice: apiEvent.startingPrice || 300, // Default price from event
+    childrenEnabled: apiEvent.childrenEnabled !== false,
+    freeChildAge: apiEvent.freeChildAge || 5,
+    isUnseated: apiEvent.isUnseated || false,
+    ticketCategories: apiEvent.ticketCategories || [],
+  } : {
+    title: "Loading...",
+    date: new Date().toISOString().split('T')[0],
+    time: "10:00",
+    location: "Venue",
+    minimumAge: undefined,
+    price: 250,
+    startingPrice: 300,
+    childrenEnabled: true,
+    freeChildAge: 5,
+    isUnseated: false,
+    ticketCategories: [],
+  };
+
+  // Use real ticket categories from event or fallback to single default ticket
+  const ticketTiers = eventData.ticketCategories && eventData.ticketCategories.length > 0
+    ? eventData.ticketCategories.map((cat, index) => ({
+        key: (cat.name?.toLowerCase().replace(/\s+/g, '_') || `tier_${index}`) as any,
+        label: cat.name || `Tier ${index + 1}`, // Use name as label - this matches TicketCategory.name in backend
+        price: cat.price || 250,
+        description: cat.description || t("booking.tierDescriptions.regular"),
+        ticketsAvailable: cat.ticketsAvailable || 0, // Track available tickets per category
+      }))
+    : [
+        // Single default ticket when no categories are configured
+        {
+          key: "regular", // Use "regular" key to match existing styling and translations
+          label: t("booking.tiers.regular", "Regular Ticket"),
+          price: eventData.startingPrice || 300, // Use starting_price from event or default to 300
+          description: t("booking.tierDescriptions.regular", "Standard ticket"),
+          ticketsAvailable: apiEvent?.ticketsAvailable || 0,
+        },
+      ] as const;
+  
+  type TierKey = (typeof ticketTiers)[number]["key"];
+  const [quantities, setQuantities] = useState<Record<TierKey, number>>(() => {
+    const initial: any = {};
+    ticketTiers.forEach(tier => {
+      initial[tier.key] = 0;
+    });
+    return initial;
+  });
 
   const onConfirmPayment = () => {
     setShowTerms(true);
@@ -87,34 +133,93 @@ const Booking = () => {
     setShowTerms(false);
     proceedWithPayment();
   };
-  const proceedWithPayment = () => {
-    const newBooking = {
-      id,
-      title: eventData.title,
-      date: eventData.date,
-      time: eventData.time,
-      timestamp: new Date().toISOString(),
-    };
+  
+  const proceedWithPayment = async () => {
+    try {
+      // Determine the main ticket category (use the first selected tier)
+      const selectedTier = ticketTiers.find(t => quantities[t.key] > 0);
+      if (!selectedTier) {
+        toast({
+          title: t("booking.errorTitle"),
+          description: t("booking.noTicketsSelected"),
+          variant: "destructive",
+        });
+        return;
+      }
 
-    const stored = localStorage.getItem("bookedEvents");
-    const existing = stored ? JSON.parse(stored) : [];
-    localStorage.setItem(
-      "bookedEvents",
-      JSON.stringify([...existing, newBooking])
-    );
+      // Validate that tickets are selected
+      if (totalTickets === 0) {
+        toast({
+          title: t("booking.errorTitle"),
+          description: t("booking.noTicketsSelected"),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Book tickets using TicketsService
+      // Use the actual category name from the ticket tier, not the key
+      const categoryName = selectedTier.label; // Use label which matches the TicketCategory name
+      const bookingResponse = await TicketsService.bookTickets({
+        event_id: parseInt(eventId!, 10),
+        category: categoryName,
+        quantity: totalTickets,
+        payment_method: selectedPaymentMethod,
+      });
+
+      // Extract ticket IDs from booking response
+      const ticketIds: string[] = [];
+      if (bookingResponse.data?.tickets && Array.isArray(bookingResponse.data.tickets)) {
+        bookingResponse.data.tickets.forEach((ticket: any) => {
+          if (ticket.id) {
+            ticketIds.push(ticket.id);
+          }
+        });
+      }
+
+      // Process payment using PaymentsService
+      const paymentResponse = await PaymentsService.processPayment({
+        amount: totalAmount,
+        payment_method: selectedPaymentMethod,
+        event_id: parseInt(eventId!, 10),
+        ticket_ids: ticketIds, // Pass ticket IDs from booking response
+      });
+
+      // Extract transaction_id from response (backend returns { transaction_id, status, amount })
+      const transactionId = paymentResponse.data?.transaction_id;
+
+      if (!transactionId) {
+        throw new Error("Failed to get transaction ID from payment response");
+      }
+
+      // Confirm payment
+      const confirmResponse = await PaymentsService.confirmPayment({
+        transaction_id: transactionId,
+      });
 
     toast({
       title: t("booking.paymentSuccessTitle"),
       description: t("booking.paymentSuccessDescription"),
     });
 
+      // Use the transaction_id from the payment process response
+      const finalTransactionId = transactionId;
+
     navigate("/payment-confirmation", {
       state: {
         eventTitle: eventData.title,
         totalAmount,
-        transactionId: crypto.randomUUID(),
+          transactionId: finalTransactionId,
       },
     });
+    } catch (error: any) {
+      console.error("Payment error:", error);
+      toast({
+        title: t("booking.paymentErrorTitle"),
+        description: error.message || t("booking.paymentErrorDescription"),
+        variant: "destructive",
+      });
+    }
   };
 
   const [tickets, setTickets] = useState<
@@ -143,6 +248,8 @@ const Booking = () => {
     gold: "bg-gradient-to-r from-yellow-50 to-yellow-100 dark:from-yellow-900/30 dark:to-yellow-800/30 border-l-4 border-yellow-400 dark:border-yellow-300", // gold
     regular:
       "bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 border-l-4 border-green-400 dark:border-green-300", // green
+    default:
+      "bg-gradient-to-r from-green-50 to-green-100 dark:from-green-900/30 dark:to-green-800/30 border-l-4 border-green-400 dark:border-green-300", // green (same as regular)
   };
 
   const ticketTypeBadges: Record<TierKey, { text: string; color: string }> = {
@@ -155,19 +262,13 @@ const Booking = () => {
       text: "Standard",
       color: "bg-green-600 dark:bg-green-500 text-white",
     },
+    default: {
+      text: "Standard",
+      color: "bg-green-600 dark:bg-green-500 text-white",
+    },
   };
 
-  const eventData = {
-    title: "Cairo Jazz Festival 2024",
-    date: "2024-02-15",
-    time: "10:00",
-    location: "Cairo Opera House",
-    minimumAge: "13",
-    price: 250,
-    childrenEnabled: true,
-    freeChildAge: 5, // Children under 5 years old are free
-    isUnseated: true, // This event is unseated (VIP eligible)
-  };
+  // eventData is now defined above using real API data
 
   const totalTickets = Object.values(quantities).reduce((s, n) => s + n, 0);
 
@@ -358,6 +459,23 @@ const Booking = () => {
       </Dialog>
 
       <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {eventLoading ? (
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">{t("common.loading")}</p>
+            </div>
+          </div>
+        ) : !apiEvent || eventError ? (
+          <div className="text-center py-12">
+            <p className="text-destructive mb-4">
+              {eventError || t("booking.eventNotFound", "Event not found")}
+            </p>
+            <Button onClick={() => navigate("/")}>
+              {t("common.goHome", "Go to Home")}
+            </Button>
+          </div>
+        ) : (
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-2">
@@ -842,9 +960,11 @@ const Booking = () => {
                         type="radio"
                         name="payment"
                         id="card"
-                        defaultChecked
+                        value="credit_card"
+                        checked={selectedPaymentMethod === "credit_card"}
+                        onChange={(e) => setSelectedPaymentMethod(e.target.value)}
                       />
-                      <label htmlFor="card" className="flex items-center gap-2">
+                      <label htmlFor="card" className="flex items-center gap-2 cursor-pointer">
                         <CreditCard className="h-4 w-4" />
                         {t("booking.creditDebit")}
                       </label>
@@ -855,6 +975,7 @@ const Booking = () => {
             </div>
           </div>
         </div>
+        )}
       </main>
     </div>
   );

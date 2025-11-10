@@ -11,10 +11,11 @@ import { tokenManager } from "../tokenManager";
 import { ValidationService } from "../validation";
 
 // API Configuration
+// Use relative URL to fetch from the same backend server
 export const API_CONFIG = {
   BASE_URL:
     import.meta.env.VITE_API_BASE_URL ||
-    "https://trapi.flokisystems.com/api/v1",
+    "/api/v1", // Relative URL - uses same origin as frontend
   TIMEOUT: 30000, // 30 seconds
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // 1 second
@@ -39,14 +40,17 @@ export const createApiClient = (): AxiosInstance => {
       }
 
       // Get valid token using token manager
-      try {
-        const token = await tokenManager.getValidToken();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+      // Skip if token was already refreshed in response interceptor
+      if (!(config as any)._tokenRefreshed) {
+        try {
+          const token = await tokenManager.getValidToken();
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+        } catch (error) {
+          // Continue without token - let the response interceptor handle 401s
+          console.warn("Failed to get valid token for request:", config.url);
         }
-      } catch (error) {
-        // Continue without token - let the response interceptor handle 401s
-        console.warn("Failed to get valid token for request:", config.url);
       }
 
       // Add request timestamp and ID for debugging
@@ -85,9 +89,30 @@ export const createApiClient = (): AxiosInstance => {
         return Promise.reject(error);
       }
 
+      // Skip token refresh for password reset endpoints (they work without auth)
+      const passwordResetEndpoints = [
+        "/forgot-password/request-otp",
+        "/forgot-password/verify-otp",
+        "/reset-password",
+      ];
+      const isPasswordResetEndpoint = passwordResetEndpoints.some((endpoint) =>
+        originalRequest.url?.includes(endpoint)
+      );
+      if (isPasswordResetEndpoint) {
+        // For password reset endpoints, extract error message properly and don't try to refresh tokens
+        const errorData = error.response?.data;
+        if (errorData?.error?.message) {
+          // Extract the error message from the backend response
+          error.message = errorData.error.message;
+        }
+        return Promise.reject(error);
+      }
+
       // Handle token refresh with race condition protection
-      if (error.response?.status === 401 && !originalRequest._retry) {
+      // Prevent infinite loops - only retry once per request
+      if (error.response?.status === 401 && !originalRequest._retry && !originalRequest._refreshAttempted) {
         originalRequest._retry = true;
+        originalRequest._refreshAttempted = true;
 
         try {
           console.log("401 error detected, attempting token refresh...");
@@ -102,49 +127,84 @@ export const createApiClient = (): AxiosInstance => {
                 detail: { reason: "No refresh token available" },
               })
             );
-            throw new Error("Authentication failed");
+            const authError: any = new Error("Authentication failed");
+            authError.status = 401;
+            authError.isAuthError = true;
+            throw authError;
           }
 
           // Log refresh token expiration details
           ValidationService.logRefreshTokenExpiration(refreshToken);
 
           // Check if refresh token is expired before attempting refresh
-          if (ValidationService.isTokenExpired(refreshToken)) {
-            console.log("Refresh token is expired, clearing auth");
-            clearSecureAuth();
-            window.dispatchEvent(
-              new CustomEvent("auth-required", {
-                detail: { reason: "Refresh token expired" },
-              })
-            );
-            throw new Error("Authentication failed");
+          // Use a more lenient check - only clear if we're CERTAIN it's expired
+          const isExpired = ValidationService.isTokenExpired(refreshToken);
+          if (isExpired) {
+            // Double-check by parsing the token directly
+            try {
+              const parts = refreshToken.split(".");
+              if (parts.length === 3) {
+                const payload = JSON.parse(atob(parts[1]));
+                const currentTime = Math.floor(Date.now() / 1000);
+                // Only clear if token is actually expired (with small buffer)
+                if (payload.exp && payload.exp < currentTime + 60) {
+                  console.log("Refresh token is expired, clearing auth");
+                  clearSecureAuth();
+                  window.dispatchEvent(
+                    new CustomEvent("auth-required", {
+                      detail: { reason: "Refresh token expired" },
+                    })
+                  );
+                  const authError: any = new Error("Authentication failed");
+                  authError.status = 401;
+                  authError.isAuthError = true;
+                  throw authError;
+                } else {
+                  // Token is still valid, continue with refresh attempt
+                  console.log("Refresh token validation returned false positive, attempting refresh anyway");
+                }
+              }
+            } catch (error) {
+              // If we can't parse, don't clear - let the server decide during refresh
+              console.warn("Could not parse refresh token, attempting refresh anyway:", error);
+            }
           }
 
           const newToken = await tokenManager.refreshAccessToken();
 
           if (newToken) {
+            // Small delay to ensure token is fully stored before retrying
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             // Update the original request with new token
+            // Make sure headers object exists
+            if (!originalRequest.headers) {
+              originalRequest.headers = {} as any;
+            }
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            console.log("Token refreshed successfully, retrying request...");
+            // Mark that we've already set the token to prevent interceptor from overwriting
+            (originalRequest as any)._tokenRefreshed = true;
+            // Don't reset retry flag - prevent infinite loops
+            console.log("Token refreshed successfully, retrying request with new token...");
             return client(originalRequest);
           } else {
-            // Token refresh failed, clear auth
-            console.warn("Token refresh failed, clearing authentication");
-            clearSecureAuth();
-
-            // Dispatch auth-required event
-            window.dispatchEvent(
-              new CustomEvent("auth-required", {
-                detail: { reason: "Token refresh failed" },
-              })
-            );
-
-            throw new Error("Authentication failed");
+            // Token refresh returned null - could be 404 (endpoint doesn't exist)
+            // Don't clear auth in this case - just fail the request
+            // The original request will fail with 401, which is fine
+            console.warn("Token refresh returned null, but keeping auth - original request will fail");
+            // Don't throw - let the original 401 error propagate
+            return Promise.reject(error);
           }
         } catch (refreshError: any) {
           console.error("Token refresh failed:", refreshError);
 
-          // Clear auth for any refresh error
+          // Don't clear auth on 404 or 500 - endpoint might not exist or server error
+          if (refreshError.status === 404 || refreshError.status === 500) {
+            console.warn(`Refresh endpoint ${refreshError.status} - keeping auth, original request will fail`);
+            return Promise.reject(error); // Return original error, don't clear auth
+          }
+
+          // Clear auth for other refresh errors (401, 403, etc.)
           clearSecureAuth();
 
           // Dispatch auth-required event
@@ -157,18 +217,102 @@ export const createApiClient = (): AxiosInstance => {
             })
           );
 
+          // Ensure error has status code for retry logic
+          if (!refreshError.status) {
+            refreshError.status = 401;
+            refreshError.isAuthError = true;
+          }
           throw refreshError;
         }
       }
 
       // Transform error response
+      // Handle backend error format: { error: { code: "...", message: "..." } }
+      const errorData = error.response?.data;
+      let errorMessage: string | object = error.message || "An unexpected error occurred";
+      
+      if (errorData) {
+        // Check for nested error format: { error: { code: "...", message: "..." } }
+        if (errorData.error?.message) {
+          const messageValue = errorData.error.message;
+          // Handle both string and object messages
+          if (typeof messageValue === "string") {
+            errorMessage = messageValue;
+          } else if (typeof messageValue === "object" && messageValue !== null) {
+            // Django serializer errors format: { field_name: [ErrorDetail(...)] }
+            const errorKeys = Object.keys(messageValue);
+            if (errorKeys.length > 0) {
+              const firstKey = errorKeys[0];
+              const firstError = messageValue[firstKey];
+              if (Array.isArray(firstError) && firstError.length > 0) {
+                errorMessage = firstError[0];
+              } else if (typeof firstError === "string") {
+                errorMessage = firstError;
+              } else {
+                errorMessage = messageValue; // Keep as object for further processing
+              }
+            }
+          }
+        } else if (errorData.message) {
+          // Handle both string and object messages
+          if (typeof errorData.message === "string") {
+            errorMessage = errorData.message;
+          } else if (typeof errorData.message === "object" && errorData.message !== null) {
+            // Django serializer errors format: { field_name: [ErrorDetail(...)] }
+            const errorKeys = Object.keys(errorData.message);
+            if (errorKeys.length > 0) {
+              const firstKey = errorKeys[0];
+              const firstError = errorData.message[firstKey];
+              if (Array.isArray(firstError) && firstError.length > 0) {
+                errorMessage = firstError[0];
+              } else if (typeof firstError === "string") {
+                errorMessage = firstError;
+              } else {
+                errorMessage = errorData.message; // Keep as object for further processing
+              }
+            }
+          }
+        } else if (typeof errorData === "object" && !errorData.error) {
+          // Handle direct serializer errors format: { field_name: [ErrorDetail(...)] }
+          const errorKeys = Object.keys(errorData);
+          if (errorKeys.length > 0 && !errorKeys.includes("code") && !errorKeys.includes("status")) {
+            const firstKey = errorKeys[0];
+            const firstError = errorData[firstKey];
+            if (Array.isArray(firstError) && firstError.length > 0) {
+              errorMessage = firstError[0];
+            } else if (typeof firstError === "string") {
+              errorMessage = firstError;
+            } else {
+              errorMessage = errorData; // Keep as object for further processing
+            }
+          }
+        }
+      }
+      
+      // Ensure errorMessage is always a string
+      const finalErrorMessage = typeof errorMessage === "string" 
+        ? errorMessage 
+        : (typeof errorMessage === "object" && errorMessage !== null
+          ? (() => {
+              // Try to extract from object
+              const keys = Object.keys(errorMessage);
+              if (keys.length > 0) {
+                const firstKey = keys[0];
+                const firstValue = errorMessage[firstKey];
+                if (Array.isArray(firstValue) && firstValue.length > 0) {
+                  return firstValue[0];
+                } else if (typeof firstValue === "string") {
+                  return firstValue;
+                }
+              }
+              return JSON.stringify(errorMessage);
+            })()
+          : String(errorMessage));
+      
       const apiError: ApiError = {
-        message:
-          error.response?.data?.message ||
-          error.message ||
-          "An unexpected error occurred",
-        code: error.response?.data?.code,
-        field: error.response?.data?.field,
+        message: finalErrorMessage,
+        code: errorData?.error?.code || errorData?.code,
+        field: errorData?.field,
         status: error.response?.status,
       };
 
@@ -273,8 +417,40 @@ export const handleApiResponse = <T>(response: AxiosResponse<T>) => {
 export const handleApiError = (error: any): never => {
   if (error.response) {
     // Server responded with error status
+    const errorData = error.response.data;
+    let errorMessage = "Server error";
+    
+    // Extract error message properly
+    if (typeof errorData?.message === "string") {
+      errorMessage = errorData.message;
+    } else if (typeof errorData?.message === "object" && errorData.message !== null) {
+      // Django serializer errors format: { field_name: [ErrorDetail(...)] }
+      const errorKeys = Object.keys(errorData.message);
+      if (errorKeys.length > 0) {
+        const firstKey = errorKeys[0];
+        const firstError = errorData.message[firstKey];
+        if (Array.isArray(firstError) && firstError.length > 0) {
+          errorMessage = firstError[0];
+        } else if (typeof firstError === "string") {
+          errorMessage = firstError;
+        }
+      }
+    } else if (typeof errorData === "object" && errorData !== null) {
+      // Handle direct serializer errors format: { field_name: [ErrorDetail(...)] }
+      const errorKeys = Object.keys(errorData);
+      if (errorKeys.length > 0 && !errorKeys.includes("code") && !errorKeys.includes("status")) {
+        const firstKey = errorKeys[0];
+        const firstError = errorData[firstKey];
+        if (Array.isArray(firstError) && firstError.length > 0) {
+          errorMessage = firstError[0];
+        } else if (typeof firstError === "string") {
+          errorMessage = firstError;
+        }
+      }
+    }
+    
     throw {
-      message: error.response.data?.message || "Server error",
+      message: errorMessage,
       status: error.response.status,
       code: error.response.data?.code,
     };
@@ -287,7 +463,7 @@ export const handleApiError = (error: any): never => {
   } else {
     // Other error
     throw {
-      message: error.message || "An unexpected error occurred",
+      message: typeof error.message === "string" ? error.message : "An unexpected error occurred",
       status: 500,
     };
   }

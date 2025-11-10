@@ -8,19 +8,26 @@ urlpatterns = [
     # Authentication
     path('users/register/', views.user_register, name='user-register'),
     path('users/verify-otp/', views.user_verify_otp, name='user-verify-otp'),
+    path('users/send-email-otp/', views.user_send_email_otp, name='user-send-email-otp'),
+    path('users/verify-email-otp/', views.user_verify_email_otp, name='user-verify-email-otp'),
+    path('users/complete-registration/', views.user_complete_registration, name='user-complete-registration'),
     path('users/login/', views.user_login, name='user-login'),
     path('users/verify-login-otp/', views.user_verify_login_otp, name='user-verify-login-otp'),
+    path('users/refresh-token/', views.user_refresh_token, name='user-refresh-token'),
     path('users/me/', views.user_me, name='user-me'),
+    path('users/me/card-details/', views.user_card_details, name='user-card-details'),
+    path('me/bookings/', views.user_me_bookings, name='user-me-bookings'),
     path('users/profile/', views.user_profile_update, name='user-profile-update'),
     path('users/forgot-password/request-otp/', views.user_forgot_password_request_otp, name='user-forgot-password-request-otp'),
+    path('users/forgot-password/verify-otp/', views.user_verify_password_reset_otp, name='user-verify-password-reset-otp'),
     path('users/reset-password/', views.user_reset_password, name='user-reset-password'),
     
     # Public Events
     path('public/events/', views.public_events_list, name='public-events-list'),
     path('public/events/featured/', views.public_events_featured, name='public-events-featured'),
     path('public/events/categories/', views.public_events_categories, name='public-events-categories'),
-    path('public/events/<uuid:event_id>/', views.public_event_detail, name='public-event-detail'),
-    path('public/organizers/<uuid:organizer_id>/', views.public_organizer_detail, name='public-organizer-detail'),
+    path('public/events/<int:event_id>/', views.public_event_detail, name='public-event-detail'),
+    path('public/organizers/<int:organizer_id>/', views.public_organizer_detail, name='public-organizer-detail'),
     path('public/venues/', views.public_venues_list, name='public-venues-list'),
     
     # Tickets
@@ -31,7 +38,7 @@ urlpatterns = [
     path('users/tickets/<uuid:ticket_id>/gift/', views.user_ticket_gift, name='user-ticket-gift'),
     path('users/tickets/<uuid:ticket_id>/qr-code/', views.user_ticket_qr_code, name='user-ticket-qr-code'),
     path('users/tickets/<uuid:ticket_id>/refund-request/', views.user_refund_request, name='user-ticket-refund-request'),
-    path('users/events/<uuid:event_id>/checkin-status/', views.user_event_checkin_status, name='user-event-checkin-status'),
+    path('users/events/<int:event_id>/checkin-status/', views.user_event_checkin_status, name='user-event-checkin-status'),
     
     # Payments
     path('payments/process/', views.payment_process, name='payment-process'),
@@ -53,7 +60,7 @@ urlpatterns = [
     
     # Favorites
     path('users/favorites/', views.user_favorites, name='user-favorites'),
-    path('users/favorites/<uuid:event_id>/', views.user_favorites, name='user-favorite-delete'),
+    path('users/favorites/<int:event_id>/', views.user_favorites, name='user-favorite-delete'),
     
     # Analytics
     path('users/analytics/', views.user_analytics, name='user-analytics'),

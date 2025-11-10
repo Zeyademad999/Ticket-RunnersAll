@@ -127,7 +127,7 @@ export class BookingsService {
   static async getCustomerCardDetails(): Promise<CustomerCardDetailsResponse> {
     return ApiErrorHandler.withRetry(async () => {
       const response = await apiClient.get<CustomerCardDetailsResponse>(
-        `/me/card-details`
+        `/users/me/card-details/`
       );
       return handleApiResponse(response);
     }, "Customer Card Details");

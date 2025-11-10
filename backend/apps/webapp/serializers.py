@@ -3,7 +3,7 @@ Serializers for WebApp Portal (User-Facing).
 """
 from rest_framework import serializers
 from customers.models import Customer, Dependent
-from events.models import Event
+from events.models import Event, TicketCategory
 from tickets.models import Ticket
 from nfc_cards.models import NFCCard, NFCCardAutoReload
 from payments.models import PaymentTransaction
@@ -13,9 +13,22 @@ from apps.webapp.models import Favorite
 class UserRegistrationSerializer(serializers.Serializer):
     """Serializer for user registration."""
     mobile_number = serializers.CharField(max_length=20, required=True)
-    password = serializers.CharField(write_only=True, required=True, min_length=6)
-    name = serializers.CharField(max_length=200, required=True)
+    password = serializers.CharField(write_only=True, required=False, min_length=6, allow_blank=True)
+    name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    first_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     email = serializers.EmailField(required=True)
+    
+    def validate(self, data):
+        """Validate that either name or first_name+last_name is provided."""
+        if not data.get('name') and not (data.get('first_name') and data.get('last_name')):
+            raise serializers.ValidationError("Either 'name' or both 'first_name' and 'last_name' must be provided.")
+        
+        # Combine first_name and last_name into name if name is not provided
+        if not data.get('name') and data.get('first_name') and data.get('last_name'):
+            data['name'] = f"{data['first_name']} {data['last_name']}".strip()
+        
+        return data
 
 
 class UserOTPSerializer(serializers.Serializer):
@@ -52,23 +65,106 @@ class DependentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class TicketCategorySerializer(serializers.ModelSerializer):
+    """Serializer for ticket categories in public events."""
+    sold_tickets = serializers.IntegerField(read_only=True)
+    tickets_available = serializers.IntegerField(read_only=True)
+    
+    class Meta:
+        model = TicketCategory
+        fields = [
+            'id', 'name', 'price', 'total_tickets', 'sold_tickets',
+            'tickets_available', 'description', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'sold_tickets', 'tickets_available', 'created_at', 'updated_at']
+
+
 class PublicEventSerializer(serializers.ModelSerializer):
     """Serializer for public event listing."""
+    ticket_categories = TicketCategorySerializer(many=True, read_only=True)
+    
     organizer_name = serializers.CharField(source='organizer.name', read_only=True)
+    organizer_id = serializers.IntegerField(source='organizer.id', read_only=True)
+    organizer = serializers.SerializerMethodField()
     venue_name = serializers.CharField(source='venue.name', read_only=True)
+    venue_address = serializers.CharField(source='venue.address', read_only=True)
+    venue_city = serializers.CharField(source='venue.city', read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True)
+    category_id = serializers.IntegerField(source='category.id', read_only=True)
+    # For frontend compatibility - use venue address as location
+    location = serializers.SerializerMethodField()
+    thumbnail_path = serializers.SerializerMethodField()
+    starting_price = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
     
     class Meta:
         model = Event
         fields = [
-            'id', 'title', 'description', 'date', 'time', 'location',
-            'organizer_name', 'venue_name', 'category', 'status',
-            'total_tickets', 'ticket_limit'
+            'id', 'title', 'description', 'about_venue', 'gates_open_time', 'terms_and_conditions',
+            'date', 'time', 
+            'location', 'venue_name', 'venue_address', 'venue_city',
+            'organizer_name', 'organizer_id', 'organizer', 'category_id', 'category_name', 'status',
+            'featured', 'total_tickets', 'ticket_limit', 'ticket_transfer_enabled',
+            'thumbnail_path', 'starting_price', 'image', 'ticket_categories'
         ]
+    
+    def get_organizer(self, obj):
+        """Get organizer details as an object."""
+        if obj.organizer:
+            request = self.context.get('request')
+            logo_url = None
+            if obj.organizer.profile_image:
+                if request:
+                    logo_url = request.build_absolute_uri(obj.organizer.profile_image.url)
+                else:
+                    logo_url = obj.organizer.profile_image.url if hasattr(obj.organizer.profile_image, 'url') else str(obj.organizer.profile_image)
+            
+            return {
+                'id': obj.organizer.id,
+                'name': obj.organizer.name,
+                'logo': logo_url,
+            }
+        return None
+    
+    def get_image(self, obj):
+        """Get event main image URL."""
+        if obj.image:
+            # Return relative URL so it works with Vite proxy
+            return obj.image.url if hasattr(obj.image, 'url') else str(obj.image)
+        return None
+    
+    def get_location(self, obj):
+        """Return venue address as location for frontend compatibility."""
+        if obj.venue:
+            return f"{obj.venue.address}, {obj.venue.city}" if obj.venue.address else obj.venue.city or ""
+        return ""
+    
+    def get_thumbnail_path(self, obj):
+        """Get event main image/thumbnail."""
+        if obj.image:
+            return obj.image.url if hasattr(obj.image, 'url') else str(obj.image)
+        return ""
+    
+    def get_starting_price(self, obj):
+        """Get the starting price for this event."""
+        # Use the event's starting_price field if set, otherwise calculate from tickets
+        if obj.starting_price:
+            return str(obj.starting_price)
+        
+        # Fallback to minimum ticket price if starting_price is not set
+        from tickets.models import Ticket
+        from django.db.models import Min
+        
+        min_price = Ticket.objects.filter(event=obj).aggregate(
+            min_price=Min('price')
+        )['min_price']
+        
+        return str(min_price) if min_price else None
 
 
 class TicketBookingSerializer(serializers.Serializer):
     """Serializer for ticket booking."""
-    event_id = serializers.UUIDField(required=True)
+    event_id = serializers.IntegerField(required=True)
     category = serializers.CharField(required=True)
     quantity = serializers.IntegerField(required=True, min_value=1)
     payment_method = serializers.ChoiceField(

@@ -161,7 +161,8 @@ AUTH_USER_MODEL = 'authentication.AdminUser'
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'apps.webapp.authentication.CustomerJWTAuthentication',  # Customer auth first - handles customer_id tokens
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # Standard JWT auth for admin/organizer tokens
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -277,3 +278,12 @@ SPECTACULAR_SETTINGS = {
 
 # Floki SMS Configuration
 FLOKI_SMS_TOKEN = config('FLOKI_SMS_TOKEN', default='floki-secure-token-9f8e4c1f79284d99bdad6c74ea7ac2f1')
+
+# Email Configuration
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='localhost')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@ticketrunners.com')

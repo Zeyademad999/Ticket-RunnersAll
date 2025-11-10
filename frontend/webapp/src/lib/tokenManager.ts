@@ -53,16 +53,34 @@ class TokenManager {
     ValidationService.logRefreshTokenExpiration(refreshToken);
 
     // Check if refresh token is expired first
-    if (ValidationService.isTokenExpired(refreshToken)) {
-      console.log("Refresh token is expired, clearing auth");
-      this.clearAuth();
-      // Dispatch auth-required event to trigger login modal
-      window.dispatchEvent(
-        new CustomEvent("auth-required", {
-          detail: { reason: "Refresh token expired" },
-        })
-      );
-      return null;
+    // Use a more lenient check - only clear if we're CERTAIN it's expired
+    const isExpired = ValidationService.isTokenExpired(refreshToken);
+    if (isExpired) {
+      // Double-check by parsing the token directly
+      try {
+        const parts = refreshToken.split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1]));
+          const currentTime = Math.floor(Date.now() / 1000);
+          // Only clear if token is actually expired (with small buffer)
+          if (payload.exp && payload.exp < currentTime + 60) {
+            console.log("Refresh token is expired, clearing auth");
+            this.clearAuth();
+            window.dispatchEvent(
+              new CustomEvent("auth-required", {
+                detail: { reason: "Refresh token expired" },
+              })
+            );
+            return null;
+          } else {
+            // Token is still valid, don't clear
+            console.log("Refresh token validation returned false positive, keeping token");
+          }
+        }
+      } catch (error) {
+        // If we can't parse, don't clear - let the server decide
+        console.warn("Could not parse refresh token, keeping it:", error);
+      }
     }
 
     // Check if access token is expired
@@ -178,6 +196,14 @@ class TokenManager {
         ) {
           console.warn("Authentication error during refresh, clearing auth");
           this.clearAuth();
+        } else if (error.status === 404) {
+          // 404 means endpoint doesn't exist - don't clear auth, just return null
+          console.warn("Refresh endpoint not found (404), but keeping tokens");
+          return null; // Don't clear auth on 404
+        } else if (error.status === 500) {
+          // 500 means server error - don't clear auth, just return null
+          console.warn("Server error during refresh (500), but keeping tokens");
+          return null; // Don't clear auth on server errors
         } else {
           console.warn(
             "Unknown error during refresh, clearing auth for safety"
@@ -222,22 +248,21 @@ class TokenManager {
 
     try {
       // Call the refresh API with timeout protection
-      const response = await fetch(
-        `${
-          import.meta.env.VITE_API_BASE_URL ||
-          "https://trapi.flokisystems.com/api/v1"
-        }/auth/refresh`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            refresh_token: refreshToken,
-          }),
-          signal: controller.signal,
-        }
-      );
+      // Use customer-specific refresh endpoint at /api/v1/users/refresh-token/
+      // This handles custom claims (customer_id) properly
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+      const refreshUrl = `${baseUrl}/users/refresh-token/`;
+      
+      const response = await fetch(refreshUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          refresh: refreshToken, // TokenRefreshView expects 'refresh' not 'refresh_token'
+        }),
+        signal: controller.signal,
+      });
 
       clearTimeout(timeoutId);
 
@@ -250,21 +275,25 @@ class TokenManager {
 
       const data = await response.json();
 
-      // Validate response structure
-      if (!data.access_token || !data.expires_at) {
-        throw new Error("Invalid response structure from refresh token API");
+      // Customer refresh endpoint returns: { access: "...", refresh: "..." }
+      // Extract access token from response
+      const newAccessToken = data.access || data.access_token || data.data?.access || data.data?.access_token;
+      
+      if (!newAccessToken) {
+        throw new Error("Invalid response structure from refresh token API - no access token found");
       }
 
-      // Store the new token
-      await setSecureToken(data.access_token);
+      // Store the new access token
+      await setSecureToken(newAccessToken);
 
       // If a new refresh token is provided, store it (token rotation)
-      if (data.refresh_token) {
-        await setSecureRefreshToken(data.refresh_token);
+      const newRefreshToken = data.refresh || data.refresh_token;
+      if (newRefreshToken) {
+        await setSecureRefreshToken(newRefreshToken);
         console.log("Refresh token rotated successfully");
       }
 
-      return data.access_token;
+      return newAccessToken;
     } catch (error: any) {
       clearTimeout(timeoutId);
 

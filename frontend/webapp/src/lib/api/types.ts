@@ -80,14 +80,17 @@ export interface EventData {
   layoutImageUrl?: string;
   date: string;
   time: string;
+  gatesOpenTime?: string;
   location: string;
   price: number;
+  startingPrice?: number; // Default ticket price from event form
   originalPrice?: number;
   category: string;
   rating: number;
   attendees: number;
   description: string;
   venueInfo: string;
+  termsAndConditions?: string;
   facilities?: Facility[];
   isFeatured?: boolean;
   organizer: Organizer;
@@ -459,6 +462,8 @@ export interface SignupStartRequest {
 
 export interface SignupStartResponse {
   signup_id: string;
+  message?: string;
+  mobile_number?: string;
 }
 
 // Mobile OTP types for signup process
@@ -486,8 +491,9 @@ export interface VerifyMobileOtpResponse {
 // Email OTP types for signup process
 export interface SendEmailOtpRequest {
   signup_id: number;
+  mobile_number?: string;
   email: string;
-  otp_code: string;
+  otp_code?: string;
 }
 
 export interface SendEmailOtpResponse {
@@ -497,6 +503,7 @@ export interface SendEmailOtpResponse {
 // Email OTP verification types
 export interface VerifyEmailOtpRequest {
   signup_id: number;
+  mobile_number?: string;
   email: string;
   otp_code: string;
 }
@@ -510,10 +517,15 @@ export interface SetPasswordRequest {
   signup_id: number;
   password: string;
   password_confirmation: string;
+  mobile_number?: string;
 }
 
 export interface SetPasswordResponse {
-  password_set: boolean;
+  password_set?: boolean;
+  access?: string;
+  refresh?: string;
+  user?: any;
+  message?: string;
 }
 
 // Profile image upload types for signup process

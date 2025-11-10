@@ -5,11 +5,12 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.db.models import Sum, Count
 from core.permissions import IsAdmin
 from core.exceptions import PermissionDenied, NotFoundError
 from core.utils import get_client_ip, log_system_action
-from .models import Event
+from .models import Event, TicketCategory
 from .serializers import (
     EventListSerializer,
     EventDetailSerializer,
@@ -28,11 +29,12 @@ class EventViewSet(viewsets.ModelViewSet):
     search_fields = ['title', 'description']
     ordering_fields = ['date', 'created_at', 'title']
     ordering = ['-date', '-time']
+    parser_classes = [MultiPartParser, FormParser, JSONParser]  # Support file uploads
     
     def get_serializer_class(self):
         if self.action == 'list':
             return EventListSerializer
-        elif self.action == 'create':
+        elif self.action in ['create', 'update', 'partial_update']:
             return EventCreateSerializer
         return EventDetailSerializer
     
@@ -126,6 +128,9 @@ class EventViewSet(viewsets.ModelViewSet):
         Delete an event.
         DELETE /api/events/:id/
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         instance = self.get_object()
         
         # Check if event has sold tickets
@@ -134,20 +139,35 @@ class EventViewSet(viewsets.ModelViewSet):
                 'Cannot delete event with sold tickets. Cancel the event instead.'
             )
         
+        # Save event details before deletion
         event_title = instance.title
-        self.perform_destroy(instance)
+        event_id = instance.id
         
-        # Log system action
-        ip_address = get_client_ip(request)
-        log_system_action(
-            user=request.user,
-            action='DELETE_EVENT',
-            category='event',
-            severity='WARNING',
-            description=f'Deleted event: {event_title}',
-            ip_address=ip_address,
-            status='SUCCESS'
-        )
+        # Delete the event
+        try:
+            self.perform_destroy(instance)
+        except Exception as e:
+            logger.error(f"Error deleting event {event_id}: {str(e)}", exc_info=True)
+            return Response(
+                {'error': f'Failed to delete event: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Log system action (wrap in try-except to prevent logging errors from breaking deletion)
+        try:
+            ip_address = get_client_ip(request) or ''
+            log_system_action(
+                user=request.user if hasattr(request, 'user') else None,
+                action='DELETE_EVENT',
+                category='event',
+                severity='WARNING',
+                description=f'Deleted event: {event_title}',
+                ip_address=ip_address,
+                status='SUCCESS'
+            )
+        except Exception as e:
+            # Log the error but don't fail the deletion
+            logger.warning(f"Failed to log event deletion: {str(e)}", exc_info=True)
         
         return Response(status=status.HTTP_204_NO_CONTENT)
     

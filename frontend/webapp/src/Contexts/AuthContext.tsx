@@ -55,6 +55,7 @@ type AuthContextType = {
   switchToLogin: () => void;
   login: (userData: User) => void;
   loginWithCredentials: (login: string, password: string) => Promise<void>;
+  verifyLoginOtp: (mobile_number: string, otp_code: string) => Promise<void>;
   sendLoginOtp: (mobile?: string, email?: string) => Promise<void>;
   loginWithOtp: (
     mobile: string | undefined,
@@ -215,63 +216,57 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw new Error(t("auth.invalidInput"));
       }
 
-      const loginRequest = AuthService.createLoginRequest(
-        sanitizedLogin,
-        sanitizedPassword
-      );
-      const response = await AuthService.login(loginRequest);
-
-      // Note: Tokens are already stored by AuthService.login()
-      // No need to store them again here to avoid duplication
-
-      // Convert API user data to local User format
-      const customer = (response as any).customer || response.user;
-      const customerName =
-        customer.name ||
-        `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
-
-      const userData: User = {
-        id: customer.id,
-        first_name: customer.first_name || customer.name?.split(" ")[0] || "",
-        last_name:
-          customer.last_name ||
-          customer.name?.split(" ").slice(1).join(" ") ||
-          "",
-        mobile_number: customer.mobile_number || customer.phone || "",
-        email: customer.email,
-        profile_image_id:
-          customer.profile_image_id || customer.profileImage || "",
-        type:
-          customer.type === "vip" ||
-          customer.status === "vip" ||
-          customer.CardActive
-            ? "vip"
-            : "regular",
-        status: customer.status || "active",
-        created_at: customer.created_at || new Date().toISOString(),
-        updated_at: customer.updated_at || new Date().toISOString(),
-        // Legacy fields for backward compatibility
-        name: customerName,
-        isVip:
-          customer.type === "vip" ||
-          customer.status === "vip" ||
-          customer.CardActive ||
-          false,
-        vipCardNumber: undefined,
-        vipExpiryDate: undefined,
-      };
-
-      login(userData);
-
-      toast({
-        title: t("auth.loginSuccess"),
-        description: t("auth.welcomeBack", { name: userData.name }),
+      // Backend expects mobile_number and password
+      // Step 1: Send login request (this sends OTP, doesn't return user data yet)
+      const response = await AuthService.login({
+        mobile_number: sanitizedLogin,
+        password: sanitizedPassword,
       });
+
+      // The login endpoint only sends OTP and returns { message, mobile_number }
+      // We need to trigger OTP verification step
+      // Store mobile_number for OTP verification and throw a special error
+      // to signal the UI to show OTP input form
+      const otpRequiredError: any = new Error("OTP_REQUIRED");
+      otpRequiredError.otpRequired = true;
+      otpRequiredError.mobile_number = sanitizedLogin;
+      otpRequiredError.message = response.message || t("auth.otpSentDescription");
+      throw otpRequiredError;
     } catch (error: any) {
+      // Check if this is an OTP required error (from password login)
+      if (error.otpRequired) {
+        // Re-throw so the UI can handle showing OTP form
+        throw error;
+      }
+
       console.error("Login error:", error);
 
-      let errorMessage = error.message || t("auth.loginErrorMessage");
+      // Extract error message properly - handle both string and object formats
+      let errorMessage = t("auth.loginErrorMessage");
       let errorTitle = t("auth.loginError");
+
+      // Handle error message extraction
+      if (typeof error.message === "string") {
+        errorMessage = error.message;
+      } else if (typeof error.message === "object" && error.message !== null) {
+        // If message is an object (like serializer.errors), extract the first error
+        const errorKeys = Object.keys(error.message);
+        if (errorKeys.length > 0) {
+          const firstKey = errorKeys[0];
+          const firstError = error.message[firstKey];
+          if (Array.isArray(firstError) && firstError.length > 0) {
+            errorMessage = firstError[0];
+          } else if (typeof firstError === "string") {
+            errorMessage = firstError;
+          } else {
+            errorMessage = JSON.stringify(error.message);
+          }
+        }
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.error?.message) {
+        errorMessage = error.response.data.error.message;
+      }
 
       // Handle specific error types
       if (error.status === 429) {
@@ -287,31 +282,34 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }, 2000);
       } else if (error.status === 401) {
         errorTitle = t("auth.invalidCredentials");
-        errorMessage = t("auth.invalidCredentialsMessage");
+        errorMessage = errorMessage || t("auth.invalidCredentialsMessage");
       } else if (error.status === 403) {
         errorTitle = t("auth.accountBlocked");
-        errorMessage = t("auth.accountBlockedMessage");
+        errorMessage = errorMessage || t("auth.accountBlockedMessage");
+      } else if (error.status === 400) {
+        // 400 Bad Request - validation errors
+        errorTitle = t("auth.loginError");
+        // errorMessage already extracted above
       } else if (error.status >= 500) {
         errorTitle = t("auth.serverError");
         // Show more specific error messages for 500 errors
+        const messageStr = String(errorMessage);
         if (
-          error.message &&
-          error.message.includes("property") &&
-          error.message.includes("null")
+          messageStr.includes("property") &&
+          messageStr.includes("null")
         ) {
           errorMessage = t("auth.dataSyncError");
         } else if (
-          error.message &&
-          (error.message.includes("database") ||
-            error.message.includes("connection"))
+          messageStr.includes("database") ||
+          messageStr.includes("connection")
         ) {
           errorMessage = t("auth.serverUnavailableError");
         } else {
           errorMessage = t("auth.genericServerError");
         }
       } else if (
-        error.message &&
-        error.message.includes("Invalid response structure")
+        typeof errorMessage === "string" &&
+        errorMessage.includes("Invalid response structure")
       ) {
         errorTitle = t("auth.apiError");
         errorMessage = t("auth.apiErrorMessage");
@@ -449,6 +447,76 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  const verifyLoginOtp = async (mobile_number: string, otp_code: string) => {
+    setIsLoading(true);
+    try {
+      // Verify login OTP and get tokens - tokens are stored by AuthService
+      const response = await AuthService.verifyLoginOtp({
+        mobile_number,
+        otp_code,
+      });
+
+      // Convert API user data to local User format
+      const customer = (response as any).user || response.customer;
+      if (!customer) {
+        throw new Error("User data not found in response");
+      }
+
+      const customerName =
+        customer.name ||
+        `${customer.first_name || ""} ${customer.last_name || ""}`.trim();
+
+      const userData: User = {
+        id: customer.id,
+        first_name: customer.first_name || customer.name?.split(" ")[0] || "",
+        last_name:
+          customer.last_name ||
+          customer.name?.split(" ").slice(1).join(" ") ||
+          "",
+        mobile_number: customer.mobile_number || customer.phone || "",
+        email: customer.email,
+        profile_image_id:
+          customer.profile_image_id || customer.profileImage || "",
+        type:
+          customer.type === "vip" ||
+          customer.status === "vip" ||
+          customer.CardActive
+            ? "vip"
+            : "regular",
+        status: customer.status || "active",
+        created_at: customer.created_at || new Date().toISOString(),
+        updated_at: customer.updated_at || new Date().toISOString(),
+        // Legacy fields for backward compatibility
+        name: customerName,
+        isVip:
+          customer.type === "vip" ||
+          customer.status === "vip" ||
+          customer.CardActive ||
+          false,
+        vipCardNumber: undefined,
+        vipExpiryDate: undefined,
+      };
+
+      // Set user - this signs them in
+      await login(userData);
+
+      toast({
+        title: t("auth.loginSuccess"),
+        description: t("auth.welcomeBack", { name: userData.name }),
+      });
+    } catch (error: any) {
+      console.error("Verify login OTP error:", error);
+      toast({
+        title: t("auth.otpLoginError"),
+        description: error.message || t("auth.otpLoginErrorMessage"),
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const requestPasswordResetOtp = async (mobileNumber: string) => {
     setIsLoading(true);
     try {
@@ -456,7 +524,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw new Error(t("auth.provideMobileNumber"));
       }
 
-      const response = await AuthService.requestPasswordResetOtp(mobileNumber);
+      const response = await AuthService.requestPasswordResetOtp({
+        mobile_number: mobileNumber,
+      });
 
       // Ensure response exists and has a message property
       const message =
@@ -521,9 +591,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } catch (error: any) {
       console.error("Password reset OTP verification error:", error);
 
-      // Safely extract error message
-      const errorMessage =
-        error?.message || t("auth.passwordResetOtpVerificationErrorMessage");
+      // Safely extract error message from various error formats
+      let errorMessage = t("auth.passwordResetOtpVerificationErrorMessage");
+      
+      if (error?.response?.data?.error?.message) {
+        // Backend error format: { error: { message: "..." } }
+        errorMessage = error.response.data.error.message;
+      } else if (error?.response?.data?.message) {
+        // Direct message format: { message: "..." }
+        errorMessage = error.response.data.message;
+      } else if (error?.message) {
+        // Error object with message property
+        errorMessage = error.message;
+      }
 
       toast({
         title: t("auth.passwordResetOtpVerificationError"),
@@ -891,6 +971,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         switchToSignup,
         login,
         loginWithCredentials,
+        verifyLoginOtp,
         sendLoginOtp,
         loginWithOtp,
         requestPasswordResetOtp,

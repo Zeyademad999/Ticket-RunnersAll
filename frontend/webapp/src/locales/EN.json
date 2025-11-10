@@ -1290,8 +1290,14 @@
   },
   "cardExpired": {
     "title": "Access Card Expired",
-    "message": "Your access card has expired. Please renew your card now.",
-    "renewButton": "Renew Now"
+    "message": "Your access card has expired. Please renew your card to continue using premium features. You can continue using the app normally.",
+    "missingTitle": "NFC Card Required",
+    "missingMessage": "You need to upgrade or get an NFC card to access premium features. You can continue using the app normally.",
+    "renewButton": "Renew Now",
+    "upgradeButton": "Upgrade Now",
+    "laterButton": "Maybe Later",
+    "toastMessage": "Your card has expired. Please renew to continue using premium features.",
+    "missingToast": "Consider upgrading to an NFC card for premium features."
   },
   "events": {
     "allEvents": "All Events",

@@ -33,6 +33,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
     closeSignup,
     login,
     loginWithCredentials,
+    verifyLoginOtp,
     requestPasswordResetOtp,
     verifyPasswordResetOtp,
     confirmPasswordReset,
@@ -53,12 +54,18 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
   );
   const [isSignup, setIsSignup] = useState(false);
   const [showCardExpiredModal, setShowCardExpiredModal] = useState(false);
+  const [cardStatus, setCardStatus] = useState<"expired" | "missing">("expired");
 
   // Add state for login identifier
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginIdentifierError, setLoginIdentifierError] = useState("");
   const [loginPasswordError, setLoginPasswordError] = useState("");
+  
+  // Add state for login OTP step
+  const [showLoginOtp, setShowLoginOtp] = useState(false);
+  const [loginOtpCode, setLoginOtpCode] = useState("");
+  const [loginOtpError, setLoginOtpError] = useState("");
 
   // Add state for captcha
   const [captchaToken, setCaptchaToken] = useState("");
@@ -82,23 +89,61 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
   >({});
 
   const checkCardExpiration = async () => {
+    // DISABLED - Don't check card expiration during login
+    // This function is kept for potential future use but is not called
+    return;
+    
     try {
+      // Wait longer to ensure login is completely done
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Check if user is authenticated before making the API call
+      const refreshToken = await secureStorage.getItem("refreshToken");
+      
+      if (!refreshToken) {
+        // User is not authenticated, skip card check silently
+        return;
+      }
+
       // Fetch the user's NFC card details
+      // Note: This endpoint may not exist yet, so we'll gracefully handle errors
       const cardDetails = await BookingsService.getCustomerCardDetails();
 
-      if (cardDetails?.nfc_card?.card_expiry_date) {
+      // Check if user has an NFC card
+      if (!cardDetails?.nfc_card) {
+        // No card at all - show upgrade message
+        setCardStatus("missing");
+        setShowCardExpiredModal(true);
+        // Show toast notification as well
+        toast({
+          title: t("cardExpired.missingTitle", "NFC Card Required"),
+          description: t("cardExpired.missingToast", "Consider upgrading to an NFC card for premium features."),
+          variant: "default",
+        });
+      } else if (cardDetails.nfc_card.card_expiry_date) {
         const now = new Date();
         const expiry = parseISO(cardDetails.nfc_card.card_expiry_date);
         const isExpired = isBefore(expiry, now);
 
         if (isExpired) {
+          setCardStatus("expired");
           setShowCardExpiredModal(true);
+          // Show toast notification as well
+          toast({
+            title: t("cardExpired.title"),
+            description: t("cardExpired.toastMessage", "Your card has expired. Please renew to continue using premium features."),
+            variant: "default",
+          });
         }
       }
-    } catch (error) {
-      // If there's an error fetching card details, don't show the modal
-      // This prevents showing the modal when the user doesn't have a card or there's a network issue
+    } catch (error: any) {
+      // Silently handle errors - card check is optional
+      // Don't show errors for 401 (auth), 404 (no card/endpoint), or network issues
+      // This prevents showing the modal when the user doesn't have a card or the endpoint doesn't exist
+      if (error?.status && error.status !== 404 && error.status !== 401) {
+        // Only log unexpected errors (not auth or not found)
       console.log("Could not check card expiration:", error);
+      }
     }
   };
 
@@ -129,6 +174,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
     setLoginPassword("");
     setLoginIdentifierError("");
     setLoginPasswordError("");
+    setShowLoginOtp(false);
+    setLoginOtpCode("");
+    setLoginOtpError("");
   }, [isSignup]);
 
   // Reset forgot password state when modal closes
@@ -149,6 +197,9 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
       setLoginPassword("");
       setLoginIdentifierError("");
       setLoginPasswordError("");
+      setShowLoginOtp(false);
+      setLoginOtpCode("");
+      setLoginOtpError("");
     }
   }, [isLoginOpen, isSignupOpen]);
 
@@ -499,12 +550,26 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
         // Use the real API call from AuthContext
         await loginWithCredentials(loginIdentifier, loginPassword);
 
-        onLoginSuccess?.();
-        await checkCardExpiration();
+        // Login successful - reset form state and close modal immediately
+        setLoginIdentifier("");
+        setLoginPassword("");
+        setLoginIdentifierError("");
+        setLoginPasswordError("");
         closeLogin();
-      } catch (error) {
+        onLoginSuccess?.();
+      } catch (error: any) {
+        // Check if OTP is required (password login sends OTP)
+        if (error.otpRequired) {
+          // Show OTP input form
+          setShowLoginOtp(true);
+          toast({
+            title: t("auth.otpSent"),
+            description: error.message || t("auth.otpSentDescription"),
+          });
+        } else {
         // Error is already handled in AuthContext
         console.error("Login failed:", error);
+        }
       }
     }
   };
@@ -624,6 +689,62 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
               onSwitchToLogin={() => setIsSignup(false)}
               onSignupSuccess={handleSuccessfulSignup}
             />
+          ) : showLoginOtp ? (
+            <form
+              className="space-y-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setLoginOtpError("");
+                
+                if (!loginOtpCode.trim()) {
+                  setLoginOtpError(t("auth.enterOtp", "Please enter the OTP code"));
+                  return;
+                }
+
+                try {
+                  await verifyLoginOtp(loginIdentifier, loginOtpCode.trim());
+                  // Login successful - reset form state and close modal immediately
+                  setLoginOtpCode("");
+                  setLoginOtpError("");
+                  setShowLoginOtp(false);
+                  closeLogin();
+                  onLoginSuccess?.();
+                } catch (error: any) {
+                  setLoginOtpError(error.message || t("auth.otpLoginErrorMessage", "Failed to verify OTP"));
+                }
+              }}
+            >
+              <div className="space-y-1">
+                <p className="text-sm text-gray-600">
+                  {t("auth.otpSentDescription", "We've sent a verification code to")} {loginIdentifier}
+                </p>
+                <OtpInput
+                  value={loginOtpCode}
+                  onChange={(value) => setLoginOtpCode(value)}
+                  length={6}
+                />
+                {loginOtpError && (
+                  <ErrorMessage message={loginOtpError} />
+                )}
+              </div>
+
+              <Button className="w-full mt-4" type="submit">
+                {t("auth.verify", "Verify OTP")}
+              </Button>
+              
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setShowLoginOtp(false);
+                  setLoginOtpCode("");
+                  setLoginOtpError("");
+                }}
+              >
+                {t("auth.back", "Back")}
+              </Button>
+            </form>
           ) : (
             <form
               className="space-y-3"
@@ -722,6 +843,7 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
         <CardExpiredModal
           open={showCardExpiredModal}
           onClose={() => setShowCardExpiredModal(false)}
+          cardStatus={cardStatus}
         />
       </Dialog>
 
