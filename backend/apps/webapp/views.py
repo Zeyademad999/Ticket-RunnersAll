@@ -519,6 +519,7 @@ def user_card_details(request):
     customer_first_name = customer.name.split()[0] if customer.name else ""
     
     if nfc_card:
+        # Ensure dates are always returned as strings (ISO format) or empty string if None
         card_data = {
             'card_number': nfc_card.serial_number,
             'card_status': nfc_card.status,
@@ -958,13 +959,23 @@ def user_nfc_cards_list(request):
     Get user's NFC cards.
     GET /api/v1/users/nfc-cards/
     """
-    customer_id = request.user.id if hasattr(request.user, 'id') else None
-    if not customer_id:
+    # Get customer from request (set by CustomerJWTAuthentication)
+    customer = getattr(request, 'customer', None)
+    if not customer:
+        # Fallback: try to get from user.id (for compatibility)
+        customer_id = request.user.id if hasattr(request.user, 'id') else None
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id)
+            except Customer.DoesNotExist:
+                pass
+    
+    if not customer:
         return Response({
             'error': {'code': 'UNAUTHORIZED', 'message': 'Authentication required'}
         }, status=status.HTTP_401_UNAUTHORIZED)
     
-    cards = NFCCard.objects.filter(customer_id=customer_id)
+    cards = NFCCard.objects.filter(customer=customer)
     serializer = NFCCardSerializer(cards, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1358,13 +1369,19 @@ def public_organizer_detail(request, organizer_id):
     from users.models import Organizer
     
     try:
-        organizer = Organizer.objects.get(id=organizer_id, status='active', verified=True)
+        # For public view, only require active status (not verified=True)
+        organizer = Organizer.objects.get(id=organizer_id, status='active')
     except Organizer.DoesNotExist:
         return Response({
             'error': {'code': 'NOT_FOUND', 'message': 'Organizer not found'}
         }, status=status.HTTP_404_NOT_FOUND)
     
     events_count = Event.objects.filter(organizer=organizer, status__in=['upcoming', 'ongoing']).count()
+    
+    # Get logo URL if available
+    logo_url = None
+    if organizer.profile_image:
+        logo_url = request.build_absolute_uri(organizer.profile_image.url)
     
     data = {
         'id': organizer.id,
@@ -1373,6 +1390,7 @@ def public_organizer_detail(request, organizer_id):
         'location': organizer.location,
         'total_events': events_count,
         'rating': float(organizer.rating) if organizer.rating else None,
+        'logo': logo_url,
     }
     
     return Response(data, status=status.HTTP_200_OK)
@@ -1900,7 +1918,7 @@ def user_nfc_card_request(request):
         status='pending',
         serial_number=f"CARD-{uuid.uuid4().hex[:12].upper()}",
         issue_date=timezone.now().date(),
-        expiry_date=timezone.now().date() + timedelta(days=365*2)  # 2 years
+        expiry_date=timezone.now().date() + timedelta(days=365)  # 1 year from issue date
     )
     
     return Response({

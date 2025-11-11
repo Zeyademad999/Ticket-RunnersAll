@@ -45,21 +45,21 @@ const AssignCard: React.FC = () => {
 
     setIsVerifying(true);
     try {
-      // Verify customer mobile number
-      const response = await apiService.verifyCustomerMobile(customerMobile);
-      if (response.success && response.data) {
-        setCustomer(response.data);
-
-        // Check if fees are paid
-        if (!response.data.fees_paid) {
-          toast.error(
-            "Customer fees are not paid. Please ask customer to pay fees first."
-          );
-          return;
-        }
-
-        // Send OTP to customer
-        await apiService.sendCustomerOTP(customerMobile);
+      // First verify customer
+      const customerResponse = await apiService.verifyCustomerMobile(customerMobile);
+      
+      if (customerResponse.success && customerResponse.data) {
+        setCustomer(customerResponse.data);
+        
+        // Fees are paid in person to merchant, no check needed
+        // Assign card (this sends OTP to customer automatically)
+        await apiService.assignCard({
+          card_serial: cardSerial,
+          customer_mobile: customerMobile,
+          otp: "",
+          hashed_code: "",
+        });
+        
         setStep("otp");
         toast.success("Customer verified! OTP sent to customer mobile.");
       } else {
@@ -86,12 +86,11 @@ const AssignCard: React.FC = () => {
 
     setIsLoading(true);
     try {
-      const response = await apiService.assignCard({
-        card_serial: cardSerial,
-        customer_mobile: customerMobile,
-        otp: otp,
-        hashed_code: "",
-      });
+      const response = await apiService.verifyCustomerOTP(
+        cardSerial,
+        customerMobile,
+        otp
+      );
 
       if (response.success && response.data) {
         setHashedCode(response.data.hashed_code);

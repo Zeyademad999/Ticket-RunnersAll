@@ -17,7 +17,7 @@ const mockMerchant: Merchant = {
   name: "Tech Solutions Store",
   address: "123 Main Street, Downtown, City",
   gmaps_location: "https://maps.google.com/?q=123+Main+Street",
-  mobile_number: "+971501234567",
+  mobile_number: "01104484492",
   contact_name: "Ahmed Al Mansouri",
   status: "active",
   created_at: "2024-01-15T10:30:00Z",
@@ -250,8 +250,8 @@ class MockApiService {
 
     // Mock validation
     if (
-      credentials.mobile_number !== "+971501234567" ||
-      credentials.password !== "password123"
+      credentials.mobile_number !== "01104484492" ||
+      credentials.password !== "password"
     ) {
       createErrorResponse("Invalid mobile number or password");
     }
@@ -355,12 +355,7 @@ class MockApiService {
       createErrorResponse("Customer account is not active");
     }
 
-    if (!customer?.fees_paid) {
-      createErrorResponse(
-        "Customer fees are not paid. Please ask customer to pay fees first."
-      );
-    }
-
+    // Fees are paid in person to merchant, no check needed
     return createSuccessResponse(customer!);
   }
 
@@ -411,7 +406,7 @@ class MockApiService {
     }
 
     // Mock password validation
-    if (passwordChange.current_password !== "password123") {
+    if (passwordChange.current_password !== "password") {
       createErrorResponse("Current password is incorrect");
     }
 

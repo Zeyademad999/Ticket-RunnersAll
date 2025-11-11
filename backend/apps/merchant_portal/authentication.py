@@ -20,12 +20,17 @@ class MerchantJWTAuthentication(JWTAuthentication):
         if raw_token is None:
             return None
         
-        validated_token = self.get_validated_token(raw_token)
+        try:
+            validated_token = self.get_validated_token(raw_token)
+        except Exception:
+            # Token validation failed, let other auth classes try
+            return None
         
         # Get merchant_id from token
         merchant_id = validated_token.get('merchant_id')
         if not merchant_id:
-            raise InvalidToken('Token does not contain merchant_id')
+            # No merchant_id in token, let other auth classes try
+            return None
         
         try:
             merchant = Merchant.objects.get(id=merchant_id)
@@ -35,5 +40,12 @@ class MerchantJWTAuthentication(JWTAuthentication):
         # Set merchant on request
         request.merchant = merchant
         
-        return (None, validated_token)  # Return None for user, token for validation
+        # Return a dummy user object with id attribute for compatibility
+        # This allows IsAuthenticated permission to work
+        class DummyUser:
+            def __init__(self, merchant_id):
+                self.id = merchant_id
+                self.is_authenticated = True
+        
+        return (DummyUser(merchant_id), validated_token)
 

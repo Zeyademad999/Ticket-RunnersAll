@@ -13,7 +13,7 @@ export interface Merchant {
 export interface NFCCard {
   id: string;
   serial_number: string;
-  status: "available" | "assigned" | "delivered";
+  status: "available" | "assigned" | "delivered" | "active";
   merchant_id?: string;
   merchant_name?: string;
   customer_id?: string;
@@ -22,6 +22,12 @@ export interface NFCCard {
   assigned_at?: string;
   delivered_at?: string;
   hashed_code?: string;
+  issue_date?: string;
+  expiry_date?: string;
+  balance?: number;
+  card_type?: string;
+  usage_count?: number;
+  last_used?: string;
   created_at: string;
   updated_at: string;
 }

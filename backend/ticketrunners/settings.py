@@ -27,7 +27,7 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-r^xcjpha()**g-ph67rb&
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,192.168.0.103,192.168.0.101', cast=lambda v: [s.strip() for s in v.split(',')])
 
 
 # Application definition
@@ -161,7 +161,8 @@ AUTH_USER_MODEL = 'authentication.AdminUser'
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'apps.webapp.authentication.CustomerJWTAuthentication',  # Customer auth first - handles customer_id tokens
+        'apps.merchant_portal.authentication.MerchantJWTAuthentication',  # Merchant auth first - handles merchant_id tokens
+        'apps.webapp.authentication.CustomerJWTAuthentication',  # Customer auth - handles customer_id tokens
         'rest_framework_simplejwt.authentication.JWTAuthentication',  # Standard JWT auth for admin/organizer tokens
     ),
     'DEFAULT_PERMISSION_CLASSES': (
@@ -203,7 +204,7 @@ SIMPLE_JWT = {
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173,http://localhost:8081',
+    default='http://localhost:5173,http://localhost:8081,http://localhost:8083,http://localhost:3000, http://192.168.0.103:8083,http://192.168.0.101:8083',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 

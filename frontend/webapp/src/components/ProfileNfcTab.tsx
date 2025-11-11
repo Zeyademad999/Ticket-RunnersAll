@@ -1,4 +1,3 @@
-import React from "react";
 import { TabsContent } from "@/components/ui/tabs";
 import {
   Card,
@@ -50,15 +49,29 @@ export const ProfileNfcTab = (props: any) => {
 
   // Debug logging
   console.log("ProfileNfcTab - Card Details:", cardDetails);
+  console.log("ProfileNfcTab - Card Details (full):", JSON.stringify(cardDetails, null, 2));
   console.log("ProfileNfcTab - Loading:", loading);
   console.log("ProfileNfcTab - Error:", error);
   console.log("ProfileNfcTab - Has Active NFC Card:", hasActiveNfcCard);
+  console.log("ProfileNfcTab - nfc_card object:", cardDetails?.nfc_card);
+  console.log("ProfileNfcTab - wallet object:", cardDetails?.wallet);
+  console.log("ProfileNfcTab - Issue Date:", cardDetails?.nfc_card?.card_issue_date);
+  console.log("ProfileNfcTab - Expiry Date:", cardDetails?.nfc_card?.card_expiry_date);
+  console.log("ProfileNfcTab - Wallet Expiry Date:", cardDetails?.wallet?.wallet_expiry_date);
 
-  const formatDateString = (dateString: string) => {
+  const formatDateString = (dateString: string | null | undefined) => {
+    // Handle null, undefined, or empty strings
+    if (!dateString || dateString === "" || dateString === "null" || dateString === "undefined") {
+      return "N/A";
+    }
     try {
-      return format(new Date(dateString), "MMM dd, yyyy");
-    } catch {
-      return dateString;
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return "N/A";
+      }
+      return format(date, "MMM dd, yyyy");
+    } catch (e) {
+      return "N/A";
     }
   };
   return (

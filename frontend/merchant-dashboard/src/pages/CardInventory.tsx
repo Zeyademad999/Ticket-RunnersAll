@@ -7,6 +7,12 @@ import {
   Filter,
   RefreshCw,
   Eye,
+  X,
+  Calendar,
+  User,
+  Phone,
+  CreditCard,
+  Hash,
 } from "lucide-react";
 import { apiService } from "../services/api";
 import { NFCCard, DashboardStats } from "../types";
@@ -22,6 +28,8 @@ const CardInventory: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<
     "all" | "available" | "assigned" | "delivered"
   >("all");
+  const [selectedCard, setSelectedCard] = useState<NFCCard | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const { t } = useTranslation();
   const { isRTL } = useLanguage();
 
@@ -29,11 +37,21 @@ const CardInventory: React.FC = () => {
     fetchInventoryData();
   }, []);
 
+  // Refetch when filters change
+  useEffect(() => {
+    if (statusFilter !== "all" || searchTerm) {
+      fetchInventoryData();
+    }
+  }, [statusFilter, searchTerm]);
+
   const fetchInventoryData = async () => {
     setIsLoading(true);
     try {
       const [cardsResponse, statsResponse] = await Promise.all([
-        apiService.getCards(),
+        apiService.getCards(
+          statusFilter !== "all" ? statusFilter : undefined,
+          searchTerm || undefined
+        ),
         apiService.getDashboardStats(),
       ]);
 
@@ -284,10 +302,8 @@ const CardInventory: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <button
                         onClick={() => {
-                          // View card details
-                          toast(`Card ${card.serial_number} details`, {
-                            icon: "ℹ️",
-                          });
+                          setSelectedCard(card);
+                          setShowDetailsModal(true);
                         }}
                         className="text-primary-600 hover:text-primary-900 flex items-center"
                       >
@@ -370,6 +386,236 @@ const CardInventory: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Card Details Modal */}
+      {showDetailsModal && selectedCard && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+                <CreditCard className={`h-6 w-6 ${isRTL ? "ml-2" : "mr-2"}`} />
+                {t("inventory.cardDetails") || "Card Details"}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  setSelectedCard(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Card Number */}
+              <div className="flex items-start">
+                <Hash className={`h-5 w-5 text-gray-400 mt-1 ${isRTL ? "ml-3" : "mr-3"}`} />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-500">
+                    {t("inventory.cardNumber")}
+                  </p>
+                  <p className="text-lg font-mono text-gray-900 mt-1">
+                    {selectedCard.serial_number}
+                  </p>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="flex items-start">
+                <Activity className={`h-5 w-5 text-gray-400 mt-1 ${isRTL ? "ml-3" : "mr-3"}`} />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-500">
+                    {t("inventory.status")}
+                  </p>
+                  <span className={`inline-flex items-center mt-1 ${getStatusColor(selectedCard.status)}`}>
+                    {getStatusIcon(selectedCard.status)}
+                    <span className={`${isRTL ? 'mr-1' : 'ml-1'} capitalize`}>
+                      {selectedCard.status}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Customer Information */}
+              {selectedCard.customer_name && (
+                <>
+                  <div className="flex items-start">
+                    <User className={`h-5 w-5 text-gray-400 mt-1 ${isRTL ? "ml-3" : "mr-3"}`} />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-500">
+                        {t("assignCard.customerName") || "Customer Name"}
+                      </p>
+                      <p className="text-lg text-gray-900 mt-1">
+                        {selectedCard.customer_name}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start">
+                    <Phone className={`h-5 w-5 text-gray-400 mt-1 ${isRTL ? "ml-3" : "mr-3"}`} />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-500">
+                        {t("assignCard.customerPhone")}
+                      </p>
+                      <p className="text-lg text-gray-900 mt-1">
+                        {selectedCard.customer_mobile || "—"}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Dates */}
+              <div className="flex items-start">
+                <Calendar className={`h-5 w-5 text-gray-400 mt-1 ${isRTL ? "ml-3" : "mr-3"}`} />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-500 mb-3">
+                    {t("inventory.dates") || "Dates"}
+                  </p>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">
+                        {t("inventory.assignedDate")}:
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {selectedCard.assigned_at
+                          ? new Date(selectedCard.assigned_at).toLocaleDateString("en-US", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            })
+                          : "—"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">
+                        {t("inventory.deliveredDate")}:
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {selectedCard.delivered_at
+                          ? new Date(selectedCard.delivered_at).toLocaleDateString("en-US", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            })
+                          : "—"}
+                      </span>
+                    </div>
+                    {(selectedCard as any).issue_date && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-600">
+                          {t("inventory.issueDate") || "Issue Date"}:
+                        </span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {new Date((selectedCard as any).issue_date).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })}
+                        </span>
+                      </div>
+                    )}
+                    {(selectedCard as any).expiry_date && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-600">
+                          {t("inventory.expiryDate") || "Expiry Date"}:
+                        </span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {new Date((selectedCard as any).expiry_date).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Hashed Code */}
+              {selectedCard.hashed_code && (
+                <div className="flex items-start">
+                  <Hash className={`h-5 w-5 text-gray-400 mt-1 ${isRTL ? "ml-3" : "mr-3"}`} />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-500">
+                      {t("inventory.hashedCode") || "Hashed Code"}
+                    </p>
+                    <p className="text-sm font-mono text-gray-900 mt-1 break-all">
+                      {selectedCard.hashed_code}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Additional Info */}
+              <div className="border-t pt-4">
+                <div className="grid grid-cols-2 gap-4">
+                  {(selectedCard as any).balance !== undefined && (selectedCard as any).balance !== null && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">
+                        {t("inventory.balance") || "Balance"}
+                      </p>
+                      <p className="text-lg font-semibold text-gray-900 mt-1">
+                        {typeof (selectedCard as any).balance === 'number' 
+                          ? (selectedCard as any).balance.toFixed(2)
+                          : parseFloat(String((selectedCard as any).balance || 0)).toFixed(2)} EGP
+                      </p>
+                    </div>
+                  )}
+                  {(selectedCard as any).card_type && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">
+                        {t("inventory.cardType") || "Card Type"}
+                      </p>
+                      <p className="text-lg font-semibold text-gray-900 mt-1 capitalize">
+                        {(selectedCard as any).card_type}
+                      </p>
+                    </div>
+                  )}
+                  {(selectedCard as any).usage_count !== undefined && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">
+                        {t("inventory.usageCount") || "Usage Count"}
+                      </p>
+                      <p className="text-lg font-semibold text-gray-900 mt-1">
+                        {(selectedCard as any).usage_count || 0}
+                      </p>
+                    </div>
+                  )}
+                  {(selectedCard as any).last_used && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">
+                        {t("inventory.lastUsed") || "Last Used"}
+                      </p>
+                      <p className="text-lg font-semibold text-gray-900 mt-1">
+                        {new Date((selectedCard as any).last_used).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end p-6 border-t">
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  setSelectedCard(null);
+                }}
+                className="btn-primary"
+              >
+                {t("common.close") || "Close"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
