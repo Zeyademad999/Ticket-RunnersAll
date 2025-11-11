@@ -50,6 +50,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Footer } from "@/components/Footer";
+import { useQuery } from "@tanstack/react-query";
+import organizerApi, { EventAnalytics } from "@/lib/api/organizerApi";
+import { useAuth } from "@/Contexts/AuthContext";
 
 interface EventImage {
   url: string;
@@ -110,12 +113,24 @@ const OrganizerEventDetail: React.FC = () => {
   const { toast } = useToast();
   const { t, i18n: i18nInstance } = useTranslation();
   const { isDark, toggleTheme } = useTheme();
+  const { isAuthenticated } = useAuth();
   const [showLayout, setShowLayout] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [autoplayEnabled, setAutoplayEnabled] = useState(true);
   const [language, setLanguage] = useState("EN");
   const locale = i18n.language === "ar" ? "ar-EG" : i18n.language || "en-US";
+
+  // Fetch event details from API
+  const {
+    data: eventAnalytics,
+    isLoading: eventLoading,
+    error: eventError,
+  } = useQuery<EventAnalytics>({
+    queryKey: ["organizer-event-detail", id],
+    queryFn: () => organizerApi.getEventDetail(id!),
+    enabled: !!id && isAuthenticated,
+  });
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -126,10 +141,10 @@ const OrganizerEventDetail: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (localStorage.getItem("organizer_authenticated") !== "true") {
-      navigate("/");
+    if (!isAuthenticated) {
+      navigate("/login");
     }
-  }, [navigate]);
+  }, [isAuthenticated, navigate]);
 
   useEffect(() => {
     const storedLang = localStorage.getItem("appLanguage");
@@ -232,11 +247,33 @@ const OrganizerEventDetail: React.FC = () => {
       return;
     }
 
+    if (!id) {
+      toast({
+        title: t("editEvent.error"),
+        description: "Event ID is missing",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Create FormData for file uploads
+      const formData = new FormData();
+      formData.append("requested_changes", editForm.description);
+      
+      if (editForm.attachments.length > 0) {
+        editForm.attachments.forEach((file) => {
+          formData.append("file_attachments", file);
+        });
+      }
+
+      await organizerApi.submitEventEditRequest(id, {
+        event: id,
+        requested_changes: editForm.description,
+        file_attachments: editForm.attachments.length > 0 ? "attached" : undefined,
+      });
 
       toast({
         title: t("editEvent.submitted"),
@@ -249,10 +286,10 @@ const OrganizerEventDetail: React.FC = () => {
         attachments: [],
         attachmentPreviews: [],
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: t("editEvent.error"),
-        description: t("editEvent.submissionFailed"),
+        description: error.response?.data?.error?.message || t("editEvent.submissionFailed"),
         variant: "destructive",
       });
     } finally {
@@ -269,86 +306,69 @@ const OrganizerEventDetail: React.FC = () => {
     });
   };
 
-  // Mock event data - replace with API call
-  const event: EventData = React.useMemo(
-    () => ({
-      id,
-      title:
-        i18nInstance.language === "ar"
-          ? "مهرجان الموسيقى الصيفي"
-          : "Summer Music Festival",
-      videoUrl: "/SampleVideo.mp4",
-      images: [
-        { url: "/event1.jpg", isPrimary: true },
-        { url: "/event2.jpg" },
-        { url: "/event3.jpg" },
-      ],
-      date: "2025-08-15",
-      time: "18:00",
-      location:
-        i18nInstance.language === "ar"
-          ? "مركز السويس الثقافي، الزمالك"
-          : "El Sawy Culturewheel, Zamalek",
-      price: 250,
-      originalPrice: 300,
-      category: i18nInstance.language === "ar" ? "موسيقى" : "Music",
-      rating: 4.8,
-      attendees: 1250,
-      description:
-        i18nInstance.language === "ar"
-          ? "انضم إلينا في مهرجان الموسيقى الصيفي المذهل! استمتع بأفضل الفنانين المحليين والدوليين في جو من المرح والترفيه. سيكون هذا الحدث تجربة لا تُنسى مليئة بالموسيقى الحية والعروض المذهلة."
-          : "Join us for an amazing summer music festival! Enjoy the best local and international artists in a fun and entertaining atmosphere. This event will be an unforgettable experience filled with live music and amazing performances.",
-      venueInfo:
-        i18nInstance.language === "ar"
-          ? "مركز السويس الثقافي هو مكان رائع للفعاليات الثقافية والفنية. يتسع لـ 500 شخص ويوفر تجهيزات صوتية ومرئية عالية الجودة."
-          : "El Sawy Culturewheel is a wonderful venue for cultural and artistic events. It accommodates 500 people and provides high-quality audio and visual equipment.",
-      facilities: [
-        { name: "Parking", icon: "parking" },
-        { name: "Wheelchair Access", icon: "accessibility" },
-        { name: "Wi-Fi", icon: "wifi" },
-        { name: "Food", icon: "food" },
-      ],
-      layoutImageUrl: "/layoutPlaceholder.png",
-      isFeatured: true,
+  // Transform API event data to EventData format
+  const event: EventData | null = React.useMemo(() => {
+    if (!eventAnalytics) return null;
+
+    const overallStats = eventAnalytics.overall_stats || {
+      sold: 0,
+      available: 0,
+      admitted: 0,
+      remaining: 0,
+    };
+
+    const payoutInfo = eventAnalytics.payout_info || {
+      pending: 0,
+      paid: 0,
+    };
+
+    // Transform ticket categories
+    const ticketCategories: TicketCategory[] = (eventAnalytics.ticket_categories || []).map((cat: any) => ({
+      name: cat.name || cat.category || "Unknown",
+      price: cat.price || 0,
+      totalTickets: cat.total_tickets || cat.total || 0,
+      ticketsSold: cat.sold || 0,
+      ticketsAvailable: cat.available || 0,
+    }));
+
+    // Debug logging
+    console.log("Event Analytics Data:", eventAnalytics);
+    console.log("Ticket Categories Raw:", eventAnalytics.ticket_categories);
+    console.log("Ticket Categories Transformed:", ticketCategories);
+
+    return {
+      id: String(eventAnalytics.id),
+      title: eventAnalytics.title,
+      videoUrl: undefined,
+      images: [{ url: "/event-placeholder.jpg", isPrimary: true }],
+      layoutImageUrl: undefined,
+      date: eventAnalytics.date,
+      time: eventAnalytics.time,
+      location: eventAnalytics.location,
+      price: 0,
+      originalPrice: undefined,
+      category: "Event",
+      rating: 0,
+      attendees: overallStats.admitted || 0,
+      description: "",
+      venueInfo: "",
+      facilities: [],
+      isFeatured: false,
       organizer: {
-        id: "org-12",
-        name:
-          i18nInstance.language === "ar" ? "منظم الفعاليات" : "Event Organizer",
-        logoUrl: "/placeholderLogo.png",
+        id: "",
+        name: "",
+        logoUrl: "",
       },
-      totalTickets: 500,
-      ticketsSold: 470,
-      ticketsAvailable: 30,
-      peopleAdmitted: 450,
-      peopleRemaining: 20,
-      totalPayoutPending: 117750,
-      totalPayoutPaid: 100000,
-      ticketCategories: [
-        {
-          name: i18nInstance.language === "ar" ? "VIP" : "VIP",
-          price: 500,
-          totalTickets: 50,
-          ticketsSold: 48,
-          ticketsAvailable: 2,
-        },
-        {
-          name: i18nInstance.language === "ar" ? "عادي" : "Regular",
-          price: 250,
-          totalTickets: 400,
-          ticketsSold: 372,
-          ticketsAvailable: 28,
-        },
-        {
-          name: i18nInstance.language === "ar" ? "طالب" : "Student",
-          price: 150,
-          totalTickets: 50,
-          ticketsSold: 50,
-          ticketsAvailable: 0,
-        },
-      ],
-    }),
-    [id, i18nInstance.language]
-  );
+      totalTickets: overallStats.sold + overallStats.available,
+      ticketsSold: overallStats.sold,
+      ticketsAvailable: overallStats.available,
+      peopleAdmitted: overallStats.admitted,
+      peopleRemaining: overallStats.remaining,
+      totalPayoutPending: payoutInfo.pending,
+      totalPayoutPaid: payoutInfo.paid,
+      ticketCategories,
+    };
+  }, [eventAnalytics]);
 
   const facilityIcons: Record<string, JSX.Element> = {
     parking: <ParkingCircle className="w-5 h-5 text-primary" />,
@@ -454,25 +474,47 @@ const OrganizerEventDetail: React.FC = () => {
 
       <main className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="max-w-4xl mx-auto">
-          {/* Back Button and Edit Event Button */}
-          <div className="mb-6 flex justify-between items-center">
-            <Button
-              variant="outline"
-              onClick={handleBackToDashboard}
-              className="flex items-center gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              {t("common.backToDashboard")}
-            </Button>
+          {/* Loading State */}
+          {eventLoading && (
+            <div className="flex items-center justify-center min-h-[400px]">
+              <div className="text-lg">{t("common.loading")}</div>
+            </div>
+          )}
 
-            <Button
-              onClick={handleEditEvent}
-              className="flex items-center gap-2 bg-primary hover:bg-primary/90"
-            >
-              <Edit className="h-4 w-4" />
-              {t("editEvent.editEvent")}
-            </Button>
-          </div>
+          {/* Error State */}
+          {eventError && (
+            <div className="flex flex-col items-center justify-center min-h-[400px]">
+              <p className="text-lg text-red-500 mb-4">
+                {t("common.errorLoadingData")}
+              </p>
+              <Button onClick={() => navigate("/dashboard")}>
+                {t("common.backToDashboard")}
+              </Button>
+            </div>
+          )}
+
+          {/* Event Content */}
+          {!eventLoading && !eventError && event && (
+            <>
+              {/* Back Button and Edit Event Button */}
+              <div className="mb-6 flex justify-between items-center">
+                <Button
+                  variant="outline"
+                  onClick={handleBackToDashboard}
+                  className="flex items-center gap-2"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  {t("common.backToDashboard")}
+                </Button>
+
+                <Button
+                  onClick={handleEditEvent}
+                  className="flex items-center gap-2 bg-primary hover:bg-primary/90"
+                >
+                  <Edit className="h-4 w-4" />
+                  {t("editEvent.editEvent")}
+                </Button>
+              </div>
 
           {/* Media Carousel */}
           <div className="relative rounded-xl overflow-hidden mb-8" dir="ltr">
@@ -726,36 +768,42 @@ const OrganizerEventDetail: React.FC = () => {
                 {t("dashboard.analytics.ticketCategories")}
               </h2>
               <div className="space-y-4">
-                {event.ticketCategories.map((category, index) => (
-                  <div key={index} className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium">{category.name}</span>
-                      <span className="text-sm text-muted-foreground">
-                        E£ {category.price}
-                      </span>
+                {event.ticketCategories && event.ticketCategories.length > 0 ? (
+                  event.ticketCategories.map((category, index) => (
+                    <div key={index} className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">{category.name}</span>
+                        <span className="text-sm text-muted-foreground">
+                          E£ {category.price}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm text-muted-foreground">
+                        <span>
+                          {t("dashboard.analytics.sold")}: {category.ticketsSold}
+                        </span>
+                        <span>
+                          {t("dashboard.analytics.available")}:{" "}
+                          {category.ticketsAvailable}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className="bg-primary h-2 rounded-full"
+                          style={{
+                            width: `${calculatePercentage(
+                              category.ticketsSold,
+                              category.totalTickets
+                            )}%`,
+                          }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-sm text-muted-foreground">
-                      <span>
-                        {t("dashboard.analytics.sold")}: {category.ticketsSold}
-                      </span>
-                      <span>
-                        {t("dashboard.analytics.available")}:{" "}
-                        {category.ticketsAvailable}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-primary h-2 rounded-full"
-                        style={{
-                          width: `${calculatePercentage(
-                            category.ticketsSold,
-                            category.totalTickets
-                          )}%`,
-                        }}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-muted-foreground text-sm">
+                    {t("dashboard.analytics.noTicketCategories", "No ticket categories found for this event.")}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -784,6 +832,8 @@ const OrganizerEventDetail: React.FC = () => {
               </div>
             </div>
           </div>
+            </>
+          )}
         </div>
       </main>
       <ShareModal

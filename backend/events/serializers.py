@@ -38,15 +38,70 @@ class EventListSerializer(serializers.ModelSerializer):
     organizer_name = serializers.CharField(source='organizer.name', read_only=True)
     venue_name = serializers.CharField(source='venue.name', read_only=True)
     category_name = serializers.CharField(source='category.name', read_only=True)
+    thumbnail_path = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+    starting_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True, allow_null=True)
+    revenue = serializers.SerializerMethodField()
+    commission = serializers.SerializerMethodField()
+    commission_rate = serializers.SerializerMethodField()
     
     class Meta:
         model = Event
         fields = [
             'id', 'title', 'date', 'time', 'status', 'organizer_name',
             'venue_name', 'category_name', 'total_tickets', 'tickets_sold',
-            'tickets_available', 'created_at'
+            'tickets_available', 'created_at', 'thumbnail_path', 'image_url',
+            'location', 'starting_price', 'revenue', 'commission', 'commission_rate'
         ]
         read_only_fields = ['id', 'tickets_sold', 'tickets_available', 'created_at']
+    
+    def get_thumbnail_path(self, obj):
+        """Return the thumbnail/image path as a full URL."""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                try:
+                    return request.build_absolute_uri(obj.image.url)
+                except:
+                    # Fallback if URL building fails
+                    return obj.image.url
+            # If no request context, return relative URL
+            return obj.image.url
+        return None
+    
+    def get_image_url(self, obj):
+        """Alias for thumbnail_path for compatibility."""
+        return self.get_thumbnail_path(obj)
+    
+    def get_location(self, obj):
+        """Return venue address or name as location."""
+        if obj.venue:
+            return obj.venue.address or obj.venue.name
+        return None
+    
+    def get_revenue(self, obj):
+        """Calculate total revenue from sold tickets."""
+        return float(obj.calculate_revenue())
+    
+    def get_commission(self, obj):
+        """Calculate commission amount."""
+        return float(obj.calculate_commission())
+    
+    def get_commission_rate(self, obj):
+        """Get commission rate from event or organizer."""
+        if obj.commission_rate_value is not None:
+            return {
+                'type': obj.commission_rate_type,
+                'value': float(obj.commission_rate_value)
+            }
+        # Fall back to organizer's commission_rate
+        if obj.organizer and hasattr(obj.organizer, 'commission_rate'):
+            return {
+                'type': 'percentage',
+                'value': float(obj.organizer.commission_rate * 100)  # Convert decimal to percentage
+            }
+        return {'type': 'percentage', 'value': 10.0}  # Default 10%
 
 
 class EventDetailSerializer(serializers.ModelSerializer):
@@ -61,6 +116,7 @@ class EventDetailSerializer(serializers.ModelSerializer):
     tickets_available = serializers.IntegerField(read_only=True)
     revenue = serializers.SerializerMethodField()
     commission = serializers.SerializerMethodField()
+    commission_rate = serializers.SerializerMethodField()
     image = serializers.ImageField(required=False, allow_null=True, read_only=False)
     starting_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
     
@@ -72,7 +128,7 @@ class EventDetailSerializer(serializers.ModelSerializer):
             'category', 'status', 'image', 'starting_price',
             'total_tickets', 'ticket_limit',
             'ticket_transfer_enabled', 'tickets_sold', 'tickets_available',
-            'ticket_categories', 'revenue', 'commission', 'created_at', 'updated_at'
+            'ticket_categories', 'revenue', 'commission', 'commission_rate', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
     
@@ -101,6 +157,21 @@ class EventDetailSerializer(serializers.ModelSerializer):
     
     def get_commission(self, obj):
         return float(obj.calculate_commission())
+    
+    def get_commission_rate(self, obj):
+        """Get commission rate from event or organizer."""
+        if obj.commission_rate_value is not None:
+            return {
+                'type': obj.commission_rate_type,
+                'value': float(obj.commission_rate_value)
+            }
+        # Fall back to organizer's commission_rate
+        if obj.organizer and hasattr(obj.organizer, 'commission_rate'):
+            return {
+                'type': 'percentage',
+                'value': float(obj.organizer.commission_rate * 100)  # Convert decimal to percentage
+            }
+        return {'type': 'percentage', 'value': 10.0}  # Default 10%
 
 
 class TicketCategoryCreateSerializer(serializers.Serializer):
@@ -124,6 +195,7 @@ class EventCreateSerializer(serializers.ModelSerializer):
             'organizer', 'venue', 'date', 'time',
             'category', 'image', 'starting_price',
             'total_tickets', 'ticket_limit', 'ticket_transfer_enabled',
+            'commission_rate_type', 'commission_rate_value',
             'ticket_categories'
         ]
     

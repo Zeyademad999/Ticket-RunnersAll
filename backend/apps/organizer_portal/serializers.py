@@ -44,39 +44,112 @@ class OrganizerEventSerializer(serializers.ModelSerializer):
     people_remaining = serializers.SerializerMethodField()
     total_payout_pending = serializers.SerializerMethodField()
     total_payout_paid = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
+    ticket_categories = serializers.SerializerMethodField()
     
     class Meta:
         model = Event
         fields = [
             'id', 'title', 'date', 'time', 'location', 'status',
-            'image_url', 'tickets_sold', 'tickets_available',
+            'image_url', 'total_tickets', 'tickets_sold', 'tickets_available',
             'people_admitted', 'people_remaining', 'total_payout_pending',
-            'total_payout_paid'
+            'total_payout_paid', 'ticket_categories'
         ]
     
+    def get_ticket_categories(self, obj):
+        """Get ticket categories for this event."""
+        from tickets.models import Ticket
+        from events.models import TicketCategory
+        
+        try:
+            ticket_categories = TicketCategory.objects.filter(event=obj)
+            result = []
+            for ticket_category in ticket_categories:
+                tickets = Ticket.objects.filter(
+                    event=obj,
+                    category=ticket_category.name
+                )
+                total = tickets.count()
+                sold = tickets.filter(status__in=['valid', 'used']).count()
+                available = tickets.filter(status='valid').count()
+                
+                result.append({
+                    'category': ticket_category.name,
+                    'name': ticket_category.name,
+                    'price': float(ticket_category.price),
+                    'total': total,
+                    'total_tickets': ticket_category.total_tickets,
+                    'sold': sold,
+                    'available': available,
+                })
+            return result
+        except Exception:
+            return []
+    
+    def get_location(self, obj):
+        """Get location from venue or return empty string."""
+        try:
+            if obj.venue:
+                return obj.venue.address or obj.venue.name or ""
+            return ""
+        except Exception:
+            return ""
+    
+    def get_image_url(self, obj):
+        """Get image URL."""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+    
     def get_tickets_sold(self, obj):
-        return obj.tickets.filter(status__in=['valid', 'used']).count()
+        try:
+            return obj.tickets.filter(status__in=['valid', 'used']).count()
+        except Exception:
+            return 0
     
     def get_tickets_available(self, obj):
-        return obj.tickets.filter(status='valid').count()
+        try:
+            return obj.tickets.filter(status='valid').count()
+        except Exception:
+            return 0
     
     def get_people_admitted(self, obj):
-        return obj.tickets.filter(status='used').count()
+        try:
+            return obj.tickets.filter(status='used').count()
+        except Exception:
+            return 0
     
     def get_people_remaining(self, obj):
-        return obj.tickets.filter(status='valid').count()
+        try:
+            return obj.tickets.filter(status='valid').count()
+        except Exception:
+            return 0
     
     def get_total_payout_pending(self, obj):
-        from finances.models import Payout
-        return float(Payout.objects.filter(event=obj, status='pending').aggregate(
-            total=serializers.DecimalField(max_digits=12, decimal_places=2)
-        )['total'] or 0)
+        try:
+            from finances.models import Payout
+            # Payout model doesn't have event field, filter by organizer instead
+            result = Payout.objects.filter(organizer=obj.organizer, status='pending').aggregate(
+                total=Sum('amount')
+            )
+            return float(result['total'] or 0)
+        except Exception:
+            return 0.0
     
     def get_total_payout_paid(self, obj):
-        from finances.models import Payout
-        return float(Payout.objects.filter(event=obj, status='completed').aggregate(
-            total=serializers.DecimalField(max_digits=12, decimal_places=2)
-        )['total'] or 0)
+        try:
+            from finances.models import Payout
+            # Payout model doesn't have event field, filter by organizer instead
+            result = Payout.objects.filter(organizer=obj.organizer, status='completed').aggregate(
+                total=Sum('amount')
+            )
+            return float(result['total'] or 0)
+        except Exception:
+            return 0.0
 
 
 class OrganizerEventAnalyticsSerializer(serializers.ModelSerializer):
@@ -84,6 +157,7 @@ class OrganizerEventAnalyticsSerializer(serializers.ModelSerializer):
     ticket_categories = serializers.SerializerMethodField()
     overall_stats = serializers.SerializerMethodField()
     payout_info = serializers.SerializerMethodField()
+    location = serializers.SerializerMethodField()
     
     class Meta:
         model = Event
@@ -92,15 +166,51 @@ class OrganizerEventAnalyticsSerializer(serializers.ModelSerializer):
             'ticket_categories', 'overall_stats', 'payout_info'
         ]
     
+    def get_location(self, obj):
+        """Get location from venue or return empty string."""
+        try:
+            if obj.venue:
+                return obj.venue.address or obj.venue.name or ""
+            return ""
+        except Exception:
+            return ""
+    
     def get_ticket_categories(self, obj):
         from tickets.models import Ticket
+        from events.models import TicketCategory
         
-        categories = Ticket.objects.filter(event=obj).values('category').annotate(
-            total=Count('id'),
-            sold=Count('id', filter=Q(status__in=['valid', 'used'])),
-            available=Count('id', filter=Q(status='valid'))
-        )
-        return list(categories)
+        try:
+            # Get all ticket categories for this event (prefetch for efficiency)
+            ticket_categories = TicketCategory.objects.filter(event=obj).select_related('event')
+            
+            result = []
+            for ticket_category in ticket_categories:
+                # Count tickets for this category
+                tickets = Ticket.objects.filter(
+                    event=obj,
+                    category=ticket_category.name
+                )
+                
+                total = tickets.count()
+                sold = tickets.filter(status__in=['valid', 'used']).count()
+                available = tickets.filter(status='valid').count()
+                
+                result.append({
+                    'category': ticket_category.name,
+                    'name': ticket_category.name,  # Add name for frontend compatibility
+                    'price': float(ticket_category.price),
+                    'total': total,
+                    'total_tickets': ticket_category.total_tickets,  # Total tickets allocated for this category
+                    'sold': sold,
+                    'available': available,
+                })
+            
+            return result
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting ticket categories for event {obj.id}: {str(e)}")
+            return []
     
     def get_overall_stats(self, obj):
         from tickets.models import Ticket
@@ -114,11 +224,12 @@ class OrganizerEventAnalyticsSerializer(serializers.ModelSerializer):
     
     def get_payout_info(self, obj):
         from finances.models import Payout
+        # Payout model doesn't have event field, filter by organizer instead
         return {
-            'pending': float(Payout.objects.filter(event=obj, status='pending').aggregate(
+            'pending': float(Payout.objects.filter(organizer=obj.organizer, status='pending').aggregate(
                 total=Sum('amount')
             )['total'] or 0),
-            'paid': float(Payout.objects.filter(event=obj, status='completed').aggregate(
+            'paid': float(Payout.objects.filter(organizer=obj.organizer, status='completed').aggregate(
                 total=Sum('amount')
             )['total'] or 0),
         }
@@ -126,15 +237,15 @@ class OrganizerEventAnalyticsSerializer(serializers.ModelSerializer):
 
 class OrganizerPayoutSerializer(serializers.ModelSerializer):
     """Serializer for organizer payouts."""
-    event_title = serializers.CharField(source='event.title', read_only=True)
+    organizer_name = serializers.CharField(source='organizer.name', read_only=True)
     
     class Meta:
         model = Payout
         fields = [
-            'id', 'transaction_id', 'event', 'event_title',
-            'amount', 'date', 'status', 'description'
+            'id', 'reference', 'organizer', 'organizer_name',
+            'amount', 'status', 'method', 'created_at', 'processed_at'
         ]
-        read_only_fields = ['id', 'transaction_id', 'date']
+        read_only_fields = ['id', 'reference', 'created_at']
 
 
 class EventEditRequestSerializer(serializers.ModelSerializer):

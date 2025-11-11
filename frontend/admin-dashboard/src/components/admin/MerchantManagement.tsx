@@ -59,6 +59,7 @@ import {
   CreditCard,
   Building2,
   FileText,
+  Key,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { format, parseISO } from "date-fns";
@@ -123,6 +124,9 @@ const MerchantAccountsManagement: React.FC = () => {
     commissionRate: 0,
     taxId: "",
   });
+  const [newlyCreatedMerchantId, setNewlyCreatedMerchantId] = useState<string | null>(null);
+  const [isCreateCredentialsDialogOpen, setIsCreateCredentialsDialogOpen] = useState(false);
+  const [credentialsForm, setCredentialsForm] = useState({ mobile: "", password: "" });
 
   const queryClient = useQueryClient();
 
@@ -325,13 +329,16 @@ const MerchantAccountsManagement: React.FC = () => {
     mutationFn: async (data: any) => {
       return await merchantsApi.createMerchant(data);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['merchants'] });
       toast({
         title: t("admin.merchants.toast.merchantAdded"),
         description: t("admin.merchants.toast.merchantAddedDesc"),
       });
       setIsAddDialogOpen(false);
+      // Store the newly created merchant ID and open credentials dialog
+      setNewlyCreatedMerchantId(data.id?.toString() || null);
+      setIsCreateCredentialsDialogOpen(true);
       setNewMerchant({
         businessName: "",
         ownerName: "",
@@ -342,6 +349,31 @@ const MerchantAccountsManagement: React.FC = () => {
         commissionRate: 0,
         taxId: "",
       });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || t("admin.merchants.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create credentials mutation
+  const createCredentialsMutation = useMutation({
+    mutationFn: async (data: { mobile: string; password: string }) => {
+      if (!newlyCreatedMerchantId) throw new Error("Merchant ID not found");
+      return await merchantsApi.createMerchantCredentials(newlyCreatedMerchantId, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['merchants'] });
+      toast({
+        title: t("admin.merchants.toast.credentialsCreated"),
+        description: t("admin.merchants.toast.credentialsCreatedDesc"),
+      });
+      setIsCreateCredentialsDialogOpen(false);
+      setNewlyCreatedMerchantId(null);
+      setCredentialsForm({ mobile: "", password: "" });
     },
     onError: (error: any) => {
       toast({
@@ -478,6 +510,12 @@ const MerchantAccountsManagement: React.FC = () => {
     setShowMerchantDetails(true);
   };
 
+  const handleCreateCredentialsForMerchant = (merchant: MerchantAccount) => {
+    setNewlyCreatedMerchantId(merchant.id);
+    setIsCreateCredentialsDialogOpen(true);
+    setCredentialsForm({ mobile: merchant.phone || "", password: "" });
+  };
+
   const handleDeleteMerchant = (merchantId: string) => {
     if (window.confirm(t("admin.merchants.toast.confirmDelete") || "Are you sure you want to delete this merchant?")) {
       deleteMerchantMutation.mutate(merchantId);
@@ -507,6 +545,34 @@ const MerchantAccountsManagement: React.FC = () => {
       status: 'active',
       verification_status: 'pending',
     });
+  };
+
+  const handleCreateCredentials = () => {
+    if (!credentialsForm.mobile || !credentialsForm.password) {
+      toast({
+        title: t("admin.merchants.toast.validationError") || t("common.error"),
+        description: "Mobile number and password are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (credentialsForm.password.length < 6) {
+      toast({
+        title: t("admin.merchants.toast.validationError") || t("common.error"),
+        description: "Password must be at least 6 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createCredentialsMutation.mutate(credentialsForm);
+  };
+
+  const handleSkipCredentials = () => {
+    setIsCreateCredentialsDialogOpen(false);
+    setNewlyCreatedMerchantId(null);
+    setCredentialsForm({ mobile: "", password: "" });
   };
 
   const handleSaveMerchantChanges = () => {
@@ -975,6 +1041,13 @@ const MerchantAccountsManagement: React.FC = () => {
                           >
                             <Edit className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
                             {t("admin.merchants.actions.editMerchant")}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => handleCreateCredentialsForMerchant(merchant)}
+                          >
+                            <Key className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                            {t("admin.merchants.actions.createCredentials")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -1543,6 +1616,68 @@ const MerchantAccountsManagement: React.FC = () => {
               {createMerchantMutation.isPending 
                 ? t("common.loading") 
                 : t("admin.merchants.dialogs.addMerchantButton")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Credentials Dialog */}
+      <Dialog open={isCreateCredentialsDialogOpen} onOpenChange={setIsCreateCredentialsDialogOpen}>
+        <DialogContent className="max-w-md rtl:text-right ltr:text-left">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 rtl:text-right ltr:text-left">
+              <Key className="h-5 w-5" />
+              {t("admin.merchants.credentials.title")}
+            </DialogTitle>
+            <DialogDescription className="rtl:text-right ltr:text-left">
+              {t("admin.merchants.credentials.subtitle")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                {t("admin.merchants.credentials.mobile")} *
+              </label>
+              <Input
+                type="tel"
+                placeholder={t("admin.merchants.credentials.mobilePlaceholder")}
+                value={credentialsForm.mobile}
+                onChange={(e) =>
+                  setCredentialsForm({ ...credentialsForm, mobile: e.target.value })
+                }
+                className="mt-1"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                {t("admin.merchants.credentials.password")} *
+              </label>
+              <Input
+                type="password"
+                placeholder={t("admin.merchants.credentials.passwordPlaceholder")}
+                value={credentialsForm.password}
+                onChange={(e) =>
+                  setCredentialsForm({ ...credentialsForm, password: e.target.value })
+                }
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1 rtl:text-right ltr:text-left">
+                {t("admin.merchants.credentials.passwordHint")}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleSkipCredentials}>
+              {t("admin.merchants.credentials.skip")}
+            </Button>
+            <Button
+              onClick={handleCreateCredentials}
+              disabled={createCredentialsMutation.isPending}
+            >
+              {createCredentialsMutation.isPending
+                ? t("common.loading")
+                : t("admin.merchants.credentials.create")}
             </Button>
           </DialogFooter>
         </DialogContent>

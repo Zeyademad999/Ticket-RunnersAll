@@ -6,41 +6,72 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { OtpInput } from "@/components/ui/input-otp";
 import { Footer } from "@/components/Footer";
-
-const MOCK_OTP = "123456";
+import { useAuth } from "@/Contexts/AuthContext";
+import organizerApi from "@/lib/api/organizerApi";
+import { useToast } from "@/hooks/use-toast";
 
 const OrganizerLogin: React.FC = () => {
   const { t, i18n } = useTranslation();
+  const { login, verifyOTP } = useAuth();
+  const { toast } = useToast();
   const [step, setStep] = useState<
     "login" | "otp" | "forgotPassword" | "resetOtp" | "newPassword"
   >("login");
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const [resetOtp, setResetOtp] = useState(""); // Separate OTP for password reset
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (mobile && password) {
-      setStep("otp");
-    } else {
+    setSuccess("");
+
+    if (!mobile || !password) {
       setError(t("organizer.login.error.missingFields"));
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await login(mobile, password);
+      setSuccess(t("organizer.login.otpSent"));
+      setStep("otp");
+    } catch (err: any) {
+      setError(err.message || t("organizer.login.error.loginFailed"));
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleOtp = (e: React.FormEvent) => {
+  const handleOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (otp === MOCK_OTP) {
-      localStorage.setItem("organizer_authenticated", "true");
-      navigate("/dashboard");
-    } else {
+    setSuccess("");
+
+    if (!otp || otp.length !== 6) {
       setError(t("organizer.login.error.invalidOtp"));
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await verifyOTP(mobile, otp);
+      toast({
+        title: t("organizer.login.success"),
+        description: t("organizer.login.welcome"),
+      });
+      navigate("/dashboard");
+    } catch (err: any) {
+      setError(err.message || t("organizer.login.error.invalidOtp"));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -50,31 +81,51 @@ const OrganizerLogin: React.FC = () => {
     setSuccess("");
   };
 
-  const handleSendResetOtp = (e: React.FormEvent) => {
+  const handleSendResetOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (mobile) {
+    setSuccess("");
+
+    if (!mobile) {
+      setError(t("auth.phone_required"));
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await organizerApi.forgotPassword({ mobile });
       setStep("resetOtp");
       setSuccess(t("auth.otp_sent"));
-    } else {
-      setError(t("auth.phone_required"));
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          t("organizer.login.error.otpSendFailed")
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleResetOtp = (e: React.FormEvent) => {
+  const handleResetOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (otp === MOCK_OTP) {
-      setStep("newPassword");
-      setOtp("");
-    } else {
+    setSuccess("");
+
+    if (!resetOtp || resetOtp.length !== 6) {
       setError(t("organizer.login.error.invalidOtp"));
+      return;
     }
+
+    // OTP is verified when resetting password, so just proceed to password step
+    setStep("newPassword");
   };
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
+
     if (!newPassword || !confirmPassword) {
       setError(t("auth.password_required"));
       return;
@@ -88,16 +139,38 @@ const OrganizerLogin: React.FC = () => {
       return;
     }
 
-    setSuccess(t("auth.password_reset_success"));
-    setTimeout(() => {
-      setStep("login");
-      setMobile("");
-      setPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setError("");
-      setSuccess("");
-    }, 2000);
+    setIsLoading(true);
+    try {
+      await organizerApi.resetPassword({
+        mobile,
+        otp_code: resetOtp,
+        new_password: newPassword,
+      });
+      setSuccess(t("auth.password_reset_success"));
+      toast({
+        title: t("auth.password_reset_success"),
+        description: t("organizer.login.passwordResetSuccess"),
+      });
+      setTimeout(() => {
+        setStep("login");
+        setMobile("");
+        setPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setOtp("");
+        setResetOtp("");
+        setError("");
+        setSuccess("");
+      }, 2000);
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error?.message ||
+          err.message ||
+          t("organizer.login.error.passwordResetFailed")
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleBackToLogin = () => {
@@ -105,6 +178,7 @@ const OrganizerLogin: React.FC = () => {
     setMobile("");
     setPassword("");
     setOtp("");
+    setResetOtp("");
     setNewPassword("");
     setConfirmPassword("");
     setError("");
@@ -157,8 +231,9 @@ const OrganizerLogin: React.FC = () => {
                   dir={i18n.language === "ar" ? "rtl" : "ltr"}
                 />
                 {error && <div className="text-red-500 text-sm">{error}</div>}
-                <Button type="submit" className="w-full">
-                  {t("organizer.login.loginButton")}
+                {success && <div className="text-green-500 text-sm">{success}</div>}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t("common.loading") : t("organizer.login.loginButton")}
                 </Button>
                 <div className="text-center">
                   <button
@@ -188,8 +263,13 @@ const OrganizerLogin: React.FC = () => {
                     {error}
                   </div>
                 )}
-                <Button type="submit" className="w-full">
-                  {t("organizer.login.verifyButton")}
+                {success && (
+                  <div className="text-green-500 text-sm text-center">
+                    {success}
+                  </div>
+                )}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t("common.loading") : t("organizer.login.verifyButton")}
                 </Button>
                 <div className="text-center">
                   <button
@@ -217,8 +297,9 @@ const OrganizerLogin: React.FC = () => {
                   dir={i18n.language === "ar" ? "rtl" : "ltr"}
                 />
                 {error && <div className="text-red-500 text-sm">{error}</div>}
-                <Button type="submit" className="w-full">
-                  {t("auth.send_otp")}
+                {success && <div className="text-green-500 text-sm">{success}</div>}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t("common.loading") : t("auth.send_otp")}
                 </Button>
                 <div className="text-center">
                   <button
@@ -237,8 +318,8 @@ const OrganizerLogin: React.FC = () => {
                   {t("organizer.login.otpTitle")}
                 </div>
                 <OtpInput
-                  value={otp}
-                  onChange={setOtp}
+                  value={resetOtp}
+                  onChange={setResetOtp}
                   length={6}
                   autoFocus={true}
                   language={i18n.language}
@@ -253,8 +334,8 @@ const OrganizerLogin: React.FC = () => {
                     {success}
                   </div>
                 )}
-                <Button type="submit" className="w-full">
-                  {t("auth.verify_otp")}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t("common.loading") : t("auth.verify_otp")}
                 </Button>
                 <div className="text-center">
                   <button
@@ -294,8 +375,8 @@ const OrganizerLogin: React.FC = () => {
                 {success && (
                   <div className="text-green-500 text-sm">{success}</div>
                 )}
-                <Button type="submit" className="w-full">
-                  {t("auth.reset_password")}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t("common.loading") : t("auth.reset_password")}
                 </Button>
                 <div className="text-center">
                   <button

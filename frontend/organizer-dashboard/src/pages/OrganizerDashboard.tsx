@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { createRoot } from "react-dom/client";
 import {
   Card,
   CardContent,
@@ -32,10 +31,7 @@ import {
   Filter,
   Search,
   BarChart3,
-  PieChart,
   Activity,
-  Eye,
-  EyeOff,
   Sun,
   Moon,
   LogOut,
@@ -56,8 +52,10 @@ import { useTheme } from "@/hooks/useTheme";
 import i18n from "@/lib/i18n";
 import { Footer } from "@/components/Footer";
 import InvoiceModal from "@/components/InvoiceModal";
+import { useQuery } from "@tanstack/react-query";
+import organizerApi from "@/lib/api/organizerApi";
+import { useAuth } from "@/Contexts/AuthContext";
 
-const MOCK_OTP = "123456";
 
 // Types
 interface Event {
@@ -87,16 +85,16 @@ interface TicketCategory {
 }
 
 interface DashboardStats {
-  totalEvents: number;
-  runningEvents: number;
-  completedEvents: number;
-  availableTickets: number;
-  totalTicketsSold: number;
-  totalAttendees: number;
-  totalRevenues: number;
-  netRevenues: number;
-  totalProcessedPayouts: number;
-  totalPendingPayouts: number;
+  total_events: number;
+  running_events: number;
+  completed_events: number;
+  available_tickets: number;
+  total_tickets_sold: number;
+  total_attendees: number;
+  total_revenues: number;
+  net_revenues: number;
+  total_processed_payouts: number;
+  total_pending_payouts: number;
 }
 
 interface PayoutHistory {
@@ -121,7 +119,6 @@ const OrganizerDashboard: React.FC = () => {
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  const [showDetailedMetrics, setShowDetailedMetrics] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("events");
   const [language, setLanguage] = useState("EN");
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -136,16 +133,15 @@ const OrganizerDashboard: React.FC = () => {
     null
   );
 
-  // Mock organizer profile data
+  // Transform API profile to match profileData structure
   const [profileData, setProfileData] = useState({
-    taxId: "123456789",
-    commercialRegistration: "CR-2024-001234",
-    legalBusinessName: "Event Management Solutions LLC",
-    tradeName: "EventPro",
-    about:
-      "Leading event management company specializing in corporate events, conferences, and entertainment shows. We provide comprehensive event planning services with over 10 years of experience in the industry.",
-    contactMobile: "+20 10 1234 5678",
-    profileImage: "/placeholderLogo.png", // Default profile image
+    taxId: "",
+    commercialRegistration: "",
+    legalBusinessName: "",
+    tradeName: "",
+    about: "",
+    contactMobile: "",
+    profileImage: "/placeholderLogo.png",
   });
 
   // Change password state
@@ -164,11 +160,26 @@ const OrganizerDashboard: React.FC = () => {
   const [invoiceData, setInvoiceData] = useState<any>(null);
   const [changePasswordSuccess, setChangePasswordSuccess] = useState("");
 
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+
   useEffect(() => {
-    if (localStorage.getItem("organizer_authenticated") !== "true") {
-      navigate("/");
+    // Only redirect if auth check is complete and user is not authenticated
+    if (!authLoading && !isAuthenticated) {
+      navigate("/login");
     }
-  }, [navigate]);
+  }, [isAuthenticated, authLoading, navigate]);
+
+  // Fetch dashboard stats from API
+  const {
+    data: dashboardStats,
+    isLoading: statsLoading,
+    error: statsError,
+  } = useQuery<DashboardStats>({
+    queryKey: ["organizer-dashboard-stats"],
+    queryFn: () => organizerApi.getDashboardStats(),
+    enabled: isAuthenticated,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
 
   useEffect(() => {
     const storedLang = localStorage.getItem("appLanguage");
@@ -218,26 +229,53 @@ const OrganizerDashboard: React.FC = () => {
     setProfileImagePreview(null);
   };
 
-  const handleRequestChanges = () => {
-    // Check if there's a new profile image to include in the request
-    if (profileImageFile) {
+  const handleRequestChanges = async () => {
+    if (!organizerProfile) return;
+
+    try {
+      // Prepare update data
+      const updateData: any = {
+        name: profileData.legalBusinessName,
+        trade_name: profileData.tradeName,
+        tax_id: profileData.taxId,
+        commercial_registration: profileData.commercialRegistration,
+        about: profileData.about,
+        contact_mobile: profileData.contactMobile,
+      };
+
+      // If there's a new profile image, add it to FormData
+      if (profileImageFile) {
+        const formData = new FormData();
+        Object.keys(updateData).forEach(key => {
+          formData.append(key, updateData[key]);
+        });
+        formData.append('profile_image', profileImageFile);
+        
+        // Use multipart/form-data for file upload
+        await organizerApi.updateProfile(formData as any);
+      } else {
+        await organizerApi.updateProfile(updateData);
+      }
+
       toast({
         title: t("dashboard.profile.changesRequested"),
-        description:
-          t("dashboard.profile.changesRequestedDesc") +
-          " " +
-          t("dashboard.profile.imageUpdateIncluded"),
+        description: profileImageFile 
+          ? t("dashboard.profile.changesRequestedDesc") + " " + t("dashboard.profile.imageUpdateIncluded")
+          : t("dashboard.profile.changesRequestedDesc"),
       });
-    } else {
+
+      // Refetch profile to get updated data
+      await refetchProfile();
+      setIsEditingProfile(false);
+      setProfileImageFile(null);
+      setProfileImagePreview(null);
+    } catch (error: any) {
       toast({
-        title: t("dashboard.profile.changesRequested"),
-        description: t("dashboard.profile.changesRequestedDesc"),
+        title: t("dashboard.profile.error"),
+        description: error.response?.data?.error?.message || "Failed to update profile",
+        variant: "destructive",
       });
     }
-    setIsEditingProfile(false);
-    // Reset image upload state
-    setProfileImageFile(null);
-    setProfileImagePreview(null);
   };
 
   const handleProfileDataChange = (field: string, value: string) => {
@@ -286,61 +324,73 @@ const OrganizerDashboard: React.FC = () => {
     setProfileImagePreview(null);
   };
 
-  const handleDownloadInvoice = (payout: PayoutHistory) => {
-    // Find the corresponding event for additional details
-    const event = events.find((e) => e.id === payout.eventId);
+  const handleDownloadInvoice = async (payout: PayoutHistory) => {
+    try {
+      // Fetch invoice data from API
+      const invoiceData = await organizerApi.getPayoutInvoice(payout.id);
+      
+      // Find the corresponding event for additional details
+      const event = events.find((e) => e.id === payout.eventId);
 
-    // Create comprehensive invoice data
-    const data = {
-      invoiceNumber: `INV-${payout.transactionId}`,
-      date: payout.date,
-      dueDate: new Date(
-        new Date(payout.date).getTime() + 30 * 24 * 60 * 60 * 1000
-      )
-        .toISOString()
-        .split("T")[0], // 30 days from date
-      eventTitle: payout.eventTitle,
-      eventDate: event?.date || payout.date,
-      eventLocation: event?.location || "N/A",
-      organizerName: profileData.legalBusinessName,
-      organizerEmail: "contact@eventpro.com",
-      organizerPhone: profileData.contactMobile,
-      organizerAddress: "123 Business Street, Cairo, Egypt",
-      transactionId: payout.transactionId,
-      amount: payout.amount,
-      status: payout.status,
-      description: payout.description,
-      items: [
-        {
-          description: t("invoice.item_1", "Premium Event Access"),
-          quantity: 1,
-          unitPrice: payout.amount * 0.85, // 85% of total
-          total: payout.amount * 0.85,
-        },
-        {
-          description: t("invoice.item_2", "Service Fee"),
-          quantity: 1,
-          unitPrice: payout.amount * 0.15, // 15% service fee
-          total: payout.amount * 0.15,
-        },
-      ],
-      subtotal: payout.amount * 0.85,
-      tax: payout.amount * 0.15,
-      total: payout.amount,
-      currency: "EGP",
-    };
+      // Create comprehensive invoice data
+      const data = {
+        invoiceNumber: `INV-${payout.transactionId}`,
+        date: payout.date,
+        dueDate: new Date(
+          new Date(payout.date).getTime() + 30 * 24 * 60 * 60 * 1000
+        )
+          .toISOString()
+          .split("T")[0], // 30 days from date
+        eventTitle: payout.eventTitle,
+        eventDate: event?.date || payout.date,
+        eventLocation: event?.location || "N/A",
+        organizerName: profileData.legalBusinessName || organizerProfile?.name || "",
+        organizerEmail: (organizerProfile as any)?.email || organizerProfile?.contact_email || "",
+        organizerPhone: profileData.contactMobile || organizerProfile?.contact_mobile || "",
+        organizerAddress: (organizerProfile as any)?.location || "",
+        transactionId: payout.transactionId,
+        amount: payout.amount,
+        status: payout.status,
+        description: payout.description,
+        items: [
+          {
+            description: t("invoice.item_1", "Premium Event Access"),
+            quantity: 1,
+            unitPrice: payout.amount * 0.85, // 85% of total
+            total: payout.amount * 0.85,
+          },
+          {
+            description: t("invoice.item_2", "Service Fee"),
+            quantity: 1,
+            unitPrice: payout.amount * 0.15, // 15% service fee
+            total: payout.amount * 0.15,
+          },
+        ],
+        subtotal: payout.amount * 0.85,
+        tax: payout.amount * 0.15,
+        total: payout.amount,
+        currency: "EGP",
+        ...invoiceData.invoice, // Merge API invoice data if available
+      };
 
-    // Set invoice data and show modal
-    setInvoiceData(data);
-    setShowInvoiceModal(true);
+      // Set invoice data and show modal
+      setInvoiceData(data);
+      setShowInvoiceModal(true);
 
-    // Show toast notification
-    toast({
-      title: t("dashboard.payout.invoiceDownload"),
-      description: `${t("dashboard.payout.invoiceDownloadDesc")} ${
-        payout.transactionId
-      }`,
-    });
+      // Show toast notification
+      toast({
+        title: t("dashboard.payout.invoiceDownload"),
+        description: `${t("dashboard.payout.invoiceDownloadDesc")} ${
+          payout.transactionId
+        }`,
+      });
+    } catch (error: any) {
+      toast({
+        title: t("dashboard.payout.invoiceError"),
+        description: error.response?.data?.error?.message || "Failed to load invoice",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleChangePassword = () => {
@@ -354,7 +404,7 @@ const OrganizerDashboard: React.FC = () => {
     setChangePasswordSuccess("");
   };
 
-  const handleCurrentPasswordSubmit = (e: React.FormEvent) => {
+  const handleCurrentPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setChangePasswordError("");
 
@@ -363,28 +413,36 @@ const OrganizerDashboard: React.FC = () => {
       return;
     }
 
-    // Mock current password validation (in real app, this would verify against stored password)
-    if (currentPassword === "password123") {
+    if (!organizerProfile?.contact_mobile) {
+      setChangePasswordError("Organizer mobile number not found");
+      return;
+    }
+
+    try {
+      // Request OTP for password change using forgot password endpoint
+      await organizerApi.forgotPassword({ mobile: organizerProfile.contact_mobile });
       setChangePasswordStep("otp");
       setChangePasswordSuccess(t("auth.otp_sent"));
-    } else {
-      setChangePasswordError("Password is incorrect");
+    } catch (error: any) {
+      setChangePasswordError(error.response?.data?.error?.message || "Failed to request OTP");
     }
   };
 
-  const handleChangePasswordOtp = (e: React.FormEvent) => {
+  const handleChangePasswordOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setChangePasswordError("");
 
-    if (changePasswordOtp === MOCK_OTP) {
-      setChangePasswordStep("new");
-      setChangePasswordOtp("");
-    } else {
+    if (!changePasswordOtp || changePasswordOtp.length !== 6) {
       setChangePasswordError(t("organizer.login.error.invalidOtp"));
+      return;
     }
+
+    // OTP validation happens on backend when submitting new password
+    setChangePasswordStep("new");
+    setChangePasswordOtp("");
   };
 
-  const handleNewPasswordSubmit = (e: React.FormEvent) => {
+  const handleNewPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setChangePasswordError("");
 
@@ -410,17 +468,29 @@ const OrganizerDashboard: React.FC = () => {
       return;
     }
 
-    setChangePasswordSuccess(t("auth.password_reset_success"));
-    setTimeout(() => {
-      setShowChangePassword(false);
-      setChangePasswordStep("current");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmNewPassword("");
-      setChangePasswordOtp("");
-      setChangePasswordError("");
-      setChangePasswordSuccess("");
-    }, 2000);
+    try {
+      await organizerApi.changePassword({
+        current_password: currentPassword,
+        otp_code: changePasswordOtp,
+        new_password: newPassword,
+      });
+
+      setChangePasswordSuccess(t("auth.password_reset_success"));
+      setTimeout(() => {
+        setShowChangePassword(false);
+        setChangePasswordStep("current");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setChangePasswordOtp("");
+        setChangePasswordError("");
+        setChangePasswordSuccess("");
+      }, 2000);
+    } catch (error: any) {
+      setChangePasswordError(
+        error.response?.data?.error?.message || "Failed to change password"
+      );
+    }
   };
 
   const handleCancelChangePassword = () => {
@@ -434,161 +504,95 @@ const OrganizerDashboard: React.FC = () => {
     setChangePasswordSuccess("");
   };
 
-  // Mock data - replace with API calls
-  const events: Event[] = [
-    {
-      id: "1",
-      title:
-        i18nInstance.language === "ar"
-          ? "مهرجان الموسيقى الصيفي"
-          : "Summer Music Festival",
-      date: "2025-08-15",
-      time: "18:00",
-      location:
-        i18nInstance.language === "ar"
-          ? "مركز السويس الثقافي، الزمالك"
-          : "El Sawy Culturewheel, Zamalek",
-      status: "upcoming",
-      imageUrl: "/public/event1.jpg",
-      totalTickets: 500,
-      ticketsSold: 470,
-      ticketsAvailable: 30,
-      peopleAdmitted: 450,
-      peopleRemaining: 20,
-      totalPayoutPending: 117750,
-      totalPayoutPaid: 100000,
-      ticketCategories: [
-        {
-          name: i18nInstance.language === "ar" ? "VIP" : "VIP",
-          price: 500,
-          totalTickets: 50,
-          ticketsSold: 48,
-          ticketsAvailable: 2,
-        },
-        {
-          name: i18nInstance.language === "ar" ? "عادي" : "Regular",
-          price: 250,
-          totalTickets: 400,
-          ticketsSold: 372,
-          ticketsAvailable: 28,
-        },
-        {
-          name: i18nInstance.language === "ar" ? "طالب" : "Student",
-          price: 150,
-          totalTickets: 50,
-          ticketsSold: 50,
-          ticketsAvailable: 0,
-        },
-      ],
-    },
-    {
-      id: "2",
-      title:
-        i18nInstance.language === "ar"
-          ? "ملتقى المبتكرين التقنيين"
-          : "Tech Innovators Meetup",
-      date: "2025-09-01",
-      time: "10:00",
-      location:
-        i18nInstance.language === "ar"
-          ? "الحرم اليوناني، وسط البلد"
-          : "Greek Campus, Downtown Cairo",
-      status: "upcoming",
-      imageUrl: "/public/event2.jpg",
-      totalTickets: 200,
-      ticketsSold: 150,
-      ticketsAvailable: 50,
-      peopleAdmitted: 0,
-      peopleRemaining: 150,
-      totalPayoutPending: 30000,
-      totalPayoutPaid: 0,
-      ticketCategories: [
-        {
-          name: i18nInstance.language === "ar" ? "الطائر المبكر" : "Early Bird",
-          price: 200,
-          totalTickets: 100,
-          ticketsSold: 80,
-          ticketsAvailable: 20,
-        },
-        {
-          name: i18nInstance.language === "ar" ? "عادي" : "Regular",
-          price: 300,
-          totalTickets: 100,
-          ticketsSold: 70,
-          ticketsAvailable: 30,
-        },
-      ],
-    },
-    {
-      id: "3",
-      title:
-        i18nInstance.language === "ar"
-          ? "ليلة الكوميديا"
-          : "Stand-up Comedy Night",
-      date: "2025-08-22",
-      time: "20:30",
-      location:
-        i18nInstance.language === "ar"
-          ? "مساحة روم آرت، القاهرة الجديدة"
-          : "Room Art Space, New Cairo",
-      status: "ongoing",
-      imageUrl: "/public/event3.jpg",
-      totalTickets: 150,
-      ticketsSold: 120,
-      ticketsAvailable: 30,
-      peopleAdmitted: 100,
-      peopleRemaining: 20,
-      totalPayoutPending: 5000,
-      totalPayoutPaid: 25000,
-      ticketCategories: [
-        {
-          name: i18nInstance.language === "ar" ? "عام" : "General",
-          price: 150,
-          totalTickets: 150,
-          ticketsSold: 120,
-          ticketsAvailable: 30,
-        },
-      ],
-    },
-    {
-      id: "4",
-      title:
-        i18nInstance.language === "ar"
-          ? "معرض الفن الحديث"
-          : "Modern Art Exhibition",
-      date: "2025-07-10",
-      time: "16:00",
-      location:
-        i18nInstance.language === "ar"
-          ? "دار الأوبرا المصرية"
-          : "Cairo Opera House",
-      status: "completed",
-      imageUrl: "/public/event4.jpg",
-      totalTickets: 300,
-      ticketsSold: 280,
-      ticketsAvailable: 20,
-      peopleAdmitted: 275,
-      peopleRemaining: 5,
-      totalPayoutPending: 0,
-      totalPayoutPaid: 70000,
-      ticketCategories: [
-        {
-          name: i18nInstance.language === "ar" ? "بالغ" : "Adult",
-          price: 200,
-          totalTickets: 200,
-          ticketsSold: 185,
-          ticketsAvailable: 15,
-        },
-        {
-          name: i18nInstance.language === "ar" ? "طالب" : "Student",
-          price: 100,
-          totalTickets: 100,
-          ticketsSold: 95,
-          ticketsAvailable: 5,
-        },
-      ],
-    },
-  ];
+  // Fetch events from API
+  const {
+    data: eventsData,
+    isLoading: eventsLoading,
+    error: eventsError,
+  } = useQuery({
+    queryKey: ["organizer-events"],
+    queryFn: () => organizerApi.getEvents(),
+    enabled: isAuthenticated,
+  });
+
+  // Transform API events to match Event interface
+  const events: Event[] = React.useMemo(() => {
+    if (!eventsData) return [];
+    return eventsData.map((event) => ({
+      id: String(event.id),
+      title: event.title,
+      date: event.date,
+      time: event.time,
+      location: event.location,
+      status: event.status as "upcoming" | "ongoing" | "completed" | "cancelled",
+      imageUrl: event.image_url || "/public/event-placeholder.jpg",
+      totalTickets: event.total_tickets || 0,
+      ticketsSold: event.tickets_sold || 0,
+      ticketsAvailable: event.tickets_available || 0,
+      peopleAdmitted: 0, // Will be fetched from event detail
+      peopleRemaining: 0, // Will be fetched from event detail
+      totalPayoutPending: event.total_payout_pending || 0,
+      totalPayoutPaid: event.total_payout_paid || 0,
+      ticketCategories: (event.ticket_categories || []).map((cat: any) => ({
+        name: cat.name || cat.category || "Unknown",
+        price: cat.price || 0,
+        totalTickets: cat.total_tickets || cat.total || 0,
+        ticketsSold: cat.tickets_sold || cat.sold || 0,
+        ticketsAvailable: cat.tickets_available || cat.available || 0,
+      })),
+    }));
+  }, [eventsData]);
+
+  // Fetch detailed analytics for selected event in Analytics tab
+  const {
+    data: selectedEventAnalytics,
+    isLoading: analyticsLoading,
+  } = useQuery({
+    queryKey: ["organizer-event-analytics", selectedEvent?.id],
+    queryFn: () => organizerApi.getEventDetail(selectedEvent!.id),
+    enabled: !!selectedEvent && activeTab === "analytics" && isAuthenticated,
+  });
+
+  // Merge selected event with analytics data
+  const eventWithAnalytics: Event | null = React.useMemo(() => {
+    if (!selectedEvent) return null;
+    if (!selectedEventAnalytics) return selectedEvent;
+
+    const overallStats = selectedEventAnalytics.overall_stats || {
+      sold: selectedEvent.ticketsSold,
+      available: selectedEvent.ticketsAvailable,
+      admitted: selectedEvent.peopleAdmitted,
+      remaining: selectedEvent.peopleRemaining,
+    };
+
+    const payoutInfo = selectedEventAnalytics.payout_info || {
+      pending: selectedEvent.totalPayoutPending,
+      paid: selectedEvent.totalPayoutPaid,
+    };
+
+    // Transform ticket categories from analytics
+    console.log("Selected Event Analytics:", selectedEventAnalytics);
+    console.log("Ticket Categories Raw:", selectedEventAnalytics.ticket_categories);
+    
+    const ticketCategories = selectedEventAnalytics.ticket_categories?.map((cat: any) => ({
+      name: cat.name || cat.category || "Unknown",
+      price: cat.price || 0,
+      totalTickets: cat.total_tickets || cat.total || 0,
+      ticketsSold: cat.sold || 0,
+      ticketsAvailable: cat.available || 0,
+    })) || selectedEvent.ticketCategories || [];
+    
+    console.log("Ticket Categories Transformed:", ticketCategories);
+
+    return {
+      ...selectedEvent,
+      peopleAdmitted: overallStats.admitted,
+      peopleRemaining: overallStats.remaining,
+      totalPayoutPending: payoutInfo.pending,
+      totalPayoutPaid: payoutInfo.paid,
+      ticketCategories,
+    };
+  }, [selectedEvent, selectedEventAnalytics]);
 
   // Set the most recent event as default when component mounts
   useEffect(() => {
@@ -611,91 +615,22 @@ const OrganizerDashboard: React.FC = () => {
     }
   }, [activeTab, events, selectedEvent]);
 
-  // Mock payout history data
-  const payoutHistory: PayoutHistory[] = [
-    {
-      id: "1",
-      transactionId: "TRX-001",
-      eventId: "1",
-      eventTitle: "Summer Music Festival",
-      amount: 100000,
-      date: "2025-08-15",
-      status: "completed",
-      invoiceUrl: "/public/invoice1.pdf",
-      description: "Payout for tickets sold on 2025-08-15",
-    },
-    {
-      id: "2",
-      transactionId: "TRX-002",
-      eventId: "2",
-      eventTitle: "Tech Innovators Meetup",
-      amount: 30000,
-      date: "2025-09-01",
-      status: "pending",
-      invoiceUrl: "",
-      description: "Pending payout for tickets sold on 2025-09-01",
-    },
-    {
-      id: "3",
-      transactionId: "TRX-003",
-      eventId: "3",
-      eventTitle: "Stand-up Comedy Night",
-      amount: 25000,
-      date: "2025-08-22",
-      status: "completed",
-      invoiceUrl: "/public/invoice2.pdf",
-      description: "Payout for tickets sold on 2025-08-22",
-    },
-    {
-      id: "4",
-      transactionId: "TRX-004",
-      eventId: "4",
-      eventTitle: "Modern Art Exhibition",
-      amount: 70000,
-      date: "2025-07-10",
-      status: "completed",
-      invoiceUrl: "/public/invoice3.pdf",
-      description: "Payout for tickets sold on 2025-07-10",
-    },
-  ];
+  // Default stats for loading/error states
+  const defaultStats: DashboardStats = {
+    total_events: 0,
+    running_events: 0,
+    completed_events: 0,
+    available_tickets: 0,
+    total_tickets_sold: 0,
+    total_attendees: 0,
+    total_revenues: 0,
+    net_revenues: 0,
+    total_processed_payouts: 0,
+    total_pending_payouts: 0,
+  };
 
-  // Calculate dashboard statistics
-  const dashboardStats: DashboardStats = useMemo(() => {
-    return events.reduce(
-      (stats, event) => ({
-        totalEvents: stats.totalEvents + 1,
-        runningEvents:
-          stats.runningEvents + (event.status === "ongoing" ? 1 : 0),
-        completedEvents:
-          stats.completedEvents + (event.status === "completed" ? 1 : 0),
-        availableTickets: stats.availableTickets + event.ticketsAvailable,
-        totalTicketsSold: stats.totalTicketsSold + event.ticketsSold,
-        totalAttendees: stats.totalAttendees + event.peopleAdmitted,
-        totalRevenues:
-          stats.totalRevenues +
-          (event.ticketsSold * event.ticketCategories[0]?.price || 0),
-        netRevenues:
-          stats.netRevenues +
-          (event.totalPayoutPaid + event.totalPayoutPending),
-        totalProcessedPayouts:
-          stats.totalProcessedPayouts + event.totalPayoutPaid,
-        totalPendingPayouts:
-          stats.totalPendingPayouts + event.totalPayoutPending,
-      }),
-      {
-        totalEvents: 0,
-        runningEvents: 0,
-        completedEvents: 0,
-        availableTickets: 0,
-        totalTicketsSold: 0,
-        totalAttendees: 0,
-        totalRevenues: 0,
-        netRevenues: 0,
-        totalProcessedPayouts: 0,
-        totalPendingPayouts: 0,
-      }
-    );
-  }, [events]);
+  // Use API stats or default
+  const stats = dashboardStats || defaultStats;
 
   // Filter events based on search and filters
   const filteredEvents = useMemo(() => {
@@ -729,6 +664,48 @@ const OrganizerDashboard: React.FC = () => {
     );
     return [...new Set(dates)];
   }, [events]);
+
+  // Fetch organizer profile from API (needed for payouts, invoice, and password change)
+  const {
+    data: organizerProfile,
+    isLoading: profileLoading,
+    error: profileError,
+    refetch: refetchProfile,
+  } = useQuery({
+    queryKey: ["organizer-profile"],
+    queryFn: () => organizerApi.getProfile(),
+    enabled: isAuthenticated,
+  });
+
+  // Fetch payouts from API
+  const {
+    data: payoutsData,
+    isLoading: payoutsLoading,
+    error: payoutsError,
+  } = useQuery({
+    queryKey: ["organizer-payouts", payoutStatusFilter, payoutSearchTerm],
+    queryFn: () => organizerApi.getPayouts({
+      status: payoutStatusFilter !== "all" ? payoutStatusFilter : undefined,
+      search: payoutSearchTerm || undefined,
+    }),
+    enabled: isAuthenticated && activeTab === "payouts",
+  });
+
+  // Transform API payouts to match PayoutHistory interface
+  const payoutHistory: PayoutHistory[] = React.useMemo(() => {
+    if (!payoutsData) return [];
+    return payoutsData.map((payout) => ({
+      id: String(payout.id),
+      transactionId: payout.reference || `PAY-${payout.id}`,
+      eventId: "", // Payout model doesn't have event field
+      eventTitle: organizerProfile?.name || t("dashboard.payout.generalPayout", "General Payout"),
+      amount: typeof payout.amount === 'number' ? payout.amount : parseFloat(String(payout.amount || 0)),
+      date: payout.created_at ? payout.created_at.split('T')[0] : new Date().toISOString().split('T')[0],
+      status: payout.status === 'processing' ? 'pending' : (payout.status as "completed" | "pending" | "failed"),
+      invoiceUrl: "",
+      description: `${t("dashboard.payout.payoutFor", "Payout")} ${payout.reference || payout.id}`,
+    }));
+  }, [payoutsData, organizerProfile, t]);
 
   // Filter payout history based on search and filters
   const filteredPayoutHistory = useMemo(() => {
@@ -920,7 +897,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                {dashboardStats.totalEvents}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  stats.total_events
+                )}
               </div>
             </CardContent>
           </Card>
@@ -936,7 +919,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                {dashboardStats.runningEvents}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  stats.running_events
+                )}
               </div>
             </CardContent>
           </Card>
@@ -952,7 +941,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                {dashboardStats.completedEvents}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  stats.completed_events
+                )}
               </div>
             </CardContent>
           </Card>
@@ -968,7 +963,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                {dashboardStats.availableTickets.toLocaleString()}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  stats.available_tickets.toLocaleString()
+                )}
               </div>
             </CardContent>
           </Card>
@@ -984,7 +985,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                {dashboardStats.totalTicketsSold.toLocaleString()}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  stats.total_tickets_sold.toLocaleString()
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1000,7 +1007,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                {dashboardStats.totalAttendees.toLocaleString()}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  stats.total_attendees.toLocaleString()
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1016,7 +1029,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                E£ {dashboardStats.totalRevenues.toLocaleString()}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  <>E£ {stats.total_revenues.toLocaleString()}</>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1032,7 +1051,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                E£ {dashboardStats.netRevenues.toLocaleString()}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  <>E£ {stats.net_revenues.toLocaleString()}</>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1048,7 +1073,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                E£ {dashboardStats.totalProcessedPayouts.toLocaleString()}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  <>E£ {stats.total_processed_payouts.toLocaleString()}</>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1064,7 +1095,13 @@ const OrganizerDashboard: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold rtl:text-right">
-                E£ {dashboardStats.totalPendingPayouts.toLocaleString()}
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">{t("common.loading")}</div>
+                ) : statsError ? (
+                  <div className="text-sm text-red-500">{t("common.errorLoadingData")}</div>
+                ) : (
+                  <>E£ {stats.total_pending_payouts.toLocaleString()}</>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1093,6 +1130,31 @@ const OrganizerDashboard: React.FC = () => {
             </TabsList>
 
             <TabsContent value="events" className="space-y-6">
+              {/* Loading State */}
+              {eventsLoading && (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="text-center text-muted-foreground">
+                      {t("common.loading")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Error State */}
+              {eventsError && (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="text-center text-red-500">
+                      {t("common.errorLoadingData")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Events List */}
+              {!eventsLoading && !eventsError && (
+                <>
               {/* Filters */}
               <Card>
                 <CardHeader>
@@ -1334,10 +1396,22 @@ const OrganizerDashboard: React.FC = () => {
                   </CardContent>
                 </Card>
               )}
+                </>
+              )}
             </TabsContent>
 
             <TabsContent value="analytics" className="space-y-6">
-              {selectedEvent ? (
+              {analyticsLoading && (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="text-center text-muted-foreground">
+                      {t("common.loading")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {eventWithAnalytics ? (
                 <div className="space-y-6">
                   {/* Event Header */}
                   <Card>
@@ -1345,26 +1419,26 @@ const OrganizerDashboard: React.FC = () => {
                       <div className="flex items-center justify-between rtl:flex-row-reverse">
                         <div>
                           <CardTitle className="text-2xl">
-                            {selectedEvent.title}
+                            {eventWithAnalytics.title}
                           </CardTitle>
                           <CardDescription>
                             {i18nInstance.language === "ar"
                               ? `${format(
-                                  parseISO(selectedEvent.date),
+                                  parseISO(eventWithAnalytics.date),
                                   "dd MMMM yyyy"
-                                )} في ${selectedEvent.time} • ${
-                                  selectedEvent.location
+                                )} في ${eventWithAnalytics.time} • ${
+                                  eventWithAnalytics.location
                                 }`
                               : `${format(
-                                  parseISO(selectedEvent.date),
+                                  parseISO(eventWithAnalytics.date),
                                   "MMMM dd, yyyy"
-                                )} at ${selectedEvent.time} • ${
-                                  selectedEvent.location
+                                )} at ${eventWithAnalytics.time} • ${
+                                  eventWithAnalytics.location
                                 }`}
                           </CardDescription>
                         </div>
-                        <Badge className={getStatusColor(selectedEvent.status)}>
-                          {getStatusText(selectedEvent.status)}
+                        <Badge className={getStatusColor(eventWithAnalytics.status)}>
+                          {getStatusText(eventWithAnalytics.status)}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -1381,37 +1455,43 @@ const OrganizerDashboard: React.FC = () => {
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
-                        {selectedEvent.ticketCategories.map(
-                          (category, index) => (
-                            <div key={index} className="space-y-2">
-                              <div className="flex justify-between items-center rtl:flex-row-reverse">
-                                <span className="font-medium">
-                                  {category.name}
-                                </span>
-                                <span className="text-sm text-muted-foreground">
-                                  E£ {category.price}
-                                </span>
+                        {eventWithAnalytics.ticketCategories && eventWithAnalytics.ticketCategories.length > 0 ? (
+                          eventWithAnalytics.ticketCategories.map(
+                            (category, index) => (
+                              <div key={index} className="space-y-2">
+                                <div className="flex justify-between items-center rtl:flex-row-reverse">
+                                  <span className="font-medium">
+                                    {category.name}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">
+                                    E£ {category.price}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between text-sm text-muted-foreground rtl:flex-row-reverse">
+                                  <span>
+                                    {t("dashboard.analytics.sold")}:{" "}
+                                    {category.ticketsSold}
+                                  </span>
+                                  <span>
+                                    {t("dashboard.analytics.available")}:{" "}
+                                    {category.ticketsAvailable}
+                                  </span>
+                                </div>
+                                <div className="rtl:transform rtl:scale-x-[-1]">
+                                  <Progress
+                                    value={calculatePercentage(
+                                      category.ticketsSold,
+                                      category.totalTickets
+                                    )}
+                                  />
+                                </div>
                               </div>
-                              <div className="flex justify-between text-sm text-muted-foreground rtl:flex-row-reverse">
-                                <span>
-                                  {t("dashboard.analytics.sold")}:{" "}
-                                  {category.ticketsSold}
-                                </span>
-                                <span>
-                                  {t("dashboard.analytics.available")}:{" "}
-                                  {category.ticketsAvailable}
-                                </span>
-                              </div>
-                              <div className="rtl:transform rtl:scale-x-[-1]">
-                                <Progress
-                                  value={calculatePercentage(
-                                    category.ticketsSold,
-                                    category.totalTickets
-                                  )}
-                                />
-                              </div>
-                            </div>
+                            )
                           )
+                        ) : (
+                          <p className="text-muted-foreground text-sm">
+                            {t("dashboard.analytics.noTicketCategories", "No ticket categories found for this event.")}
+                          </p>
                         )}
                       </CardContent>
                     </Card>
@@ -1428,7 +1508,7 @@ const OrganizerDashboard: React.FC = () => {
                         <div className="grid grid-cols-2 gap-4">
                           <div className="text-center p-4 bg-green-50 rounded-lg rtl:text-right">
                             <p className="text-2xl font-bold text-green-600">
-                              {selectedEvent.ticketsSold}
+                              {eventWithAnalytics.ticketsSold}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {t("dashboard.analytics.totalSold")}
@@ -1436,7 +1516,7 @@ const OrganizerDashboard: React.FC = () => {
                           </div>
                           <div className="text-center p-4 bg-blue-50 rounded-lg rtl:text-right">
                             <p className="text-2xl font-bold text-blue-600">
-                              {selectedEvent.ticketsAvailable}
+                              {eventWithAnalytics.ticketsAvailable}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {t("dashboard.analytics.totalAvailable")}
@@ -1444,7 +1524,7 @@ const OrganizerDashboard: React.FC = () => {
                           </div>
                           <div className="text-center p-4 bg-purple-50 rounded-lg rtl:text-right">
                             <p className="text-2xl font-bold text-purple-600">
-                              {selectedEvent.peopleAdmitted}
+                              {eventWithAnalytics.peopleAdmitted}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {t("dashboard.analytics.totalAdmitted")}
@@ -1452,7 +1532,7 @@ const OrganizerDashboard: React.FC = () => {
                           </div>
                           <div className="text-center p-4 bg-orange-50 rounded-lg rtl:text-right">
                             <p className="text-2xl font-bold text-orange-600">
-                              {selectedEvent.peopleRemaining}
+                              {eventWithAnalytics.peopleRemaining}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {t("dashboard.analytics.totalRemaining")}
@@ -1475,7 +1555,7 @@ const OrganizerDashboard: React.FC = () => {
                           <div className="text-center p-4 bg-yellow-50 rounded-lg rtl:text-right">
                             <p className="text-2xl font-bold text-yellow-600">
                               E£{" "}
-                              {selectedEvent.totalPayoutPending.toLocaleString()}
+                              {eventWithAnalytics.totalPayoutPending.toLocaleString()}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {t("dashboard.analytics.pendingPayout")}
@@ -1484,7 +1564,7 @@ const OrganizerDashboard: React.FC = () => {
                           <div className="text-center p-4 bg-green-50 rounded-lg rtl:text-right">
                             <p className="text-2xl font-bold text-green-600">
                               E£{" "}
-                              {selectedEvent.totalPayoutPaid.toLocaleString()}
+                              {eventWithAnalytics.totalPayoutPaid.toLocaleString()}
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {t("dashboard.analytics.paidPayout")}
@@ -1510,8 +1590,8 @@ const OrganizerDashboard: React.FC = () => {
                             </span>
                             <span>
                               {calculatePercentage(
-                                selectedEvent.ticketsSold,
-                                selectedEvent.totalTickets
+                                eventWithAnalytics.ticketsSold,
+                                eventWithAnalytics.totalTickets
                               ).toFixed(1)}
                               %
                             </span>
@@ -1519,8 +1599,8 @@ const OrganizerDashboard: React.FC = () => {
                           <div className="rtl:transform rtl:scale-x-[-1]">
                             <Progress
                               value={calculatePercentage(
-                                selectedEvent.ticketsSold,
-                                selectedEvent.totalTickets
+                                eventWithAnalytics.ticketsSold,
+                                eventWithAnalytics.totalTickets
                               )}
                             />
                           </div>
@@ -1532,8 +1612,8 @@ const OrganizerDashboard: React.FC = () => {
                             </span>
                             <span>
                               {calculatePercentage(
-                                selectedEvent.ticketsAvailable,
-                                selectedEvent.totalTickets
+                                eventWithAnalytics.ticketsAvailable,
+                                eventWithAnalytics.totalTickets
                               ).toFixed(1)}
                               %
                             </span>
@@ -1541,8 +1621,8 @@ const OrganizerDashboard: React.FC = () => {
                           <div className="rtl:transform rtl:scale-x-[-1]">
                             <Progress
                               value={calculatePercentage(
-                                selectedEvent.ticketsAvailable,
-                                selectedEvent.totalTickets
+                                eventWithAnalytics.ticketsAvailable,
+                                eventWithAnalytics.totalTickets
                               )}
                             />
                           </div>
@@ -1575,7 +1655,31 @@ const OrganizerDashboard: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="payouts" className="space-y-6">
+              {/* Loading State */}
+              {payoutsLoading && (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="text-center text-muted-foreground">
+                      {t("common.loading")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Error State */}
+              {payoutsError && (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="text-center text-red-500">
+                      {t("common.errorLoadingData")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Payout History Header */}
+              {!payoutsLoading && !payoutsError && (
+                <>
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 rtl:flex-row-reverse">
@@ -1810,9 +1914,36 @@ const OrganizerDashboard: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+                </>
+              )}
             </TabsContent>
 
             <TabsContent value="profile" className="space-y-6">
+              {/* Loading State */}
+              {profileLoading && (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="text-center text-muted-foreground">
+                      {t("common.loading")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Error State */}
+              {profileError && (
+                <Card>
+                  <CardContent className="py-8">
+                    <div className="text-center text-red-500">
+                      {t("common.errorLoadingData")}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Profile Content */}
+              {!profileLoading && !profileError && (
+                <>
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between rtl:flex-row-reverse">
@@ -2334,6 +2465,8 @@ const OrganizerDashboard: React.FC = () => {
                   )}
                 </CardContent>
               </Card>
+                </>
+              )}
             </TabsContent>
           </Tabs>
         </div>

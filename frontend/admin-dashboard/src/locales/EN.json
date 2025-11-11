@@ -1,6 +1,13 @@
 {
   "english": "English",
   "arabic": "Arabic",
+  "success": "Success",
+  "error": "Error",
+  "cancel": "Cancel",
+  "save": "Save",
+  "saving": "Saving...",
+  "actions": "Actions",
+  "loading": "Loading...",
   "testVenueKey": "TEST VENUE KEY WORKS",
   "searchEvents": "Search events...",
   "home": "Home",
@@ -852,7 +859,9 @@
     "error": "Error",
     "success": "Success",
     "invalidDate": "Invalid Date",
-    "backToDashboard": "Back to Dashboard"
+    "backToDashboard": "Back to Dashboard",
+    "notAvailable": "N/A",
+    "errorLoadingData": "Error loading data"
   },
   "editEvent": {
     "title": "Edit Event Request",
@@ -1178,6 +1187,12 @@
         "active": "Active",
         "inactive": "Inactive"
       },
+      "types": {
+        "admins": "Admins",
+        "organizers": "Organizers",
+        "merchants": "Merchants",
+        "ushers": "Ushers"
+      },
       "actions": {
         "export": "Export",
         "addUser": "Add Admin User",
@@ -1337,6 +1352,7 @@
       },
       "table": {
         "merchant": "Merchant",
+        "name": "Name",
         "contact": "Contact",
         "status": "Status",
         "verification": "Verification",
@@ -1370,8 +1386,10 @@
         "verify": "Verify",
         "suspend": "Suspend",
         "activate": "Activate",
+        "createCredentials": "Create Credentials",
         "deleteMerchant": "Delete Merchant"
       },
+      "noMerchantsFound": "No merchants found",
       "dialogs": {
         "merchantDetails": "Merchant Details",
         "merchantDetailsSubtitle": "Detailed information about the selected merchant",
@@ -1467,9 +1485,22 @@
         "merchantAddedDesc": "New merchant account has been created successfully",
         "merchantUpdated": "Merchant Updated",
         "merchantUpdatedDesc": "Merchant information has been successfully updated",
+        "credentialsCreated": "Credentials Created",
+        "credentialsCreatedDesc": "Portal credentials have been successfully created for the merchant",
         "cardsTransferred": "Cards Transferred",
         "cardsTransferredDesc": "Successfully transferred {{count}} cards ({{start}} to {{end}}) to {{merchant}}",
         "error": "Error"
+      },
+      "credentials": {
+        "title": "Create Portal Credentials",
+        "subtitle": "Set up login credentials for the merchant portal",
+        "mobile": "Mobile Number",
+        "mobilePlaceholder": "Enter mobile number (e.g., 01123456789)",
+        "password": "Password",
+        "passwordPlaceholder": "Enter password (min. 6 characters)",
+        "passwordHint": "Password must be at least 6 characters long",
+        "create": "Create Credentials",
+        "skip": "Skip for Now"
       }
     },
     "payouts": {
@@ -1554,7 +1585,8 @@
       "success": {
         "payoutCreated": "Payout Created",
         "payoutCreatedDesc": "New payout has been created successfully"
-      }
+      },
+      "noPayoutsFound": "No payouts found"
     },
     "payments": {
       "title": "Payments",
@@ -1739,8 +1771,12 @@
         "totalExpenses": "Total Expenses",
         "netProfit": "Net Profit",
         "profitMargin": "Profit Margin",
-        "fromLastYear": "from last year"
+        "fromLastYear": "from last year",
+        "fromPeriods": "From all periods",
+        "noData": "No data",
+        "calculatedMargin": "Calculated margin"
       },
+      "noData": "No financial data available",
       "recentPeriods": "Recent Financial Periods",
       "recentPeriodsDescription": "Overview of recent quarterly financial performance",
       "revenue": "Revenue",
@@ -1806,7 +1842,8 @@
         "fromLastPeriod": "from last period",
         "activeShareholders": "active shareholders",
         "ofTotalProfit": "of total profit",
-        "perShareholder": "per shareholder"
+        "perShareholder": "per shareholder",
+        "noData": "No data available"
       },
       "title": "Profit Share Management",
       "description": "Manage profit distribution among shareholders and equity holders",
@@ -1842,7 +1879,8 @@
       "active": "Active",
       "inactive": "Inactive",
       "overdrawn": "Overdrawn",
-      "currentBalance": "Current Balance"
+      "currentBalance": "Current Balance",
+      "noOwners": "No profit share owners found"
     },
     "settlements": {
       "subtitle": "Manage financial settlements, payment processing, and transaction reconciliation",
@@ -2105,7 +2143,14 @@
       "exceedsShareWarning": "Withdrawal exceeds available profit share by ${{amount}}. This will be recorded as a liability.",
       "withdrawalCreated": "Withdrawal request created successfully",
       "withdrawalApproved": "Withdrawal approved",
-      "withdrawalRejected": "Withdrawal rejected"
+      "withdrawalRejected": "Withdrawal rejected",
+      "noOwners": "No owners found",
+      "noWithdrawals": "No withdrawals found",
+      "status": {
+        "completed": "Completed",
+        "pending": "Pending",
+        "rejected": "Rejected"
+      }
     },
     "customers": {
       "title": "Customer Management",
@@ -2431,6 +2476,7 @@
         "verify": "Verify",
         "unverify": "Unverify",
         "forcePasswordReset": "Force Password Reset",
+        "createCredentials": "Create Credentials",
         "deleteOrganizer": "Delete Organizer",
         "editEvent": "Edit Event",
         "deleteEvent": "Delete Event"
@@ -2563,6 +2609,17 @@
         "socialMedia": "Social Media",
         "recentActivity": "Recent Activity",
         "never": "Never"
+      },
+      "credentials": {
+        "title": "Create Portal Credentials",
+        "subtitle": "Set up login credentials for the organizer portal",
+        "mobile": "Mobile Number",
+        "mobilePlaceholder": "Enter mobile number (e.g., 01123456789)",
+        "password": "Password",
+        "passwordPlaceholder": "Enter password (min. 6 characters)",
+        "passwordHint": "Password must be at least 6 characters long",
+        "create": "Create Credentials",
+        "skip": "Skip for Now"
       },
       "activity": {
         "eventCreated": "Created event",
@@ -2702,6 +2759,8 @@
         "organizerAddedDesc": "New organizer has been successfully created",
         "organizerUpdated": "Organizer Updated",
         "organizerUpdatedDesc": "Organizer information has been successfully updated",
+        "credentialsCreated": "Credentials Created",
+        "credentialsCreatedDesc": "Portal credentials have been successfully created for the organizer",
         "eventAdded": "Event Added",
         "eventAddedDesc": "New event has been successfully created",
         "eventUpdated": "Event Updated",
@@ -2749,7 +2808,8 @@
         "totalUshers": "Total Ushers",
         "activeUshers": "Active Ushers",
         "inactiveUshers": "Inactive Ushers",
-        "suspendedUshers": "Suspended Ushers"
+        "suspendedUshers": "Suspended Ushers",
+        "onLeaveUshers": "On Leave Ushers"
       },
       "status": {
         "active": "Active",
@@ -2777,6 +2837,7 @@
         "reactivateUsher": "Reactivate Usher",
         "deleteUsher": "Delete Usher"
       },
+      "noUshersFound": "No ushers found",
       "form": {
         "fullName": "Full Name",
         "email": "Email",
@@ -2898,6 +2959,7 @@
         "tickets": "Tickets",
         "nfc": "NFC Cards",
         "customers": "Customers",
+        "homePageSections": "Home Page Sections",
         "organizers": "Organizers",
         "ushers": "Ushers",
         "admins": "Admin Users",
@@ -3029,13 +3091,16 @@
           "security": "Security",
           "financial": "Financial",
           "dataExport": "Data Export",
-          "settings": "Settings"
+          "settings": "Settings",
+          "content": "Content"
         },
         "severities": {
           "critical": "Critical",
           "high": "High",
           "medium": "Medium",
-          "low": "Low"
+          "low": "Low",
+          "INFO": "Info",
+          "WARNING": "Warning"
         },
         "statuses": {
           "success": "Success",
@@ -3095,6 +3160,8 @@
           "ready": "Ready",
           "loading": "Loading..."
         },
+        "error": "Error loading logs",
+        "noLogsFound": "No logs found",
         "performance": {
           "title": "Performance Indicator",
           "status": "Status"
@@ -3131,7 +3198,10 @@
           "checkin_failed": "Check-in failed",
           "password_reset": "Password reset",
           "account_locked": "Account locked",
-          "account_unlocked": "Account unlocked"
+          "account_unlocked": "Account unlocked",
+          "LOGIN": "Login",
+          "CREATE_HOME_PAGE_SECTION": "Create Home Page Section",
+          "DELETE_HOME_PAGE_SECTION": "Delete Home Page Section"
         },
         "descriptions": {
           "user_login": "User successfully logged into the system",
@@ -3165,7 +3235,10 @@
           "checkin_failed": "Customer check-in attempt failed",
           "password_reset": "User password was reset",
           "account_locked": "User account was locked due to security concerns",
-          "account_unlocked": "User account was unlocked by administrator"
+          "account_unlocked": "User account was unlocked by administrator",
+          "User admin logg": "User admin login",
+          "Created home p": "Created home page section",
+          "Deleted home pa": "Deleted home page section"
         }
       }
     },
@@ -3388,7 +3461,10 @@
         "revenue": "Revenue",
         "commission": "Commission",
         "payout": "Payout",
-        "pendingPayout": "Pending payout"
+        "pendingPayout": "Pending payout",
+        "organizerRevenue": "Organizer Revenue",
+        "adminRevenue": "Admin Revenue",
+        "totalRevenue": "Total Revenue"
       },
       "charts": {
         "months": {
@@ -3689,7 +3765,8 @@
           "close": "Close",
           "cancel": "Cancel",
           "saveChanges": "Save Changes"
-        }
+        },
+        "noLogsFound": "No check-in logs found"
       },
       "categories": {
         "vip": "VIP",
@@ -4542,5 +4619,38 @@
     "confirmDelete": "Are you sure you want to delete this expense?",
     "noExpensesFound": "No expenses found",
     "noCategoriesFound": "No categories found"
+  },
+  "homePageSections": {
+    "title": "Home Page Sections",
+    "create": "Create Section",
+    "edit": "Edit Section",
+    "sectionKey": "Section Key",
+    "subtitle": "Subtitle",
+    "events": "Events",
+    "order": "Order",
+    "status": "Status",
+    "maxEvents": "Max Events",
+    "active": "Active",
+    "noSections": "No sections found. Create your first section to get started.",
+    "selectSectionKey": "Select section key",
+    "titlePlaceholder": "Enter section title",
+    "subtitlePlaceholder": "Enter section subtitle (optional)",
+    "selectEvents": "Select Events",
+    "addEvent": "Add Event",
+    "fillRequired": "Please fill in all required fields",
+    "created": "Section created successfully",
+    "updated": "Section updated successfully",
+    "deleted": "Section deleted successfully",
+    "statusUpdated": "Section status updated",
+    "error": "An error occurred",
+    "deleteError": "Failed to delete section",
+    "confirmDelete": "Are you sure you want to delete this section?",
+    "dialogDescription": "Configure which events appear in this section on the home page",
+    "trending": "Trending Events",
+    "upcoming": "Upcoming Events",
+    "recommended": "Recommended Events",
+    "featured": "Featured Event",
+    "noEventsAvailable": "No events available",
+    "selectedEvents": "{{count}} event(s) selected"
   }
 }

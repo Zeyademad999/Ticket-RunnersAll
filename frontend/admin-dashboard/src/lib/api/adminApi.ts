@@ -476,6 +476,14 @@ export const merchantsApi = {
   },
 
   /**
+   * Create credentials for merchant
+   */
+  createMerchantCredentials: async (id: string, data: { mobile: string; password: string }) => {
+    const response = await adminApi.post(`/merchants/${id}/create_credentials/`, data);
+    return response.data;
+  },
+
+  /**
    * Update merchant
    */
   updateMerchant: async (id: string, data: any) => {
@@ -558,6 +566,14 @@ export const usersApi = {
   },
 
   /**
+   * Create credentials for organizer
+   */
+  createOrganizerCredentials: async (id: string, data: { mobile: string; password: string }) => {
+    const response = await adminApi.post(`/organizers/${id}/create_credentials/`, data);
+    return response.data;
+  },
+
+  /**
    * Update organizer
    */
   updateOrganizer: async (id: string, data: any) => {
@@ -578,6 +594,14 @@ export const usersApi = {
    */
   createMerchant: async (data: any) => {
     const response = await adminApi.post('/merchants/', data);
+    return response.data;
+  },
+
+  /**
+   * Create credentials for merchant
+   */
+  createMerchantCredentials: async (id: string, data: { mobile: string; password: string }) => {
+    const response = await adminApi.post(`/merchants/${id}/create_credentials/`, data);
     return response.data;
   },
 
@@ -883,6 +907,72 @@ export const systemLogsApi = {
     page_size?: number;
   }) => {
     const response = await adminApi.get('/logs/checkin/', { params });
+    return response.data;
+  },
+};
+
+// Home Page Sections API
+export const homePageSectionsApi = {
+  /**
+   * Get all home page sections
+   */
+  getSections: async () => {
+    const response = await adminApi.get('/core/home-page-sections/');
+    return response.data;
+  },
+
+  /**
+   * Get a specific home page section
+   */
+  getSection: async (id: string | number) => {
+    const response = await adminApi.get(`/core/home-page-sections/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Create a new home page section
+   */
+  createSection: async (data: {
+    section_key: string;
+    title: string;
+    subtitle?: string;
+    event_ids?: number[];
+    order?: number;
+    is_active?: boolean;
+    max_events?: number;
+  }) => {
+    const response = await adminApi.post('/core/home-page-sections/', data);
+    return response.data;
+  },
+
+  /**
+   * Update a home page section
+   */
+  updateSection: async (id: string | number, data: {
+    title?: string;
+    subtitle?: string;
+    event_ids?: number[];
+    order?: number;
+    is_active?: boolean;
+    max_events?: number;
+  }) => {
+    const response = await adminApi.put(`/core/home-page-sections/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete a home page section
+   */
+  deleteSection: async (id: string | number) => {
+    const response = await adminApi.delete(`/core/home-page-sections/${id}/`);
+    return response.data;
+  },
+
+  /**
+   * Get public view of home page sections (what web app sees)
+   */
+  getPublicSections: async () => {
+    const response = await adminApi.get('/core/home-page-sections/public_list/');
     return response.data;
   },
 };

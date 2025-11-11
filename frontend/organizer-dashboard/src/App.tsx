@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import OrganizerLogin from "./pages/OrganizerLogin";
 import OrganizerDashboard from "./pages/OrganizerDashboard";
 import OrganizerEventDetail from "./pages/OrganizerEventDetail";
-import DemoPage from "./pages/DemoPage";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 import { useTranslation } from "react-i18next";
 import { AuthProvider } from "./Contexts/AuthContext";
 import { ThemeProvider } from "./hooks/useTheme";
@@ -46,11 +46,27 @@ export default function App() {
               <Sonner />
 
               <Routes>
-                {/* Organizer routes */}
+                {/* Public routes */}
                 <Route path="/" element={<OrganizerLogin />} />
                 <Route path="/login" element={<OrganizerLogin />} />
-                <Route path="/dashboard" element={<OrganizerDashboard />} />
-                <Route path="/event/:id" element={<OrganizerEventDetail />} />
+                
+                {/* Protected routes */}
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <OrganizerDashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/event/:id"
+                  element={
+                    <ProtectedRoute>
+                      <OrganizerEventDetail />
+                    </ProtectedRoute>
+                  }
+                />
               </Routes>
             </TooltipProvider>
           </ThemeProvider>

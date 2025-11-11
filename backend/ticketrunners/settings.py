@@ -162,8 +162,9 @@ AUTH_USER_MODEL = 'authentication.AdminUser'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'apps.merchant_portal.authentication.MerchantJWTAuthentication',  # Merchant auth first - handles merchant_id tokens
+        'apps.organizer_portal.authentication.OrganizerJWTAuthentication',  # Organizer auth - handles organizer_id tokens
         'apps.webapp.authentication.CustomerJWTAuthentication',  # Customer auth - handles customer_id tokens
-        'rest_framework_simplejwt.authentication.JWTAuthentication',  # Standard JWT auth for admin/organizer tokens
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # Standard JWT auth for admin tokens
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -204,7 +205,7 @@ SIMPLE_JWT = {
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173,http://localhost:8081,http://localhost:8083,http://localhost:3000, http://192.168.0.103:8083,http://192.168.0.101:8083',
+    default='http://localhost:5173,http://localhost:8081,http://localhost:8082,http://localhost:8083,http://localhost:3000,http://192.168.0.103:8083,http://192.168.0.101:8083',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 

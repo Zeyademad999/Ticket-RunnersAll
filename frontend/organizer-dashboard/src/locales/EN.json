@@ -869,17 +869,22 @@
     "message": "Please review and accept the terms and conditions before proceeding."
   },
   "common": {
-    "accept": "Accept",
-    "cancel": "Cancel",
-    "close": "Close",
+    "loading": "Loading...",
+    "errorLoadingData": "Error loading data",
     "save": "Save",
+    "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",
-    "loading": "Loading...",
-    "error": "Error",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit",
+    "confirm": "Confirm",
     "success": "Success",
-    "invalidDate": "Invalid Date",
-    "backToDashboard": "Back to Dashboard"
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info"
   },
   "editEvent": {
     "title": "Edit Event Request",

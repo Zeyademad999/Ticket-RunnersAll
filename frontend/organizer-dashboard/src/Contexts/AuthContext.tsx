@@ -1,107 +1,145 @@
-import { createContext, useContext, useState } from "react";
-import { toast } from "@/components/ui/use-toast"; // or from "sonner" if used
-import { parseISO, isAfter, compareAsc } from "date-fns";
+import { createContext, useContext, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
+import organizerApi, { OrganizerProfile } from "@/lib/api/organizerApi";
 
 interface AuthProviderProps {
   children: ReactNode;
 }
-interface BookedEvent {
-  title: string;
-  date: string;
-  time: string;
-}
 
 type AuthContextType = {
-  isLoginOpen: boolean;
-  isSignupOpen: boolean;
-  openLogin: () => void;
-  openSignup: () => void;
-  closeLogin: () => void;
-  closeSignup: () => void;
-  switchToSignup: () => void;
-  switchToLogin: () => void;
-  login: (token: string) => void;
-  logout: () => void;
-  user: string | null;
+  isAuthenticated: boolean;
+  organizer: OrganizerProfile | null;
+  isLoading: boolean;
+  login: (mobile: string, password: string) => Promise<void>;
+  verifyOTP: (mobile: string, otpCode: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: AuthProviderProps) {
-  const [user, setUser] = useState<string | null>(null);
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
-  const [isSignupOpen, setIsSignupOpen] = useState(false);
-
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [organizer, setOrganizer] = useState<OrganizerProfile | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [hasCheckedAuth, setHasCheckedAuth] = useState<boolean>(false);
   const { t } = useTranslation();
 
-  const login = (token: string) => {
-    localStorage.setItem("accessToken", token);
-    setUser(token);
-    checkNextUpcomingEvent();
+  // Check authentication status on mount (only once)
+  useEffect(() => {
+    if (!hasCheckedAuth) {
+      checkAuthStatus();
+      setHasCheckedAuth(true);
+    }
+  }, [hasCheckedAuth]);
+
+  const checkAuthStatus = async () => {
+    try {
+      const token = localStorage.getItem("organizer_access_token");
+      const storedProfile = localStorage.getItem("organizer_profile");
+
+      if (token && storedProfile) {
+        setIsAuthenticated(true);
+        setOrganizer(JSON.parse(storedProfile));
+        
+        // Try to refresh profile from API to verify token is still valid
+        try {
+          const profile = await organizerApi.getMe();
+          setOrganizer(profile);
+          localStorage.setItem("organizer_profile", JSON.stringify(profile));
+        } catch (error: any) {
+          // If API call fails with 401, token is invalid - clear auth
+          if (error.response?.status === 401) {
+            setIsAuthenticated(false);
+            setOrganizer(null);
+            localStorage.removeItem("organizer_access_token");
+            localStorage.removeItem("organizer_refresh_token");
+            localStorage.removeItem("organizer_authenticated");
+            localStorage.removeItem("organizer_profile");
+          } else {
+            // Other errors - keep using stored profile but log error
+            console.error("Failed to refresh profile:", error);
+          }
+        }
+      } else {
+        setIsAuthenticated(false);
+        setOrganizer(null);
+      }
+    } catch (error) {
+      console.error("Auth check error:", error);
+      setIsAuthenticated(false);
+      setOrganizer(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const logout = () => {
-    localStorage.removeItem("accessToken");
-    setUser(null);
+  const login = async (mobile: string, password: string): Promise<void> => {
+    try {
+      await organizerApi.login({ mobile, password });
+      // OTP will be sent, but we don't set authenticated yet
+    } catch (error: any) {
+      const errorMessage =
+        error.response?.data?.error?.message ||
+        error.message ||
+        t("organizer.login.error.loginFailed");
+      throw new Error(errorMessage);
+    }
   };
 
-  const switchToSignup = () => {
-    setIsLoginOpen(false);
-    setTimeout(() => setIsSignupOpen(true), 100); // allow modal transition
+  const verifyOTP = async (mobile: string, otpCode: string): Promise<void> => {
+    try {
+      const response = await organizerApi.verifyOTP({ mobile, otp_code: otpCode });
+      // Set authenticated state immediately - don't wait for checkAuthStatus
+      setIsAuthenticated(true);
+      setOrganizer(response.organizer);
+      setIsLoading(false);
+      // Mark as checked so checkAuthStatus doesn't run again
+      setHasCheckedAuth(true);
+    } catch (error: any) {
+      const errorMessage =
+        error.response?.data?.error?.message ||
+        error.message ||
+        t("organizer.login.error.invalidOtp");
+      throw new Error(errorMessage);
+    }
   };
 
-  const switchToLogin = () => {
-    setIsSignupOpen(false);
-    setTimeout(() => setIsLoginOpen(true), 100);
+  const logout = async (): Promise<void> => {
+    try {
+      await organizerApi.logout();
+    } catch (error) {
+      console.error("Logout error:", error);
+    } finally {
+      setIsAuthenticated(false);
+      setOrganizer(null);
+      setHasCheckedAuth(false); // Reset so auth check can run again on next mount
+    }
   };
 
-  const openLogin = () => setIsLoginOpen(true);
-  const openSignup = () => setIsSignupOpen(true);
-  const closeLogin = () => setIsLoginOpen(false);
-  const closeSignup = () => setIsSignupOpen(false);
-
-  const checkNextUpcomingEvent = () => {
-    const events = JSON.parse(localStorage.getItem("bookedEvents") || "[]");
-    const now = new Date();
-
-    const upcoming = (events as BookedEvent[])
-      .map((event) => ({
-        ...event,
-        eventDate: parseISO(event.date),
-      }))
-      .filter((event) => isAfter(event.eventDate, now))
-      .sort((a, b) => compareAsc(a.eventDate, b.eventDate));
-
-    const next = upcoming[0];
-
-    if (next) {
-      toast({
-        title: t("notifications.nextEventTitle"),
-        description: t("notifications.nextEventDescription", {
-          title: next.title,
-          date: next.date,
-          time: next.time,
-        }),
-      });
+  const refreshProfile = async (): Promise<void> => {
+    try {
+      const profile = await organizerApi.getMe();
+      setOrganizer(profile);
+      localStorage.setItem("organizer_profile", JSON.stringify(profile));
+    } catch (error) {
+      console.error("Failed to refresh profile:", error);
+      throw error;
     }
   };
 
   return (
     <AuthContext.Provider
       value={{
-        isLoginOpen,
-        isSignupOpen,
-        openLogin,
-        openSignup,
-        closeLogin,
-        closeSignup,
-        switchToLogin,
-        switchToSignup,
+        isAuthenticated,
+        organizer,
+        isLoading,
         login,
+        verifyOTP,
         logout,
-        user,
+        refreshProfile,
       }}
     >
       {children}

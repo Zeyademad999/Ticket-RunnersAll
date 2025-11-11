@@ -1,6 +1,13 @@
 {
   "english": "الإنجليزية",
   "arabic": "العربية",
+  "success": "نجاح",
+  "error": "خطأ",
+  "cancel": "إلغاء",
+  "save": "حفظ",
+  "saving": "جاري الحفظ...",
+  "actions": "الإجراءات",
+  "loading": "جاري التحميل...",
   "searchEvents": "ابحث عن الفعاليات...",
   "home": "الرئيسية",
   "bookings": "الحجوزات",
@@ -867,7 +874,9 @@
     "error": "خطأ",
     "success": "نجح",
     "invalidDate": "تاريخ غير صحيح",
-    "backToDashboard": "العودة إلى لوحة التحكم"
+    "backToDashboard": "العودة إلى لوحة التحكم",
+    "notAvailable": "غير متاح",
+    "errorLoadingData": "خطأ في تحميل البيانات"
   },
   "editEvent": {
     "title": "طلب تعديل الفعالية",
@@ -1393,6 +1402,7 @@
         "verify": "التحقق",
         "suspend": "الإيقاف",
         "activate": "التفعيل",
+        "createCredentials": "إنشاء بيانات الاعتماد",
         "deleteMerchant": "حذف التاجر"
       },
       "dialogs": {
@@ -1490,9 +1500,22 @@
         "merchantAddedDesc": "تم إنشاء حساب التاجر الجديد بنجاح",
         "merchantUpdated": "تم تحديث التاجر",
         "merchantUpdatedDesc": "تم تحديث معلومات التاجر بنجاح",
+        "credentialsCreated": "تم إنشاء بيانات الاعتماد",
+        "credentialsCreatedDesc": "تم إنشاء بيانات اعتماد البوابة للتاجر بنجاح",
         "cardsTransferred": "تم نقل البطاقات",
         "cardsTransferredDesc": "تم نقل {{count}} بطاقة بنجاح ({{start}} إلى {{end}}) إلى {{merchant}}",
         "error": "خطأ"
+      },
+      "credentials": {
+        "title": "إنشاء بيانات اعتماد البوابة",
+        "subtitle": "إعداد بيانات تسجيل الدخول لبوابة التاجر",
+        "mobile": "رقم الهاتف المحمول",
+        "mobilePlaceholder": "أدخل رقم الهاتف المحمول (مثال: 01123456789)",
+        "password": "كلمة المرور",
+        "passwordPlaceholder": "أدخل كلمة المرور (حد أدنى 6 أحرف)",
+        "passwordHint": "يجب أن تكون كلمة المرور 6 أحرف على الأقل",
+        "create": "إنشاء بيانات الاعتماد",
+        "skip": "تخطي الآن"
       }
     },
     "payouts": {
@@ -1577,7 +1600,8 @@
       "success": {
         "payoutCreated": "تم إنشاء الدفعة",
         "payoutCreatedDesc": "تم إنشاء الدفعة الجديدة بنجاح"
-      }
+      },
+      "noPayoutsFound": "لم يتم العثور على مدفوعات"
     },
     "payments": {
       "title": "المدفوعات",
@@ -1762,8 +1786,12 @@
         "totalExpenses": "إجمالي المصروفات",
         "netProfit": "صافي الربح",
         "profitMargin": "هامش الربح",
-        "fromLastYear": "من العام الماضي"
+        "fromLastYear": "من العام الماضي",
+        "fromPeriods": "من جميع الفترات",
+        "noData": "لا توجد بيانات",
+        "calculatedMargin": "الهامش المحسوب"
       },
+      "noData": "لا توجد بيانات مالية متاحة",
       "recentPeriods": "الفترات المالية الأخيرة",
       "recentPeriodsDescription": "نظرة عامة على الأداء المالي الفصلي الأخير",
       "revenue": "الإيرادات",
@@ -1829,7 +1857,8 @@
         "fromLastPeriod": "من الفترة الماضية",
         "activeShareholders": "مساهمين نشطين",
         "ofTotalProfit": "من إجمالي الربح",
-        "perShareholder": "لكل مساهم"
+        "perShareholder": "لكل مساهم",
+        "noData": "لا توجد بيانات متاحة"
       },
       "title": "إدارة تقاسم الأرباح",
       "description": "إدارة توزيع الأرباح بين المساهمين وحاملي الأسهم",
@@ -1865,7 +1894,8 @@
       "active": "نشط",
       "inactive": "غير نشط",
       "overdrawn": "مسحوب زائد",
-      "currentBalance": "الرصيد الحالي"
+      "currentBalance": "الرصيد الحالي",
+      "noOwners": "لم يتم العثور على مالكي حصة الأرباح"
     },
     "settlements": {
       "subtitle": "إدارة التسويات المالية ومعالجة المدفوعات وتسوية المعاملات",
@@ -2128,7 +2158,14 @@
       "exceedsShareWarning": "السحب يتجاوز حصة الربح المتاحة بمقدار ${{amount}}. سيتم تسجيل هذا كالتزام.",
       "withdrawalCreated": "تم إنشاء طلب السحب بنجاح",
       "withdrawalApproved": "تمت الموافقة على السحب",
-      "withdrawalRejected": "تم رفض السحب"
+      "withdrawalRejected": "تم رفض السحب",
+      "noOwners": "لم يتم العثور على مالكين",
+      "noWithdrawals": "لم يتم العثور على سحوبات",
+      "status": {
+        "completed": "مكتمل",
+        "pending": "معلق",
+        "rejected": "مرفوض"
+      }
     },
     "customers": {
       "title": "إدارة العملاء",
@@ -2460,6 +2497,7 @@
         "verify": "توثيق",
         "unverify": "إلغاء التوثيق",
         "forcePasswordReset": "إجبار إعادة تعيين كلمة المرور",
+        "createCredentials": "إنشاء بيانات الاعتماد",
         "deleteOrganizer": "حذف المنظم",
         "editEvent": "تعديل الفعالية",
         "deleteEvent": "حذف الفعالية"
@@ -2583,6 +2621,17 @@
         "title": "نشاط المنظم",
         "subtitle": "عرض النشاط الأخير والإجراءات التي قام بها هذا المنظم",
         "close": "إغلاق"
+      },
+      "credentials": {
+        "title": "إنشاء بيانات اعتماد البوابة",
+        "subtitle": "إعداد بيانات تسجيل الدخول لبوابة المنظم",
+        "mobile": "رقم الهاتف المحمول",
+        "mobilePlaceholder": "أدخل رقم الهاتف المحمول (مثال: 01123456789)",
+        "password": "كلمة المرور",
+        "passwordPlaceholder": "أدخل كلمة المرور (حد أدنى 6 أحرف)",
+        "passwordHint": "يجب أن تكون كلمة المرور 6 أحرف على الأقل",
+        "create": "إنشاء بيانات الاعتماد",
+        "skip": "تخطي الآن"
       },
       "form": {
         "locationPlaceholder": "أدخل الموقع",
@@ -2740,6 +2789,8 @@
         "organizerAddedDesc": "تم إنشاء المنظم الجديد بنجاح",
         "organizerUpdated": "تم تحديث المنظم",
         "organizerUpdatedDesc": "تم تحديث معلومات المنظم بنجاح",
+        "credentialsCreated": "تم إنشاء بيانات الاعتماد",
+        "credentialsCreatedDesc": "تم إنشاء بيانات اعتماد البوابة للمنظم بنجاح",
         "eventAdded": "تم إضافة الفعالية",
         "eventAddedDesc": "تم إنشاء الفعالية الجديدة بنجاح",
         "eventUpdated": "تم تحديث الفعالية",
@@ -2934,6 +2985,7 @@
         "tickets": "التذاكر",
         "nfc": "بطاقات NFC",
         "customers": "العملاء",
+        "homePageSections": "أقسام الصفحة الرئيسية",
         "organizers": "المنظمون",
         "ushers": "المرشدون",
         "admins": "مستخدمي المدير",
@@ -3065,13 +3117,16 @@
           "security": "الأمان",
           "financial": "المالية",
           "dataExport": "تصدير البيانات",
-          "settings": "الإعدادات"
+          "settings": "الإعدادات",
+          "content": "المحتوى"
         },
         "severities": {
           "critical": "حرج",
           "high": "عالي",
           "medium": "متوسط",
-          "low": "منخفض"
+          "low": "منخفض",
+          "INFO": "معلومات",
+          "WARNING": "تحذير"
         },
         "statuses": {
           "success": "نجح",
@@ -3131,6 +3186,8 @@
           "ready": "جاهز",
           "loading": "جاري التحميل..."
         },
+        "error": "خطأ في تحميل السجلات",
+        "noLogsFound": "لم يتم العثور على سجلات",
         "performance": {
           "title": "مؤشر الأداء",
           "status": "الحالة"
@@ -3167,7 +3224,10 @@
           "checkin_failed": "فشل تسجيل الدخول",
           "password_reset": "إعادة تعيين كلمة المرور",
           "account_locked": "قفل الحساب",
-          "account_unlocked": "إلغاء قفل الحساب"
+          "account_unlocked": "إلغاء قفل الحساب",
+          "LOGIN": "تسجيل الدخول",
+          "CREATE_HOME_PAGE_SECTION": "إنشاء قسم الصفحة الرئيسية",
+          "DELETE_HOME_PAGE_SECTION": "حذف قسم الصفحة الرئيسية"
         },
         "descriptions": {
           "user_login": "تم تسجيل دخول المستخدم بنجاح إلى النظام",
@@ -3909,6 +3969,7 @@
           "cancel": "إلغاء",
           "saveChanges": "حفظ التغييرات"
         },
+        "noLogsFound": "لم يتم العثور على سجلات تسجيل الدخول",
         "pagination": {
           "showing": "عرض",
           "of": "من",
@@ -4651,5 +4712,38 @@
     "confirmDelete": "هل أنت متأكد من حذف هذا المصروف؟",
     "noExpensesFound": "لا توجد مصروفات",
     "noCategoriesFound": "لا توجد فئات"
+  },
+  "homePageSections": {
+    "title": "أقسام الصفحة الرئيسية",
+    "create": "إنشاء قسم",
+    "edit": "تعديل القسم",
+    "sectionKey": "مفتاح القسم",
+    "subtitle": "العنوان الفرعي",
+    "events": "الفعاليات",
+    "order": "الترتيب",
+    "status": "الحالة",
+    "maxEvents": "الحد الأقصى للفعاليات",
+    "active": "نشط",
+    "noSections": "لا توجد أقسام. قم بإنشاء أول قسم للبدء.",
+    "selectSectionKey": "اختر مفتاح القسم",
+    "titlePlaceholder": "أدخل عنوان القسم",
+    "subtitlePlaceholder": "أدخل العنوان الفرعي للقسم (اختياري)",
+    "selectEvents": "اختر الفعاليات",
+    "addEvent": "إضافة فعالية",
+    "fillRequired": "يرجى ملء جميع الحقول المطلوبة",
+    "created": "تم إنشاء القسم بنجاح",
+    "updated": "تم تحديث القسم بنجاح",
+    "deleted": "تم حذف القسم بنجاح",
+    "statusUpdated": "تم تحديث حالة القسم",
+    "error": "حدث خطأ",
+    "deleteError": "فشل حذف القسم",
+    "confirmDelete": "هل أنت متأكد من حذف هذا القسم؟",
+    "dialogDescription": "قم بتكوين الفعاليات التي تظهر في هذا القسم على الصفحة الرئيسية",
+    "trending": "الفعاليات الرائجة",
+    "upcoming": "الفعاليات القادمة",
+    "recommended": "الفعاليات الموصى بها",
+    "featured": "الفعالية المميزة",
+    "noEventsAvailable": "لا توجد فعاليات متاحة",
+    "selectedEvents": "تم اختيار {{count}} فعالية"
   }
 }

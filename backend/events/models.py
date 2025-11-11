@@ -170,6 +170,21 @@ class Event(models.Model):
         validators=[MinValueValidator(0)],
         help_text="Transfer fee amount: percentage (e.g., 5.00 for 5%) or flat amount (e.g., 50.00)"
     )
+    commission_rate_type = models.CharField(
+        max_length=20,
+        choices=[('percentage', 'Percentage'), ('flat', 'Flat Amount')],
+        default='percentage',
+        help_text="Type of commission: percentage of revenue or flat amount per ticket"
+    )
+    commission_rate_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        default=10.00,
+        validators=[MinValueValidator(0)],
+        help_text="Commission rate: percentage (e.g., 10.00 for 10%) or flat amount (e.g., 50.00 per ticket)"
+    )
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -202,11 +217,24 @@ class Event(models.Model):
     
     def calculate_commission(self, commission_rate=None):
         """
-        Calculate commission amount.
+        Calculate commission amount based on event-specific commission rate.
+        If event has commission_rate set, use that; otherwise fall back to organizer's commission_rate.
         """
+        revenue = self.calculate_revenue()
+        
+        # Use event-specific commission rate if set
+        if self.commission_rate_value is not None:
+            if self.commission_rate_type == 'percentage':
+                # Percentage commission: commission_rate_value is a percentage (e.g., 10.00 = 10%)
+                return revenue * (self.commission_rate_value / 100)
+            else:
+                # Flat commission: commission_rate_value per ticket
+                tickets_sold = self.tickets_sold
+                return self.commission_rate_value * tickets_sold
+        
+        # Fall back to organizer's commission_rate if event-specific rate not set
         if commission_rate is None:
             commission_rate = self.organizer.commission_rate if hasattr(self.organizer, 'commission_rate') else 0.1
-        revenue = self.calculate_revenue()
         return revenue * commission_rate
     
     @property
