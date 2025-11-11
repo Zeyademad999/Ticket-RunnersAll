@@ -243,6 +243,12 @@ export interface Ticket {
   // Flags
   is_assigned_to_me?: boolean;
   is_assigned_to_other?: boolean;
+  // Event transfer settings
+  ticket_transfer_enabled?: boolean;
+  // Transfer information (if ticket was transferred to current user)
+  is_transferred?: boolean;
+  transferred_from_name?: string;
+  transferred_from_mobile?: string;
 }
 
 export interface TicketTier {

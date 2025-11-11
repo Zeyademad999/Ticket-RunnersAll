@@ -206,6 +206,11 @@ class TicketSerializer(serializers.ModelSerializer):
     # Check if this ticket was assigned to someone else
     is_assigned_to_other = serializers.SerializerMethodField()
     
+    # Transfer information (who transferred this ticket to current user)
+    transferred_from_name = serializers.SerializerMethodField()
+    transferred_from_mobile = serializers.SerializerMethodField()
+    is_transferred = serializers.SerializerMethodField()
+    
     def get_buyer_name(self, obj):
         """Get buyer's name (original purchaser)."""
         # Use buyer field if available, otherwise fallback to customer
@@ -253,7 +258,79 @@ class TicketSerializer(serializers.ModelSerializer):
         """Check if ticket was assigned to someone else."""
         return bool(obj.assigned_mobile and obj.assigned_name)
     
+    def get_transferred_from_name(self, obj):
+        """Get name of person who transferred this ticket to current user."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'customer'):
+            return ''
+        current_customer = request.customer
+        if not current_customer:
+            return ''
+        
+        # Check if this ticket was transferred to current user
+        # Ticket is transferred if: buyer != customer AND customer == current_customer AND buyer != current_customer
+        # AND there's a TicketTransfer record
+        if obj.customer == current_customer and obj.buyer and obj.buyer != current_customer:
+            # Check if there's a transfer record
+            from tickets.models import TicketTransfer
+            transfer = TicketTransfer.objects.filter(
+                ticket=obj,
+                to_customer=current_customer,
+                status='completed'
+            ).select_related('from_customer').first()
+            
+            if transfer and transfer.from_customer:
+                return transfer.from_customer.name or ''
+        
+        return ''
+    
+    def get_transferred_from_mobile(self, obj):
+        """Get mobile of person who transferred this ticket to current user."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'customer'):
+            return ''
+        current_customer = request.customer
+        if not current_customer:
+            return ''
+        
+        # Check if this ticket was transferred to current user
+        if obj.customer == current_customer and obj.buyer and obj.buyer != current_customer:
+            from tickets.models import TicketTransfer
+            transfer = TicketTransfer.objects.filter(
+                ticket=obj,
+                to_customer=current_customer,
+                status='completed'
+            ).select_related('from_customer').first()
+            
+            if transfer and transfer.from_customer:
+                return transfer.from_customer.mobile_number or ''
+        
+        return ''
+    
+    def get_is_transferred(self, obj):
+        """Check if this ticket was transferred to current user."""
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'customer'):
+            return False
+        current_customer = request.customer
+        if not current_customer:
+            return False
+        
+        # Ticket is transferred if: customer == current_customer AND buyer != current_customer
+        # AND there's a TicketTransfer record
+        if obj.customer == current_customer and obj.buyer and obj.buyer != current_customer:
+            from tickets.models import TicketTransfer
+            transfer = TicketTransfer.objects.filter(
+                ticket=obj,
+                to_customer=current_customer,
+                status='completed'
+            ).first()
+            return transfer is not None
+        
+        return False
+    
     event_id = serializers.IntegerField(source='event.id', read_only=True)
+    ticket_transfer_enabled = serializers.BooleanField(source='event.ticket_transfer_enabled', read_only=True)
     
     class Meta:
         model = Ticket
@@ -262,7 +339,8 @@ class TicketSerializer(serializers.ModelSerializer):
             'category', 'price', 'status', 'purchase_date', 'ticket_number',
             'check_in_time', 'assigned_name', 'assigned_mobile', 'assigned_email',
             'buyer_name', 'buyer_mobile', 'buyer_email',
-            'is_assigned_to_me', 'is_assigned_to_other'
+            'is_assigned_to_me', 'is_assigned_to_other', 'ticket_transfer_enabled',
+            'transferred_from_name', 'transferred_from_mobile', 'is_transferred'
         ]
 
 

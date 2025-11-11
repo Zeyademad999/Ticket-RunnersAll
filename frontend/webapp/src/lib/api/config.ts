@@ -39,6 +39,19 @@ export const createApiClient = (): AxiosInstance => {
         return config;
       }
 
+      // Skip token for password reset endpoints (they work without auth)
+      const passwordResetEndpoints = [
+        "/forgot-password/request-otp",
+        "/forgot-password/verify-otp",
+        "/reset-password",
+      ];
+      const isPasswordResetEndpoint = passwordResetEndpoints.some((endpoint) =>
+        config.url?.includes(endpoint)
+      );
+      if (isPasswordResetEndpoint) {
+        return config;
+      }
+
       // Get valid token using token manager
       // Skip if token was already refreshed in response interceptor
       if (!(config as any)._tokenRefreshed) {

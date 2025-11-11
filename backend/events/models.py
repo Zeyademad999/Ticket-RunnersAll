@@ -155,6 +155,21 @@ class Event(models.Model):
         validators=[MinValueValidator(1)]
     )
     ticket_transfer_enabled = models.BooleanField(default=True)
+    transfer_fee_type = models.CharField(
+        max_length=20,
+        choices=[('percentage', 'Percentage'), ('flat', 'Flat Amount')],
+        default='flat',
+        help_text="Type of transfer fee: percentage of ticket price or flat amount"
+    )
+    transfer_fee_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        default=50.00,
+        validators=[MinValueValidator(0)],
+        help_text="Transfer fee amount: percentage (e.g., 5.00 for 5%) or flat amount (e.g., 50.00)"
+    )
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     

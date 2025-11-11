@@ -89,9 +89,9 @@ export class TicketsService {
   static async transferTicket(
     ticketId: string,
     data: {
-      recipient_email?: string;
-      recipient_phone?: string;
-      recipient_name: string;
+      recipient_mobile: string;
+      recipient_name?: string;
+      payment_method?: string;
     }
   ): Promise<TransferTicketResponse> {
     return retryRequest(async () => {

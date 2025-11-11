@@ -1040,200 +1040,27 @@ export class AuthService {
 
   /**
    * Confirm password reset with new password
+   * POST /api/v1/users/reset-password/
    */
   static async confirmPasswordReset(
-    passwordResetToken: string,
-    password: string,
-    passwordConfirmation: string
+    mobile_number: string,
+    otp_code: string,
+    new_password: string
   ): Promise<ConfirmPasswordResetResponse> {
-    // Log token information for debugging
-    console.log("Password reset token details:", {
-      length: passwordResetToken?.length,
-      preview: passwordResetToken?.substring(0, 50) + "...",
-      isBase64: /^[A-Za-z0-9+/]*={0,2}$/.test(passwordResetToken || ""),
-      hasWhitespace:
-        passwordResetToken?.includes(" ") ||
-        passwordResetToken?.includes("\n") ||
-        passwordResetToken?.includes("\t"),
-      firstChar: passwordResetToken?.charAt(0),
-      lastChar: passwordResetToken?.charAt(passwordResetToken.length - 1),
-    });
-
-    // Check if the token needs to be decoded or processed
-    // The token appears to be base64 encoded with additional data
-    let processedToken = passwordResetToken;
-
-    // Try different token processing approaches
-    try {
-      // Check if the token contains a dot (JWT format) or is base64 encoded
-      if (passwordResetToken.includes(".")) {
-        const parts = passwordResetToken.split(".");
-        console.log(
-          "Token parts:",
-          parts.length,
-          parts.map((p) => p.substring(0, 20) + "...")
-        );
-
-        // Try using just the first part (before the dot)
-        const firstPart = parts[0];
-        console.log("Trying first part only:", firstPart);
-        processedToken = firstPart;
-
-        // Also try to decode the first part if it's base64
-        try {
-          const decoded = atob(firstPart);
-          console.log("Decoded first part:", decoded);
-          // If it decodes to something that looks like a token, use it
-          if (decoded.length > 10 && decoded.includes("|")) {
-            processedToken = decoded;
-            console.log("Using decoded first part as token");
-          }
-        } catch (decodeError) {
-          console.log("First part decode failed:", decodeError);
-        }
-
-        // Try different token formats
-        console.log("Trying different token formats:");
-        console.log("1. Original token:", passwordResetToken);
-        console.log("2. First part only:", firstPart);
-        console.log("3. Decoded first part:", atob(firstPart));
-
-        // Try the original token first
-        processedToken = passwordResetToken;
-      }
-    } catch (error) {
-      console.log("Token processing failed, using original token:", error);
-    }
-
     return retryRequest(async () => {
-      console.log(
-        "Sending password reset confirmation with token length:",
-        processedToken?.length
-      );
-
-      const requestData = {
-        password_reset_token: processedToken,
-        password: password,
-        password_confirmation: passwordConfirmation,
-      };
-
-      console.log("Sending request data:", {
-        password_reset_token: processedToken,
-        password: "[REDACTED]",
-        password_confirmation: "[REDACTED]",
-        tokenLength: processedToken?.length,
-        tokenPreview: processedToken?.substring(0, 20) + "...",
+      const response = await apiClient.post("/users/reset-password/", {
+        mobile_number,
+        otp_code,
+        new_password,
       });
-
-      try {
-        const response = await apiClient.post<
-          ApiResponse<ConfirmPasswordResetResponse>
-        >("/auth/password/reset/confirm", requestData);
-        const data = handleApiResponse(response);
-        
-        // Transform response to include message
-        const confirmResponse: ConfirmPasswordResetResponse = {
-          message: data.data?.message || data.message || "Password reset successfully",
-        };
-        
-        return confirmResponse;
-      } catch (error: any) {
-        // If the first attempt fails with token invalid, try alternative token formats
-        if (
-          error.status === 422 &&
-          error.message?.includes("Invalid or expired reset token")
-        ) {
-          console.log("Token rejected, trying alternative formats...");
-
-          // Try different token formats with delays to avoid rate limiting
-          const decodedToken = atob(passwordResetToken.split(".")[0]);
-          const alternatives = [
-            passwordResetToken.split(".")[0], // First part only
-            decodedToken, // Decoded first part
-            passwordResetToken.replace(/\..*$/, ""), // Remove everything after first dot
-            // Try extracting specific parts from decoded token
-            decodedToken.split("|")[0], // Just the phone number part
-            decodedToken.split("|")[1], // Just the ID part
-            decodedToken.split("|").slice(0, 2).join("|"), // Phone + ID
-          ];
-
-          console.log(
-            "Available alternatives:",
-            alternatives.map((alt, i) => `${i}: ${alt.substring(0, 30)}...`)
-          );
-
-          // Check if token might be expired by looking at timestamps
-          const tokenParts = decodedToken.split("|");
-          if (tokenParts.length >= 4) {
-            const currentTime = Math.floor(Date.now() / 1000);
-            const tokenTime1 = parseInt(tokenParts[2]);
-            const tokenTime2 = parseInt(tokenParts[3]);
-            console.log("Token timestamp analysis:", {
-              currentTime,
-              tokenTime1,
-              tokenTime2,
-              isExpired1: currentTime > tokenTime1,
-              isExpired2: currentTime > tokenTime2,
-              timeDiff1: currentTime - tokenTime1,
-              timeDiff2: currentTime - tokenTime2,
-            });
-          }
-
-          // Limit to 1 attempt to avoid rate limiting (tokens expire quickly)
-          const maxAttempts = 1;
-          let attempts = 0;
-
-          for (const altToken of alternatives) {
-            if (
-              altToken &&
-              altToken !== processedToken &&
-              attempts < maxAttempts
-            ) {
-              attempts++;
-              console.log(
-                `Trying alternative token ${attempts}/${maxAttempts}:`,
-                altToken.substring(0, 20) + "..."
-              );
-
-              // Add delay between attempts to avoid rate limiting
-              if (attempts > 1) {
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-              }
-
-              try {
-                const altRequestData = {
-                  password_reset_token: altToken,
-                  password: password,
-                  password_confirmation: passwordConfirmation,
-                };
-
-                const altResponse = await apiClient.post<
-                  ApiResponse<ConfirmPasswordResetResponse>
-                >("/auth/password/reset/confirm", altRequestData);
-                const altData = handleApiResponse(altResponse);
-                
-                console.log("Alternative token worked!");
-                
-                // Transform response to include message
-                const altConfirmResponse: ConfirmPasswordResetResponse = {
-                  message: altData.data?.message || altData.message || "Password reset successfully",
-                };
-                
-                return altConfirmResponse;
-              } catch (altError: any) {
-                console.log("Alternative token failed:", altError.message);
-
-                // If we hit rate limiting, stop trying
-                if (altError.status === 429) {
-                  console.log("Rate limited, stopping alternative attempts");
-                  break;
-                }
-              }
-            }
-          }
-        }
-        throw error;
-      }
+      const data = handleApiResponse(response);
+      
+      // Transform response to include message
+      const confirmResponse: ConfirmPasswordResetResponse = {
+        message: data.message || "Password reset successfully",
+      };
+      
+      return confirmResponse;
     });
   }
 }

@@ -10,6 +10,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   Ticket,
@@ -21,6 +28,7 @@ import {
   CheckCircle,
   Clock,
   Loader2,
+  XCircle,
 } from "lucide-react";
 import { TicketsService } from "@/lib/api/services/tickets";
 import { Ticket as TicketType } from "@/lib/api/types";
@@ -39,6 +47,7 @@ export default function TicketDetails() {
   const [selectedTicketIndexes, setSelectedTicketIndexes] = useState<string[]>(
     []
   );
+  const [showTransferDisabledModal, setShowTransferDisabledModal] = useState(false);
 
   useEffect(() => {
     const fetchTicketData = async () => {
@@ -97,24 +106,46 @@ export default function TicketDetails() {
 
   const handleSelect = (ticketId: string) => {
     const ticket = allTickets.find((t) => t.id === ticketId);
-    // Only allow selection of valid tickets (not used, refunded, or banned)
-    if (ticket && ticket.status === "valid") {
+    // Only allow selection of valid tickets that can be transferred (not used, refunded, banned, or transfer disabled)
+    if (ticket && ticket.status === "valid" && ticket.ticket_transfer_enabled !== false) {
       setSelectedTicketIndexes((prev) =>
         prev.includes(ticketId)
           ? prev.filter((id) => id !== ticketId)
           : [...prev, ticketId]
       );
+    } else if (ticket && ticket.ticket_transfer_enabled === false) {
+      // Show modal if user tries to select a ticket that can't be transferred
+      setShowTransferDisabledModal(true);
     }
   };
 
   const handleNavigateToTransfer = () => {
+    // Check if transfer is enabled for any selected ticket
+    const transferDisabled = selectedTicketIndexes.some((ticketId) => {
+      const ticketItem = allTickets.find((t) => t.id === ticketId);
+      return ticketItem && ticketItem.ticket_transfer_enabled === false;
+    });
+
+    if (transferDisabled) {
+      setShowTransferDisabledModal(true);
+      return;
+    }
+
     navigate("/transfer-tickets", {
       state: { ticketIds: selectedTicketIndexes, bookingId: ticket.id },
     });
   };
 
   const handleTransfer = (ticketId: string) => {
-    navigate(`/transfer/${ticket.id}/${ticketId}`);
+    const ticketItem = allTickets.find((t) => t.id === ticketId);
+    
+    // Check if transfer is enabled for this event
+    if (ticketItem && ticketItem.ticket_transfer_enabled === false) {
+      setShowTransferDisabledModal(true);
+      return;
+    }
+
+    navigate(`/transfer-ticket/${ticketId}`);
   };
 
   const getStatusBadge = (status: TicketType["status"]) => {
@@ -192,6 +223,13 @@ export default function TicketDetails() {
                       : "-"}
                   </span>
                 </div>
+                {ticket.ticket_transfer_enabled === false && (
+                  <div className="col-span-2">
+                    <Badge variant="outline" className="text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700">
+                      {t("ticketDetails.eventInfo.transferNotAllowed", "Ticket transfers are not permitted for this event")}
+                    </Badge>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -215,8 +253,10 @@ export default function TicketDetails() {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      {/* Only allow selection of buyer's own tickets (not assigned to others) */}
-                      {ticketItem.status === "valid" && !ticketItem.is_assigned_to_other && (
+                      {/* Only allow selection of buyer's own tickets that can be transferred */}
+                      {ticketItem.status === "valid" && 
+                       !ticketItem.is_assigned_to_other && 
+                       ticketItem.ticket_transfer_enabled !== false && (
                         <input
                           type="checkbox"
                           checked={selectedTicketIndexes.includes(ticketItem.id)}
@@ -239,15 +279,24 @@ export default function TicketDetails() {
 
                     {/* Only show transfer button for buyer's own tickets (not assigned to others) */}
                     {ticketItem.status === "valid" && !ticketItem.is_assigned_to_other && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleTransfer(ticketItem.id)}
-                        className="group"
-                      >
-                        {t("ticketDetails.tickets.transfer")}
-                        <Send className="h-4 w-4 ml-1 transition-transform group-hover:translate-x-1" />
-                      </Button>
+                      <>
+                        {ticketItem.ticket_transfer_enabled === false && (
+                          <Badge variant="outline" className="text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700">
+                            {t("ticketDetails.tickets.transferNotAllowed", "Transfer Not Allowed")}
+                          </Badge>
+                        )}
+                        {ticketItem.ticket_transfer_enabled !== false && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleTransfer(ticketItem.id)}
+                            className="group"
+                          >
+                            {t("ticketDetails.tickets.transfer")}
+                            <Send className="h-4 w-4 ml-1 transition-transform group-hover:translate-x-1" />
+                          </Button>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -289,8 +338,28 @@ export default function TicketDetails() {
                       </div>
                     )}
                     
+                    {/* Show transfer info if ticket was transferred to current user */}
+                    {ticketItem.is_transferred && ticketItem.transferred_from_name && (
+                      <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-purple-50 dark:bg-purple-900/20 rounded border border-purple-200 dark:border-purple-800">
+                        <Send className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        <div className="flex-1">
+                          <span className="text-xs text-muted-foreground">
+                            {t("ticketDetails.tickets.transferredFrom", "Transferred from")}:
+                          </span>
+                          <span className="font-medium text-purple-700 dark:text-purple-300 ml-1">
+                            {ticketItem.transferred_from_name}
+                          </span>
+                          {ticketItem.transferred_from_mobile && (
+                            <span className="text-xs text-muted-foreground ml-2">
+                              ({ticketItem.transferred_from_mobile})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
                     {/* Show buyer info if ticket was assigned to current user (buyer is different from current user) */}
-                    {ticketItem.is_assigned_to_me && ticketItem.buyer_name && ticketItem.buyer_name !== ticketItem.customerName && (
+                    {ticketItem.is_assigned_to_me && ticketItem.buyer_name && ticketItem.buyer_name !== ticketItem.customerName && !ticketItem.is_transferred && (
                       <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
                         <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         <div className="flex-1">
@@ -310,7 +379,7 @@ export default function TicketDetails() {
                     )}
                     
                     {/* Show ticket owner name if not already shown above */}
-                    {!ticketItem.is_assigned_to_other && !ticketItem.is_assigned_to_me && (
+                    {!ticketItem.is_assigned_to_other && !ticketItem.is_assigned_to_me && !ticketItem.is_transferred && (
                       <div className="flex items-center gap-2 text-sm">
                         <User className="h-4 w-4 text-muted-foreground" />
                         <span className="font-medium text-foreground">
@@ -354,6 +423,26 @@ export default function TicketDetails() {
               )}
             </CardContent>
           </Card>
+
+          {/* Transfer Disabled Modal */}
+          <Dialog open={showTransferDisabledModal} onOpenChange={setShowTransferDisabledModal}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <XCircle className="h-5 w-5 text-red-500" />
+                  {t("ticketDetails.transferDisabled.title", "Transfer Not Permitted")}
+                </DialogTitle>
+                <DialogDescription>
+                  {t("ticketDetails.transferDisabled.message", "Transferring tickets in this event is not permitted.")}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex justify-end mt-4">
+                <Button onClick={() => setShowTransferDisabledModal(false)}>
+                  {t("common.close", "Close")}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Summary */}
           <Card>

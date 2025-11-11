@@ -284,7 +284,11 @@ def user_complete_registration(request):
             # Only set buyer if it's null, otherwise preserve it
             if not ticket.buyer:
                 ticket.buyer = original_buyer
-            ticket.save(update_fields=['customer', 'buyer'])
+            # Clear assigned fields since ticket is now owned by customer, not just assigned
+            ticket.assigned_name = None
+            ticket.assigned_mobile = None
+            ticket.assigned_email = None
+            ticket.save(update_fields=['customer', 'buyer', 'assigned_name', 'assigned_mobile', 'assigned_email'])
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"Linked {assigned_tickets.count()} tickets to new customer {customer.id}")
@@ -387,7 +391,11 @@ def user_verify_login_otp(request):
             # Only set buyer if it's null, otherwise preserve it
             if not ticket.buyer:
                 ticket.buyer = original_buyer
-            ticket.save(update_fields=['customer', 'buyer'])
+            # Clear assigned fields since ticket is now owned by customer, not just assigned
+            ticket.assigned_name = None
+            ticket.assigned_mobile = None
+            ticket.assigned_email = None
+            ticket.save(update_fields=['customer', 'buyer', 'assigned_name', 'assigned_mobile', 'assigned_email'])
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"Linked {assigned_tickets.count()} tickets to customer {customer.id} on login")
@@ -793,7 +801,19 @@ def user_tickets_list(request):
             'error': {'code': 'UNAUTHORIZED', 'message': 'Authentication required'}
         }, status=status.HTTP_401_UNAUTHORIZED)
     
-    tickets = Ticket.objects.filter(customer=customer).select_related('event', 'buyer').order_by('-purchase_date')
+    # Get tickets where:
+    # 1. Customer owns the ticket (customer = customer), OR
+    # 2. Ticket is assigned to this customer (assigned_mobile matches), OR
+    # 3. Customer bought ticket for someone else (buyer = customer AND assigned_mobile is set)
+    # BUT exclude tickets that were transferred away (buyer = customer BUT customer != customer AND assigned_mobile is NULL)
+    tickets = Ticket.objects.filter(
+        Q(customer=customer) | 
+        Q(assigned_mobile=customer.mobile_number) |
+        (Q(buyer=customer) & Q(assigned_mobile__isnull=False))
+    ).exclude(
+        # Exclude transferred tickets: buyer is customer but customer is not customer and assigned_mobile is null
+        Q(buyer=customer) & ~Q(customer=customer) & Q(assigned_mobile__isnull=True)
+    ).select_related('event', 'buyer').order_by('-purchase_date')
     serializer = TicketSerializer(tickets, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -827,7 +847,19 @@ def user_me_bookings(request):
     offset = (page - 1) * limit
     
     # Get tickets grouped by event and purchase_date (same event + same day = same booking)
-    tickets = Ticket.objects.filter(customer=customer).select_related('event', 'event__venue').order_by('-purchase_date')
+    # Include tickets where:
+    # 1. Customer owns the ticket, OR
+    # 2. Ticket is assigned to this customer, OR
+    # 3. Customer bought ticket for someone else (assigned tickets)
+    # BUT exclude tickets that were transferred away
+    tickets = Ticket.objects.filter(
+        Q(customer=customer) | 
+        Q(assigned_mobile=customer.mobile_number) |
+        (Q(buyer=customer) & Q(assigned_mobile__isnull=False))
+    ).exclude(
+        # Exclude transferred tickets: buyer is customer but customer is not customer and assigned_mobile is null
+        Q(buyer=customer) & ~Q(customer=customer) & Q(assigned_mobile__isnull=True)
+    ).select_related('event', 'event__venue').order_by('-purchase_date')
     
     # Group tickets by event_id and purchase_date (day level) to create bookings
     bookings_dict = {}
@@ -1396,12 +1428,44 @@ def user_ticket_detail(request, ticket_id):
         }, status=status.HTTP_401_UNAUTHORIZED)
     
     try:
-        # Allow viewing ticket if user is the buyer OR the customer
-        # This allows buyers to see tickets they purchased even if assigned to others
+        # First check if ticket exists
+        ticket_exists = Ticket.objects.filter(id=ticket_id).exists()
+        if not ticket_exists:
+            return Response({
+                'error': {'code': 'NOT_FOUND', 'message': 'Ticket not found'}
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Allow viewing ticket if user owns it (customer = customer) - this takes priority
+        # OR if ticket is assigned to them (assigned_mobile matches)
+        # OR if user bought ticket for someone else (assigned ticket)
+        # BUT exclude tickets that were transferred away (buyer = customer BUT customer != customer AND assigned_mobile is NULL)
         ticket = Ticket.objects.select_related('event', 'customer', 'buyer').filter(
-            Q(id=ticket_id) & (Q(customer=customer) | Q(buyer=customer))
+            Q(id=ticket_id) & (
+                Q(customer=customer) |  # User owns the ticket - always allow viewing
+                Q(assigned_mobile=customer.mobile_number) |  # Ticket assigned to user
+                (Q(buyer=customer) & Q(assigned_mobile__isnull=False))  # User bought for someone else
+            )
+        ).exclude(
+            # Only exclude if ticket was transferred away: buyer is customer but customer is not customer and assigned_mobile is null
+            # This means: user bought it, but doesn't own it anymore, and it wasn't assigned (it was transferred)
+            Q(buyer=customer) & ~Q(customer=customer) & Q(assigned_mobile__isnull=True)
         ).first()
+        
         if not ticket:
+            # Check if ticket was transferred away
+            transferred_ticket = Ticket.objects.filter(
+                id=ticket_id,
+                buyer=customer
+            ).exclude(customer=customer).first()
+            
+            if transferred_ticket:
+                return Response({
+                    'error': {
+                        'code': 'TICKET_TRANSFERRED', 
+                        'message': 'This ticket has been transferred and is no longer available in your account'
+                    }
+                }, status=status.HTTP_404_NOT_FOUND)
+            
             return Response({
                 'error': {'code': 'NOT_FOUND', 'message': 'Ticket not found'}
             }, status=status.HTTP_404_NOT_FOUND)
@@ -1411,13 +1475,22 @@ def user_ticket_detail(request, ticket_id):
         }, status=status.HTTP_404_NOT_FOUND)
     
     # Get all tickets from the same booking (same event, same purchase date)
-    # Show ALL tickets where current user is the buyer (who purchased them)
-    # This includes tickets assigned to others
+    # Show tickets where:
+    # 1. Customer owns the ticket, OR
+    # 2. Ticket is assigned to this customer, OR
+    # 3. Customer bought ticket for someone else (assigned tickets)
+    # BUT exclude tickets that were transferred away
     purchase_date = ticket.purchase_date.date()
     all_booking_tickets = Ticket.objects.filter(
         event=ticket.event,
-        purchase_date__date=purchase_date,
-        buyer=customer  # Show all tickets purchased by this user
+        purchase_date__date=purchase_date
+    ).filter(
+        Q(customer=customer) | 
+        Q(assigned_mobile=customer.mobile_number) |
+        (Q(buyer=customer) & Q(assigned_mobile__isnull=False))
+    ).exclude(
+        # Exclude transferred tickets: buyer is customer but customer is not customer and assigned_mobile is null
+        Q(buyer=customer) & ~Q(customer=customer) & Q(assigned_mobile__isnull=True)
     ).select_related('customer', 'buyer').order_by('purchase_date')
     
     serializer = TicketSerializer(all_booking_tickets, many=True, context={'request': request})
@@ -1435,14 +1508,24 @@ def user_ticket_transfer(request, ticket_id):
     Transfer ticket to another user.
     POST /api/v1/users/tickets/:id/transfer/
     """
-    customer_id = request.user.id if hasattr(request.user, 'id') else None
-    if not customer_id:
+    # Get customer from request (set by CustomerJWTAuthentication)
+    customer = getattr(request, 'customer', None)
+    if not customer:
+        # Fallback: try to get from user.id (for compatibility)
+        customer_id = request.user.id if hasattr(request.user, 'id') else None
+        if customer_id:
+            try:
+                customer = Customer.objects.get(id=customer_id)
+            except Customer.DoesNotExist:
+                pass
+    
+    if not customer:
         return Response({
             'error': {'code': 'UNAUTHORIZED', 'message': 'Authentication required'}
         }, status=status.HTTP_401_UNAUTHORIZED)
     
     try:
-        ticket = Ticket.objects.get(id=ticket_id, customer_id=customer_id)
+        ticket = Ticket.objects.select_related('event', 'customer', 'buyer').get(id=ticket_id, customer_id=customer.id)
     except Ticket.DoesNotExist:
         return Response({
             'error': {'code': 'NOT_FOUND', 'message': 'Ticket not found'}
@@ -1459,22 +1542,94 @@ def user_ticket_transfer(request, ticket_id):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     recipient_mobile = request.data.get('recipient_mobile')
+    recipient_name = request.data.get('recipient_name', '').strip()
+    payment_method = request.data.get('payment_method', 'credit_card')  # Default to credit_card if not provided
+    
     if not recipient_mobile:
         raise ValidationError("recipient_mobile is required")
     
+    # Calculate transfer fee
+    event = ticket.event
+    transfer_fee = Decimal('0')
+    if event.transfer_fee_value:
+        if event.transfer_fee_type == 'percentage':
+            # Percentage of ticket price
+            transfer_fee = (ticket.price * event.transfer_fee_value) / Decimal('100')
+        else:
+            # Flat amount
+            transfer_fee = event.transfer_fee_value
+    
+    # Process payment for transfer fee
+    if transfer_fee > 0:
+        transfer_payment = PaymentTransaction.objects.create(
+            customer=customer,
+            ticket=ticket,
+            amount=transfer_fee,
+            payment_method=payment_method,
+            status='completed',  # For now, assume payment is successful
+            transaction_id=str(uuid.uuid4())
+        )
+    
+    # Try to find recipient customer
+    recipient = None
     try:
         recipient = Customer.objects.get(mobile_number=recipient_mobile, status='active')
+        recipient_name = recipient.name if not recipient_name else recipient_name
     except Customer.DoesNotExist:
-        return Response({
-            'error': {'code': 'RECIPIENT_NOT_FOUND', 'message': 'Recipient not found'}
-        }, status=status.HTTP_404_NOT_FOUND)
+        # Recipient doesn't exist yet - will be linked when they register
+        pass
     
-    ticket.customer = recipient
+    # Store original owner info
+    from_customer = ticket.customer
+    original_buyer = ticket.buyer if ticket.buyer else ticket.customer
+    
+    # Update ticket ownership
+    if recipient:
+        # Recipient exists - transfer ownership immediately
+        # Change the ticket owner to recipient
+        ticket.customer = recipient
+        # Keep buyer as original purchaser (for tracking who paid)
+        if not ticket.buyer:
+            ticket.buyer = original_buyer
+        # Clear assigned fields since ticket is now owned by recipient, not just assigned
+        # We could keep them for transfer history, but for clarity, clear them
+        # The buyer field already tracks who originally purchased it
+        ticket.assigned_name = None
+        ticket.assigned_mobile = None
+        ticket.assigned_email = None
+    else:
+        # Recipient doesn't exist yet - set assigned fields, keep ticket with current owner
+        # Ticket will be linked when recipient registers (handled in registration/login)
+        ticket.assigned_name = recipient_name
+        ticket.assigned_mobile = recipient_mobile
+        ticket.assigned_email = None
+        # Keep buyer as original purchaser
+        if not ticket.buyer:
+            ticket.buyer = original_buyer
+        # Keep customer as current owner until recipient registers
+    
     ticket.save()
+    
+    # Create TicketTransfer record
+    from tickets.models import TicketTransfer
+    if recipient:
+        transfer_record = TicketTransfer.objects.create(
+            ticket=ticket,
+            from_customer=from_customer,
+            to_customer=recipient,
+            status='completed'
+        )
+    else:
+        # Create pending transfer record (will be completed when recipient registers)
+        # For now, we'll create it with a placeholder or handle it when recipient registers
+        # Store transfer info in ticket's assigned fields until recipient registers
+        pass
     
     return Response({
         'message': 'Ticket transferred successfully',
-        'ticket': TicketSerializer(ticket).data
+        'ticket': TicketSerializer(ticket, context={'request': request}).data,
+        'transfer_fee': float(transfer_fee),
+        'recipient_exists': recipient is not None
     }, status=status.HTTP_200_OK)
 
 

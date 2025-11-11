@@ -68,9 +68,9 @@ type AuthContextType = {
     otpCode: string
   ) => Promise<{ password_reset_token: string; expires_in_seconds: number }>;
   confirmPasswordReset: (
-    passwordResetToken: string,
-    password: string,
-    passwordConfirmation: string
+    mobile_number: string,
+    otp_code: string,
+    new_password: string
   ) => Promise<void>;
   refreshAccessToken: () => Promise<string | null>;
   logout: () => Promise<void>;
@@ -654,24 +654,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const confirmPasswordReset = async (
-    passwordResetToken: string,
-    password: string,
-    passwordConfirmation: string
+    mobile_number: string,
+    otp_code: string,
+    new_password: string
   ) => {
     setIsLoading(true);
     try {
-      if (!passwordResetToken || !password || !passwordConfirmation) {
+      if (!mobile_number || !otp_code || !new_password) {
         throw new Error(t("auth.provideAllFields"));
       }
 
-      if (password !== passwordConfirmation) {
-        throw new Error(t("auth.passwordsDoNotMatch"));
-      }
-
       const response = await AuthService.confirmPasswordReset(
-        passwordResetToken,
-        password,
-        passwordConfirmation
+        mobile_number,
+        otp_code,
+        new_password
       );
 
       // Safely extract response message

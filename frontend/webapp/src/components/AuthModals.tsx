@@ -335,37 +335,11 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    try {
-      const response = await verifyPasswordResetOtp(
-        forgotPasswordPhone,
-        forgotPasswordOtp
-      );
-      setForgotPasswordOtpVerified(true);
-      setForgotPasswordOtpError("");
-      setShowForgotPasswordOtpModal(false);
-
-      // Store the password reset token securely for the next step
-      console.log("Password reset token received:", {
-        tokenLength: response.password_reset_token?.length,
-        tokenPreview: response.password_reset_token?.substring(0, 50) + "...",
-        isEncrypted: false,
-        fullToken: response.password_reset_token, // Log full token for debugging
-      });
-
-      // Store token directly in localStorage without secure storage wrapper
-      // to avoid JSON metadata overhead that increases token length
-      // Ensure the token is properly encoded
-      const tokenToStore = response.password_reset_token.trim();
-      localStorage.setItem("passwordResetToken", tokenToStore);
-      await secureStorage.setItem(
-        "passwordResetExpires",
-        response.expires_in_seconds.toString(),
-        { encrypt: true }
-      );
-    } catch (error) {
-      console.error("Failed to verify password reset OTP:", error);
-      // Error is already handled in AuthContext
-    }
+    // Don't verify OTP here - just mark as ready to proceed
+    // OTP will be verified when resetting the password
+    setForgotPasswordOtpVerified(true);
+    setForgotPasswordOtpError("");
+    setShowForgotPasswordOtpModal(false);
   };
 
   const handleForgotPasswordSubmit = async () => {
@@ -380,109 +354,32 @@ export const AuthModals: React.FC<AuthModalsProps> = ({ onLoginSuccess }) => {
       return;
     }
 
-    try {
-      const passwordResetToken = localStorage.getItem("passwordResetToken");
-
-      console.log("Password reset token retrieved:", {
-        tokenLength: passwordResetToken?.length,
-        tokenPreview: passwordResetToken?.substring(0, 50) + "...",
-        isTooLong: passwordResetToken && passwordResetToken.length > 500,
-        fullToken: passwordResetToken, // Log full token for debugging
+    // Validate passwords match
+    if (newPassword !== confirmNewPassword) {
+      setForgotPasswordErrors({
+        confirmNewPassword: t("auth.passwordsDoNotMatch"),
       });
+      return;
+    }
 
-      if (!passwordResetToken) {
-        toast({
-          title: t("auth.password_reset_error"),
-          description: t("auth.password_reset_token_missing"),
-          variant: "destructive",
-        });
-        return;
-      }
+    // Validate required fields
+    if (!forgotPasswordPhone || !forgotPasswordOtp || !newPassword) {
+      toast({
+        title: t("auth.password_reset_error"),
+        description: t("auth.provideAllFields"),
+        variant: "destructive",
+      });
+      return;
+    }
 
-      // Validate token format
-      const trimmedToken = passwordResetToken.trim();
-      if (trimmedToken !== passwordResetToken) {
-        console.warn("Token had whitespace, trimmed it");
-      }
+    try {
+      await confirmPasswordReset(
+        forgotPasswordPhone,
+        forgotPasswordOtp,
+        newPassword
+      );
 
-      // Check if token has expired
-      try {
-        const expiresInSeconds = await secureStorage.getItem(
-          "passwordResetExpires"
-        );
-        if (expiresInSeconds) {
-          const expiresAt = new Date(
-            Date.now() + parseInt(expiresInSeconds) * 1000
-          );
-          const now = new Date();
-          if (now > expiresAt) {
-            toast({
-              title: t("auth.password_reset_error"),
-              description: t("auth.password_reset_token_expired"),
-              variant: "destructive",
-            });
-            // Clear expired tokens
-            localStorage.removeItem("passwordResetToken");
-            secureStorage.removeItem("passwordResetExpires");
-            return;
-          }
-        }
-      } catch (error) {
-        console.warn("Could not check token expiration:", error);
-      }
-
-      // Additional check: Parse the token to check embedded timestamps
-      try {
-        const tokenParts = trimmedToken.split(".");
-        if (tokenParts.length >= 2) {
-          const decodedToken = atob(tokenParts[0]);
-          const tokenData = decodedToken.split("|");
-          if (tokenData.length >= 4) {
-            const currentTime = Math.floor(Date.now() / 1000);
-            const tokenTime1 = parseInt(tokenData[2]);
-            const tokenTime2 = parseInt(tokenData[3]);
-
-            console.log("Token embedded timestamp check:", {
-              currentTime,
-              tokenTime1,
-              tokenTime2,
-              isExpired1: currentTime > tokenTime1,
-              isExpired2: currentTime > tokenTime2,
-              timeDiff1: currentTime - tokenTime1,
-              timeDiff2: currentTime - tokenTime2,
-            });
-
-            // If the first timestamp is expired, the token is likely invalid
-            if (currentTime > tokenTime1) {
-              toast({
-                title: t("auth.password_reset_error"),
-                description:
-                  "Password reset token has expired. Please request a new one.",
-                variant: "destructive",
-              });
-              // Clear expired tokens
-              localStorage.removeItem("passwordResetToken");
-              secureStorage.removeItem("passwordResetExpires");
-
-              // Reset the forgot password flow to allow requesting a new token
-              setForgotPasswordOtpSent(false);
-              setForgotPasswordOtpVerified(false);
-              setForgotPasswordOtpError("");
-              setShowForgotPasswordOtpModal(false);
-              setNewPassword("");
-              setConfirmNewPassword("");
-              setForgotPasswordErrors({});
-              return;
-            }
-          }
-        }
-      } catch (error) {
-        console.warn("Could not parse token timestamps:", error);
-      }
-
-      await confirmPasswordReset(trimmedToken, newPassword, confirmNewPassword);
-
-      // Clear stored tokens
+      // Clear stored tokens (if any)
       localStorage.removeItem("passwordResetToken");
       secureStorage.removeItem("passwordResetExpires");
 
