@@ -60,7 +60,6 @@ import {
   MoreHorizontal,
   UserCheck,
   UserPlus,
-  UserMinus,
   QrCode,
   Activity,
   Target,
@@ -121,6 +120,20 @@ interface Event {
   gatesOpenTime?: string;
   termsAndConditions?: string;
   gallery?: GalleryImage[];
+  venueLayouts?: VenueLayout[];
+  discounts?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    value: number;
+    code: string;
+    validFrom: string;
+    validTo: string;
+    maxUses: number;
+    usedCount: number;
+    applicableCategories: string[];
+    minQuantity?: number;
+  }>;
 }
 
 interface GalleryImage {
@@ -335,33 +348,7 @@ const EventsManagement: React.FC = () => {
     ],
   });
 
-  // Usher management state
-  const [ushers, setUshers] = useState([
-    {
-      id: "U001",
-      name: "Ahmed Usher",
-      email: "ahmed@ticketrunners.com",
-      status: "active",
-      assignedAreas: ["Gate A", "VIP Section"],
-      lastActive: "2 hours ago",
-    },
-    {
-      id: "U002",
-      name: "Omar Usher",
-      email: "omar@ticketrunners.com",
-      status: "active",
-      assignedAreas: ["Gate B", "General Section"],
-      lastActive: "1 hour ago",
-    },
-    {
-      id: "U003",
-      name: "Fatima Usher",
-      email: "fatima@ticketrunners.com",
-      status: "inactive",
-      assignedAreas: ["Gate C"],
-      lastActive: "3 days ago",
-    },
-  ]);
+  // Usher management state (removed unused ushers state - using API data instead)
 
   const [newUsher, setNewUsher] = useState({
     name: "",
@@ -380,12 +367,12 @@ const EventsManagement: React.FC = () => {
   const queryClient = useQueryClient();
 
   // Fetch organizers and venues for form dropdowns
-  const { data: organizersData, isLoading: organizersLoading } = useQuery({
+  const { data: organizersData } = useQuery({
     queryKey: ['organizers'],
     queryFn: () => usersApi.getOrganizers({ page_size: 1000 }),
   });
 
-  const { data: venuesData, isLoading: venuesLoading } = useQuery({
+  const { data: venuesData } = useQuery({
     queryKey: ['venues'],
     queryFn: () => venuesApi.getVenues({ page_size: 1000 }),
   });
@@ -435,13 +422,18 @@ const EventsManagement: React.FC = () => {
       category: item.category_name || '',
       totalTickets: item.total_tickets || 0,
       ticketsSold: item.tickets_sold || 0,
-      revenue: 0, // Will be fetched from detail if needed
-      commission: 0, // Will be fetched from detail if needed
-      payout: 0, // Will be calculated
-      commissionRate: {
-        type: "percentage" as "percentage" | "flat",
-        value: 10,
-      },
+      revenue: item.revenue || 0,
+      commission: item.commission || 0,
+      payout: (item.revenue || 0) - (item.commission || 0), // Organizer revenue (total - commission)
+      commissionRate: item.commission_rate && typeof item.commission_rate === 'object' 
+        ? {
+            type: item.commission_rate.type || "percentage" as "percentage" | "flat",
+            value: item.commission_rate.value || 10,
+          }
+        : {
+            type: "percentage" as "percentage" | "flat",
+            value: item.commission_rate ? (typeof item.commission_rate === 'number' ? item.commission_rate * 100 : 10) : 10, // Fallback for old format
+          },
       transferFee: {
         type: "percentage" as "percentage" | "flat",
         value: 5,
@@ -1375,7 +1367,7 @@ const EventsManagement: React.FC = () => {
     queryKey: ['event-ushers', selectedEventForUshers?.id],
     queryFn: async () => {
       if (!selectedEventForUshers?.id) return null;
-      const response = await eventsApi.getEvent(selectedEventForUshers.id);
+      await eventsApi.getEvent(selectedEventForUshers.id);
       // Fetch ushers for this event using the ushers endpoint
       const ushersResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api'}/events/${selectedEventForUshers.id}/ushers/`, {
         headers: {
@@ -1981,6 +1973,12 @@ const EventsManagement: React.FC = () => {
       }));
       formData.append('ticket_categories', JSON.stringify(ticketCategoriesData));
     }
+    
+    // Add commission rate fields
+    if (newEvent.commissionRate) {
+      formData.append('commission_rate_type', newEvent.commissionRate.type);
+      formData.append('commission_rate_value', newEvent.commissionRate.value.toString());
+    }
 
     // Log the data being sent for debugging
     console.log('Creating event with FormData');
@@ -2027,6 +2025,8 @@ const EventsManagement: React.FC = () => {
       | string
       | number
       | boolean
+      | File
+      | null
       | { type: "percentage" | "flat"; value: number }
   ) => {
     setNewEvent((prev) => ({
@@ -2155,16 +2155,16 @@ const EventsManagement: React.FC = () => {
       return;
     }
 
-    const newUsherObj = {
-      id: `U${Date.now()}`,
-      name: newUsher.name,
-      email: newUsher.email,
-      status: "active",
-      assignedAreas: [newUsher.assignedArea],
-      lastActive: "Just now",
-    };
+    // TODO: Implement usher addition via API
+    // const newUsherObj = {
+    //   id: `U${Date.now()}`,
+    //   name: newUsher.name,
+    //   email: newUsher.email,
+    //   status: "active",
+    //   assignedAreas: [newUsher.assignedArea],
+    //   lastActive: "Just now",
+    // };
 
-    setUshers((prev) => [...prev, newUsherObj]);
     setNewUsher({ name: "", email: "", assignedArea: "" });
 
     toast({
@@ -2173,31 +2173,12 @@ const EventsManagement: React.FC = () => {
     });
   };
 
-  const handleEditUsher = (usher: any) => {
-    setSelectedUsher(usher);
-    setIsEditUsherDialogOpen(true);
-  };
-
-  const handleViewUsherActivity = (usher: any) => {
-    setSelectedUsher(usher);
-    setIsViewUsherActivityDialogOpen(true);
-  };
-
-  const handleRemoveUsher = (usherId: string) => {
-    setUshers((prev) => prev.filter((usher) => usher.id !== usherId));
-    toast({
-      title: t("admin.events.ushers.removeSuccess"),
-      description: t("admin.events.ushers.removeSuccessDesc"),
-    });
-  };
+  // Usher management handlers - TODO: Connect to UI when needed
+  // These handlers are prepared for future use in usher management dialogs
 
   const handleSaveUsherChanges = () => {
     if (selectedUsher) {
-      setUshers((prev) =>
-        prev.map((usher) =>
-          usher.id === selectedUsher.id ? selectedUsher : usher
-        )
-      );
+      // TODO: Implement usher update via API
       setIsEditUsherDialogOpen(false);
       setSelectedUsher(null);
       toast({
@@ -2408,6 +2389,9 @@ const EventsManagement: React.FC = () => {
               <TableHeader>
                 <TableRow>
                   <TableHead className="rtl:text-right">
+                    Event ID
+                  </TableHead>
+                  <TableHead className="rtl:text-right">
                     {t("admin.events.table.event")}
                   </TableHead>
                   <TableHead className="rtl:text-right">
@@ -2437,25 +2421,30 @@ const EventsManagement: React.FC = () => {
               <TableBody>
                 {eventsLoading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       {t("admin.events.loading")}
                     </TableCell>
                   </TableRow>
                 ) : eventsError ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-red-500">
+                    <TableCell colSpan={10} className="text-center py-8 text-red-500">
                       {t("admin.events.error")}: {eventsError instanceof Error ? eventsError.message : String(eventsError)}
                     </TableCell>
                   </TableRow>
                 ) : paginatedEvents.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       {t("admin.events.noEvents")}
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedEvents.map((event) => (
                     <TableRow key={event.id}>
+                    <TableCell>
+                      <div className="font-mono font-semibold text-sm rtl:text-right">
+                        {event.id}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center event-image-container">
                         <img
@@ -2539,23 +2528,31 @@ const EventsManagement: React.FC = () => {
                     <TableCell>
                       <div className="rtl:text-right">
                         <p className="font-medium number-container">
+                          {t("admin.events.metrics.organizerRevenue")}:{" "}
                           {formatCurrencyForLocale(
-                            event.revenue,
+                            event.revenue - event.commission,
                             i18nInstance.language
                           )}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          {t("admin.events.metrics.commission")}:{" "}
+                          {t("admin.events.metrics.adminRevenue")}:{" "}
                           {formatCurrencyForLocale(
                             event.commission,
                             i18nInstance.language
                           )}
                         </p>
                         <p className="text-xs text-muted-foreground">
+                          {t("admin.events.metrics.totalRevenue")}:{" "}
+                          {formatCurrencyForLocale(
+                            event.revenue,
+                            i18nInstance.language
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
                           Rate:{" "}
-                          {event.commissionRate.type === "percentage"
+                          {event.commissionRate?.type === "percentage"
                             ? `${event.commissionRate.value}%`
-                            : `E£${event.commissionRate.value}`}
+                            : `E£${event.commissionRate?.value}`}
                         </p>
                       </div>
                     </TableCell>

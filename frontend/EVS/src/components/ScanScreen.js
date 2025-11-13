@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { scanAPI, eventsAPI, leaveAPI, reportsAPI, authAPI } from "../lib/api/usherApi";
 import { authService } from "../services/authService";
 import { useScanLog } from "../contexts/ScanLogContext";
+import { useWebNFC } from "../hooks/useWebNFC";
 import {
   FaSearch,
   FaQrcode,
@@ -18,6 +19,8 @@ import {
   FaComment,
   FaSignOutAlt,
   FaChild,
+  FaSpinner,
+  FaTimes,
 } from "react-icons/fa";
 import "./ScanScreen.css";
 
@@ -26,11 +29,24 @@ export default function ScanScreen() {
   const location = useLocation();
   const { eventId: locationEventId, username: locationUsername } = location.state || {};
   const { addLog, refreshLogs } = useScanLog();
+  
+  // NFC scanning hook
+  const {
+    isScanning,
+    isSupported,
+    error: nfcError,
+    scanCard,
+    stopScanning,
+    isConnected,
+    bridgeAvailable,
+  } = useWebNFC();
+  
   const [cardId, setCardId] = useState("");
   const [attendee, setAttendee] = useState(null);
   const [scanResult, setScanResult] = useState(null);
   const [inputVisible, setInputVisible] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [usherComment, setUsherComment] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [currentEvent, setCurrentEvent] = useState(null);
@@ -83,6 +99,37 @@ export default function ScanScreen() {
     }
   }, [attendee, scanResult]);
 
+  // Handle NFC scan
+  const handleNFCScan = async () => {
+    if (!isSupported && !bridgeAvailable) {
+      // Fallback to manual entry if NFC not available
+      setInputVisible(true);
+      return;
+    }
+
+    setAttendee(null);
+    setScanResult(null);
+    setCardId("");
+    setError("");
+    setShowCustomerModal(false);
+
+    try {
+      const result = await scanCard();
+      
+      if (result.success && result.serialNumber) {
+        const scannedCardId = result.serialNumber;
+        setCardId(scannedCardId);
+        // Automatically lookup the attendee after successful scan
+        await handleLookup(scannedCardId);
+      } else {
+        setError(result.error || "Failed to scan NFC card");
+      }
+    } catch (error) {
+      console.error("NFC scan error:", error);
+      setError(error.message || "Failed to scan NFC card");
+    }
+  };
+
   const handleSimulateScan = () => {
     setInputVisible(true);
     setAttendee(null);
@@ -90,8 +137,9 @@ export default function ScanScreen() {
     setCardId("");
   };
 
-  const handleLookup = async () => {
-    if (!cardId.trim()) {
+  const handleLookup = async (scannedCardId = null) => {
+    const idToLookup = scannedCardId || cardId;
+    if (!idToLookup.trim()) {
       return;
     }
 
@@ -101,7 +149,7 @@ export default function ScanScreen() {
 
     try {
       // Get attendee information from API
-      const attendeeData = await scanAPI.getAttendee(cardId, eventId);
+      const attendeeData = await scanAPI.getAttendee(idToLookup, eventId);
       
       // Map API response to component format
       // Format emergency contact display
@@ -130,6 +178,7 @@ export default function ScanScreen() {
         bloodType: attendeeData.blood_type,
         labels: attendeeData.labels || [],
         dependents: attendeeData.children || [],
+        partTimeLeave: attendeeData.part_time_leave || null, // Part-time leave status
       };
 
       setAttendee(mappedAttendee);
@@ -146,14 +195,19 @@ export default function ScanScreen() {
 
       // Process scan result with backend
       try {
-        await scanAPI.processResult(cardId, eventId, result);
+        await scanAPI.processResult(idToLookup, eventId, result);
       } catch (processError) {
         console.error("Error processing scan result:", processError);
       }
 
+      // Update cardId state if it was passed as parameter
+      if (scannedCardId) {
+        setCardId(scannedCardId);
+      }
+      
       // Add to local log context
       const logEntry = {
-        cardId,
+        cardId: idToLookup,
         eventId,
         username,
         time: new Date().toISOString(),
@@ -163,6 +217,9 @@ export default function ScanScreen() {
         attendee: mappedAttendee,
       };
       addLog(logEntry);
+      
+      // Show customer details modal
+      setShowCustomerModal(true);
       
       // Refresh logs from server
       if (refreshLogs) {
@@ -203,7 +260,7 @@ export default function ScanScreen() {
       if (error.response?.status === 404) {
         setScanResult("not_found");
         const logEntry = {
-          cardId: cardId,
+          cardId: idToLookup,
           eventId: eventId,
           username: username,
           time: new Date().toISOString(),
@@ -248,21 +305,42 @@ export default function ScanScreen() {
   };
 
   const handlePartTimeLeave = async () => {
-    if (!attendee || !eventId) return;
+    if (!attendee || !eventId || !attendee.cardId) return;
 
     try {
       if (!attendee.partTimeLeave) {
         // Create leave
-        await leaveAPI.create(eventId, "Part-time leave");
-        attendee.partTimeLeave = true;
+        await leaveAPI.create(eventId, attendee.cardId, "Part-time leave");
+        // Refresh attendee data to get updated leave status
+        await handleLookup(attendee.cardId);
+        alert("Customer marked as on part-time leave. They can return and scan again.");
       } else {
-        // Cancel leave (would need an endpoint for this)
-        // For now, just toggle locally
-        attendee.partTimeLeave = false;
+        // Mark as returned
+        await leaveAPI.return(eventId, attendee.cardId);
+        // Refresh attendee data
+        await handleLookup(attendee.cardId);
+        alert("Customer marked as returned. Entry allowed.");
       }
-      setAttendee({ ...attendee });
     } catch (error) {
       console.error("Error handling part-time leave:", error);
+      alert(error.response?.data?.error?.message || "Failed to update part-time leave status");
+    }
+  };
+
+  const handleCameBack = async () => {
+    if (!attendee || !eventId || !attendee.cardId) return;
+
+    try {
+      // Mark as returned from leave
+      await leaveAPI.return(eventId, attendee.cardId);
+      // Process scan as valid entry
+      await scanAPI.processResult(attendee.cardId, eventId, "valid", "Returned from part-time leave");
+      // Refresh attendee data
+      await handleLookup(attendee.cardId);
+      alert("Customer marked as returned and entered successfully!");
+    } catch (error) {
+      console.error("Error handling return:", error);
+      alert(error.response?.data?.error?.message || "Failed to mark customer as returned");
     }
   };
 
@@ -367,7 +445,7 @@ export default function ScanScreen() {
               </div>
               <span className="status-label">Part-Time Leave</span>
               <div className="status-badge status-warn">
-                <span className="status-badge-text">Active</span>
+                <span className="status-badge-text">On Leave</span>
               </div>
             </div>
           )}
@@ -472,15 +550,23 @@ export default function ScanScreen() {
             <FaComment size={16} className="button-icon" />
             Report User
           </button>
-          <button
-            className={`action-button ${
-              attendee.partTimeLeave ? "leave-active" : "leave-button"
-            }`}
-            onClick={handlePartTimeLeave}
-          >
-            <FaSignOutAlt size={16} className="button-icon" />
-            {attendee.partTimeLeave ? "Cancel Leave" : "Part-Time Leave"}
-          </button>
+          {attendee.partTimeLeave ? (
+            <button
+              className="action-button leave-active"
+              onClick={handleCameBack}
+            >
+              <FaCheckCircle size={16} className="button-icon" />
+              Came Back
+            </button>
+          ) : (
+            <button
+              className="action-button leave-button"
+              onClick={handlePartTimeLeave}
+            >
+              <FaSignOutAlt size={16} className="button-icon" />
+              Part-Time Leave
+            </button>
+          )}
         </div>
 
         {/* Usher Comments */}
@@ -539,11 +625,44 @@ export default function ScanScreen() {
 
           <button 
             className="primary-button" 
-            onClick={handleSimulateScan}
-            disabled={isLoading}
+            onClick={handleNFCScan}
+            disabled={isLoading || isScanning}
           >
-            <FaQrcode size={20} color="#fff" className="button-icon" />
-            {isLoading ? "Loading..." : "Scan NFC Card"}
+            {isScanning ? (
+              <>
+                <FaSpinner size={20} color="#fff" className="button-icon spinning" />
+                Scanning...
+              </>
+            ) : (
+              <>
+                <FaQrcode size={20} color="#fff" className="button-icon" />
+                Scan NFC Card
+              </>
+            )}
+          </button>
+          
+          {(isSupported || bridgeAvailable) && (
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <div style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor: isConnected ? '#4CAF50' : '#9E9E9E',
+                animation: isConnected ? 'pulse 2s infinite' : 'none'
+              }} />
+              <span style={{ fontSize: '12px', color: '#666' }}>
+                {isConnected ? "Reader Connected" : "Reader Offline"}
+              </span>
+            </div>
+          )}
+          
+          <button
+            className="secondary-button"
+            onClick={handleSimulateScan}
+            style={{ marginTop: '10px' }}
+          >
+            <FaSearch size={16} color="hsl(81.8, 38.5%, 28%)" />
+            Manual Entry
           </button>
           
           <button
@@ -616,6 +735,164 @@ export default function ScanScreen() {
         {/* Attendee Information */}
         {renderAttendeeInfo()}
       </div>
+
+      {/* Customer Details Modal */}
+      {showCustomerModal && attendee && (
+        <div className="modal-overlay" onClick={() => setShowCustomerModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 className="modal-title">Customer Details</h3>
+              <button
+                onClick={() => setShowCustomerModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '24px', color: '#666' }}
+              >
+                <FaTimes />
+              </button>
+            </div>
+            
+            {/* Customer Photo */}
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              {attendee.photo ? (
+                <img
+                  src={attendee.photo}
+                  alt={attendee.name}
+                  style={{ width: '120px', height: '120px', borderRadius: '50%', objectFit: 'cover' }}
+                />
+              ) : (
+                <div style={{ width: '120px', height: '120px', borderRadius: '50%', backgroundColor: '#E0E0E0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
+                  <FaUser size={60} color="#999" />
+                </div>
+              )}
+            </div>
+            
+            {/* Customer Name */}
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, fontSize: '24px', color: '#333' }}>{attendee.name}</h2>
+              <p style={{ margin: '5px 0 0 0', color: '#666', fontSize: '14px' }}>Card ID: {attendee.cardId}</p>
+            </div>
+            
+            {/* Status Badges */}
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '20px', flexWrap: 'wrap' }}>
+              <div style={{
+                padding: '8px 16px',
+                borderRadius: '20px',
+                backgroundColor: attendee.ticketValid ? '#E8F5E8' : '#FFEBEE',
+                color: attendee.ticketValid ? '#4CAF50' : '#E53935',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}>
+                Ticket: {attendee.ticketValid ? "Valid" : "Invalid"}
+              </div>
+              <div style={{
+                padding: '8px 16px',
+                borderRadius: '20px',
+                backgroundColor: attendee.scanned ? '#FFF3E0' : '#E8F5E8',
+                color: attendee.scanned ? '#FF9800' : '#4CAF50',
+                fontSize: '14px',
+                fontWeight: 'bold'
+              }}>
+                {attendee.scanned ? "Already Scanned" : "Not Scanned"}
+              </div>
+              {attendee.partTimeLeave && (
+                <div style={{
+                  padding: '8px 16px',
+                  borderRadius: '20px',
+                  backgroundColor: '#FFF3E0',
+                  color: '#FF9800',
+                  fontSize: '14px',
+                  fontWeight: 'bold'
+                }}>
+                  On Part-Time Leave
+                </div>
+              )}
+            </div>
+            
+            {/* Additional Info */}
+            {attendee.emergencyContact && (
+              <div style={{ marginBottom: '15px', padding: '15px', backgroundColor: '#F5F5F5', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                  <FaPhone size={16} color="hsl(81.8, 38.5%, 28%)" />
+                  <strong>Emergency Contact:</strong>
+                </div>
+                <p style={{ margin: 0, marginLeft: '26px', color: '#666' }}>{attendee.emergencyContact}</p>
+              </div>
+            )}
+            
+            {attendee.bloodType && (
+              <div style={{ marginBottom: '15px', padding: '15px', backgroundColor: '#F5F5F5', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                  <FaTint size={16} color="hsl(81.8, 38.5%, 28%)" />
+                  <strong>Blood Type:</strong>
+                </div>
+                <p style={{ margin: 0, marginLeft: '26px', color: '#666' }}>{attendee.bloodType}</p>
+              </div>
+            )}
+            
+            {attendee.ticketTier && (
+              <div style={{ marginBottom: '15px', padding: '15px', backgroundColor: '#F5F5F5', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                  <FaTag size={16} color="hsl(81.8, 38.5%, 28%)" />
+                  <strong>Ticket Tier:</strong>
+                </div>
+                <p style={{ margin: 0, marginLeft: '26px', color: '#666' }}>{attendee.ticketTier}</p>
+              </div>
+            )}
+            
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px', flexDirection: 'column' }}>
+              {attendee.partTimeLeave ? (
+                <button
+                  className="modal-button submit-button"
+                  onClick={async () => {
+                    await handleCameBack();
+                    setShowCustomerModal(false);
+                  }}
+                  style={{ width: '100%' }}
+                >
+                  <FaCheckCircle size={16} style={{ marginRight: '8px' }} />
+                  Mark as Came Back
+                </button>
+              ) : (
+                <button
+                  className="modal-button"
+                  onClick={async () => {
+                    await handlePartTimeLeave();
+                    setShowCustomerModal(false);
+                  }}
+                  style={{ 
+                    width: '100%',
+                    backgroundColor: '#FF9800',
+                    color: '#fff',
+                    border: 'none'
+                  }}
+                >
+                  <FaSignOutAlt size={16} style={{ marginRight: '8px' }} />
+                  Mark as Part-Time Leave
+                </button>
+              )}
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  className="modal-button cancel-button"
+                  onClick={() => setShowCustomerModal(false)}
+                  style={{ flex: 1 }}
+                >
+                  Close
+                </button>
+                <button
+                  className="modal-button submit-button"
+                  onClick={() => {
+                    setShowCustomerModal(false);
+                    setInputVisible(false);
+                  }}
+                  style={{ flex: 1 }}
+                >
+                  Scan Another
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Report Modal */}
       {showReportModal && (

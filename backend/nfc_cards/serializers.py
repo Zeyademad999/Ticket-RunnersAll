@@ -6,7 +6,16 @@ from .models import NFCCard, NFCCardTransaction
 
 
 class NFCCardSerializer(serializers.ModelSerializer):
-    customer_name = serializers.CharField(source='customer.name', read_only=True)
+    customer_name = serializers.SerializerMethodField(read_only=True)
+    customer_id = serializers.SerializerMethodField(read_only=True)
+    
+    def get_customer_name(self, obj):
+        """Safely get customer name, return None if customer doesn't exist"""
+        return obj.customer.name if obj.customer else None
+    
+    def get_customer_id(self, obj):
+        """Safely get customer ID, return None if customer doesn't exist"""
+        return str(obj.customer.id) if obj.customer else None
     
     class Meta:
         model = NFCCard

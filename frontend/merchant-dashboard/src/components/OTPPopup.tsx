@@ -83,8 +83,13 @@ const OTPPopup: React.FC<OTPPopupProps> = ({
     setError("");
     try {
       await onVerify(otpString);
+      // If verification succeeds, onVerify will handle navigation
+      // Don't clear OTP here - let parent component handle it
     } catch (error: any) {
-      setError(error.message || "OTP verification failed");
+      console.error("OTP verification error in popup:", error);
+      const errorMessage = error?.message || error?.response?.data?.error?.message || error?.response?.data?.message || "OTP verification failed. Please try again.";
+      setError(errorMessage);
+      // Don't close popup on error - let user try again
     }
   };
 
@@ -93,7 +98,8 @@ const OTPPopup: React.FC<OTPPopupProps> = ({
     try {
       await onResend();
     } catch (error: any) {
-      setError(error.message || "Failed to resend OTP");
+      const errorMessage = error?.message || error?.response?.data?.error?.message || error?.response?.data?.message || "Failed to resend OTP. Please try again.";
+      setError(errorMessage);
     }
   };
 

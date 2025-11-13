@@ -14,6 +14,7 @@ const Login: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showOTPPopup, setShowOTPPopup] = useState(false);
+  const [error, setError] = useState("");
 
   const { sendOTP, verifyOTP } = useAuth();
   const navigate = useNavigate();
@@ -22,18 +23,39 @@ const Login: React.FC = () => {
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(""); // Clear previous errors
+    
     if (!mobile || !password) {
-      toast.error("Please fill in all fields");
+      const errorMsg = "Please fill in all fields";
+      setError(errorMsg);
+      toast.error(errorMsg, { duration: 4000 });
       return;
     }
+
+    // Clear any old tokens before login
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("merchantData");
 
     setIsLoading(true);
     try {
       await sendOTP(mobile, password);
+      setError(""); // Clear any previous errors
       setShowOTPPopup(true);
-      toast.success("OTP sent to your mobile number");
+      toast.success("OTP sent to your mobile number", { duration: 3000 });
+      // Don't clear form fields - keep them for OTP verification
     } catch (error: any) {
-      toast.error(error.message || "Failed to send OTP");
+      console.error("Login error:", error);
+      const errorMessage = error?.message || error?.response?.data?.error?.message || error?.response?.data?.message || "Failed to send OTP. Please check your credentials and try again.";
+      setError(errorMessage);
+      // Show toast with longer duration so user can see it
+      toast.error(errorMessage, { 
+        duration: 6000,
+        style: {
+          maxWidth: '500px',
+        },
+      });
+      // Keep form fields filled so user can try again
     } finally {
       setIsLoading(false);
     }
@@ -42,10 +64,23 @@ const Login: React.FC = () => {
   const handleOTPVerify = async (otp: string) => {
     try {
       await verifyOTP(mobile, otp);
-      toast.success("Login successful!");
+      setError(""); // Clear any errors
+      toast.success("Login successful!", { duration: 3000 });
       setShowOTPPopup(false);
+      // Clear form only after successful login
+      setMobile("");
+      setPassword("");
       navigate("/dashboard");
     } catch (error: any) {
+      console.error("OTP verification error:", error);
+      const errorMessage = error?.message || error?.response?.data?.error?.message || error?.response?.data?.message || "OTP verification failed. Please try again.";
+      toast.error(errorMessage, { 
+        duration: 6000,
+        style: {
+          maxWidth: '500px',
+        },
+      });
+      // Don't close popup on error - let user try again
       throw error;
     }
   };
@@ -53,8 +88,15 @@ const Login: React.FC = () => {
   const handleResendOTP = async () => {
     try {
       await sendOTP(mobile, password);
-      toast.success("OTP resent successfully");
+      toast.success("OTP resent successfully", { duration: 3000 });
     } catch (error: any) {
+      const errorMessage = error?.message || error?.response?.data?.error?.message || error?.response?.data?.message || "Failed to resend OTP. Please try again.";
+      toast.error(errorMessage, { 
+        duration: 6000,
+        style: {
+          maxWidth: '500px',
+        },
+      });
       throw error;
     }
   };
@@ -86,6 +128,13 @@ const Login: React.FC = () => {
 
           <form className="mt-8 space-y-6" onSubmit={handleCredentialsSubmit}>
             <div className="space-y-4">
+              {/* Error Message Display */}
+              {error && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <p className="text-sm text-red-600 font-medium">{error}</p>
+                </div>
+              )}
+
               {/* Mobile Number Field */}
               <div>
                 <label
@@ -101,13 +150,19 @@ const Login: React.FC = () => {
                     type="tel"
                     required
                     value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white shadow-sm"
+                    onChange={(e) => {
+                      setMobile(e.target.value);
+                      setError(""); // Clear error when user starts typing
+                    }}
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white shadow-sm ${
+                      error ? "border-red-300" : "border-gray-300"
+                    }`}
                     style={{
                       paddingLeft: isRTL ? "1rem" : "2.5rem",
                       paddingRight: isRTL ? "2.5rem" : "1rem",
                     }}
                     placeholder="Enter your mobile number"
+                    disabled={isLoading}
                   />
                   <Smartphone
                     className={`absolute top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 ${
@@ -132,13 +187,19 @@ const Login: React.FC = () => {
                     type={showPassword ? "text" : "password"}
                     required
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white shadow-sm"
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setError(""); // Clear error when user starts typing
+                    }}
+                    className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white shadow-sm ${
+                      error ? "border-red-300" : "border-gray-300"
+                    }`}
                     style={{
                       paddingLeft: isRTL ? "1rem" : "1rem",
                       paddingRight: isRTL ? "2.5rem" : "2.5rem",
                     }}
                     placeholder="Enter your password"
+                    disabled={isLoading}
                   />
                   <button
                     type="button"
@@ -146,6 +207,7 @@ const Login: React.FC = () => {
                     className={`absolute top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 ${
                       isRTL ? "left-3" : "right-3"
                     }`}
+                    disabled={isLoading}
                   >
                     {showPassword ? (
                       <EyeOff className="h-5 w-5" />
@@ -184,7 +246,12 @@ const Login: React.FC = () => {
 
       <OTPPopup
         isOpen={showOTPPopup}
-        onClose={() => setShowOTPPopup(false)}
+        onClose={() => {
+          // Only allow closing if not currently loading
+          if (!isLoading) {
+            setShowOTPPopup(false);
+          }
+        }}
         onVerify={handleOTPVerify}
         onResend={handleResendOTP}
         mobile={mobile}

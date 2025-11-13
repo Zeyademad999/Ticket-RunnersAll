@@ -235,16 +235,38 @@ export const logsAPI = {
 
 // Part-time Leave API
 export const leaveAPI = {
-  create: async (eventId, reason = '') => {
-    const response = await api.post('/scan/part-time-leave/create/', {
+  create: async (eventId, cardId, reason = '') => {
+    const response = await api.post('/scan/part-time-leave/', {
       event_id: eventId,
-      reason,
+      card_id: cardId,
+      reason: reason || 'Part-time leave',
     });
     return response.data;
   },
 
-  list: async () => {
-    const response = await api.get('/scan/part-time-leave/');
+  return: async (eventId, cardId) => {
+    // For now, we'll use the same endpoint but mark as return
+    // In the future, this could be a separate endpoint
+    const response = await api.post('/scan/part-time-leave/', {
+      event_id: eventId,
+      card_id: cardId,
+      reason: 'Returned from part-time leave',
+      return: true,
+    });
+    return response.data;
+  },
+
+  list: async (eventId) => {
+    const url = eventId 
+      ? `/scan/part-time-leave/list/?event_id=${eventId}`
+      : '/scan/part-time-leave/list/';
+    const response = await api.get(url);
+    return response.data;
+  },
+
+  checkLeave: async (eventId, cardId) => {
+    // Check if customer is currently on leave
+    const response = await api.get(`/scan/part-time-leave/list/?event_id=${eventId}&card_id=${cardId}&active=true`);
     return response.data;
   },
 };

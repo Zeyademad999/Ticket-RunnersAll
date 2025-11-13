@@ -481,14 +481,17 @@ const SystemLogs: React.FC = () => {
 
   // Get severity color
   const getSeverityColor = (severity: string) => {
-    switch (severity) {
+    const normalizedSeverity = severity.toLowerCase();
+    switch (normalizedSeverity) {
       case "critical":
         return "bg-red-100 text-red-800 border-red-200";
       case "high":
         return "bg-orange-100 text-orange-800 border-orange-200";
       case "medium":
+      case "warning":
         return "bg-yellow-100 text-yellow-800 border-yellow-200";
       case "low":
+      case "info":
         return "bg-green-100 text-green-800 border-green-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
@@ -536,6 +539,8 @@ const SystemLogs: React.FC = () => {
         return "dataExport";
       case "settings":
         return "settings";
+      case "content":
+        return "content";
       default:
         return category;
     }
@@ -1182,10 +1187,12 @@ const SystemLogs: React.FC = () => {
                       <Badge
                         variant="outline"
                         className={`${getSeverityColor(
-                          log.severity
+                          log.severity.toLowerCase()
                         )} rtl:text-right`}
                       >
-                        {t(`admin.dashboard.logs.severities.${log.severity}`)}
+                        {t(`admin.dashboard.logs.severities.${log.severity.toUpperCase()}`) || 
+                         t(`admin.dashboard.logs.severities.${log.severity.toLowerCase()}`) || 
+                         log.severity}
                       </Badge>
                     </TableCell>
                     <TableCell className="rtl:text-right">
@@ -1374,12 +1381,16 @@ const SystemLogs: React.FC = () => {
                     <Badge
                       variant="outline"
                       className={`${getSeverityColor(
-                        selectedLog.severity
+                        selectedLog.severity.toLowerCase()
                       )} rtl:text-right`}
                     >
                       {t(
-                        `admin.dashboard.logs.severities.${selectedLog.severity}`
-                      )}
+                        `admin.dashboard.logs.severities.${selectedLog.severity.toUpperCase()}`
+                      ) || 
+                      t(
+                        `admin.dashboard.logs.severities.${selectedLog.severity.toLowerCase()}`
+                      ) || 
+                      selectedLog.severity}
                     </Badge>
                   </div>
                   <div className="space-y-2">

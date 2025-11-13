@@ -2,13 +2,15 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
-const baseUrl = "localhost:8000";
+// Use network IP for backend - change this to your machine's IP if different
+const baseUrl = process.env.VITE_BACKEND_URL || "192.168.0.103:8000";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   
   server: {
-    host: "::",
+    host: "0.0.0.0", // Listen on all network interfaces
     port: 8083,
+    strictPort: false,
     proxy: {
       // Proxy API requests to Django backend
       "/api": {

@@ -102,9 +102,15 @@ npm start
 Create a `.env` file in the root directory:
 
 ```env
-REACT_APP_API_URL=https://ticketrunners.flokisystems.com/api
-REACT_APP_USE_MOCK=true
+# Backend API Base URL
+# Default: http://localhost:8000/api/merchant
+REACT_APP_API_URL=http://localhost:8000/api/merchant
+
+# For production, use:
+# REACT_APP_API_URL=https://your-domain.com/api/merchant
 ```
+
+**Note**: The application uses real API endpoints by default. All API calls are made to the backend Django server.
 
 ## 🧪 Testing
 
@@ -177,9 +183,12 @@ testMockData()
 
 ### API Integration
 
-- **Mock Mode**: Full mock data implementation for development
-- **Production Mode**: Real API integration with authentication
-- **Error Handling**: Comprehensive error handling and user feedback
+- **Real API Integration**: All endpoints connected to Django backend
+- **Base URL**: Configurable via `REACT_APP_API_URL` environment variable
+- **Authentication**: JWT token-based authentication with automatic token injection
+- **Error Handling**: Comprehensive error handling with user-friendly messages
+- **Request Interceptors**: Automatic token attachment for authenticated requests
+- **Response Interceptors**: Automatic logout on 401 errors
 
 ### Security Features
 
@@ -311,25 +320,66 @@ npm run serve
 
 ## 📝 API Documentation
 
+All API endpoints are relative to the base URL configured in `REACT_APP_API_URL` (default: `http://localhost:8000/api/merchant`).
+
 ### Authentication Endpoints
 
-- `POST /merchant/login` - Merchant login
-- `POST /merchant/verify-otp` - OTP verification
-- `POST /merchant/logout` - Logout
+- `POST /login/` - Merchant login (sends OTP)
+  - Request: `{ mobile: string, password: string }`
+  - Response: `{ message: string, mobile: string }`
+
+- `POST /verify-otp/` - OTP verification
+  - Request: `{ mobile: string, otp_code: string }`
+  - Response: `{ access: string, refresh: string, merchant: Merchant }`
+
+- `POST /logout/` - Logout
+  - Request: `{ refresh_token: string }`
+  - Response: `{ message: string }`
 
 ### Card Management Endpoints
 
-- `POST /merchant/assign-card` - Assign card to customer
-- `GET /merchant/verify-customer/{mobile}` - Verify customer
-- `POST /merchant/send-customer-otp` - Send OTP to customer
-- `GET /merchant/cards` - Get merchant's cards
-- `GET /merchant/dashboard-stats` - Get dashboard statistics
+- `POST /assign-card/` - Assign card to customer (sends OTP to customer)
+  - Request: `{ card_serial: string, customer_mobile: string }`
+  - Response: `{ message: string, card_serial: string, customer_mobile: string }`
+
+- `GET /verify-customer/:mobile/` - Verify customer registration and fees
+  - Response: `{ id, name, mobile_number, email, status, fees_paid, is_registered, can_assign_card }`
+
+- `POST /send-customer-otp/` - Send OTP to customer (separate endpoint)
+  - Request: `{ customer_mobile: string }`
+  - Response: `{ message: string, customer_mobile: string }`
+
+- `POST /verify-customer-otp/` - Verify customer OTP and complete assignment
+  - Request: `{ card_serial: string, customer_mobile: string, otp_code: string }`
+  - Response: `{ message: string, hashed_code: string, card: NFCCard }`
+
+- `GET /cards/?status=...&search=...` - Get merchant's cards
+  - Query params: `status` (optional), `search` (optional)
+  - Response: `NFCCard[]`
+
+- `GET /dashboard-stats/` - Get dashboard statistics
+  - Response: `{ available_cards, delivered_cards, assigned_cards, total_cards, recent_activity[] }`
 
 ### Settings Endpoints
 
-- `POST /merchant/change-password` - Change password
-- `POST /merchant/change-mobile` - Change mobile number
-- `POST /merchant/send-mobile-change-otp` - Send mobile change OTP
+- `GET /settings/` - Get merchant settings
+  - Response: `Merchant`
+
+- `PUT /settings/` - Update merchant settings
+  - Request: `{ business_name?, address?, gmaps_location?, contact_name? }`
+  - Response: `Merchant`
+
+- `POST /change-password/` - Change password
+  - Request: `{ current_password: string, new_password: string, confirm_password: string }`
+  - Response: `{ message: string }`
+
+- `POST /change-mobile/` - Request mobile number change (sends OTP)
+  - Request: `{ new_mobile: string }`
+  - Response: `{ message: string, new_mobile: string }`
+
+- `POST /verify-mobile-change/` - Verify mobile change OTP
+  - Request: `{ new_mobile: string, otp_code: string }`
+  - Response: `{ message: string, mobile: string }`
 
 ## 🤝 Contributing
 
@@ -346,5 +396,6 @@ This project is licensed under the MIT License.
 ## 🆘 Support
 
 For support and questions, please contact the development team or create an issue in the repository.
-#   T i c k e t R u n n e r s - M e r c h a n t  
+#   T i c k e t R u n n e r s - M e r c h a n t 
+ 
  

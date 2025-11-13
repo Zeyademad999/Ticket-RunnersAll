@@ -259,6 +259,50 @@ const EventDetail: React.FC = () => {
     return timeStr.split(":").slice(0, 2).join(":");
   }, []);
 
+  // Calculate minimum ticket price from all categories
+  const minTicketPrice = useMemo(() => {
+    const prices: number[] = [];
+    
+    // Add prices from ticket categories
+    if (event.ticketCategories && event.ticketCategories.length > 0) {
+      prices.push(...event.ticketCategories.map((cat) => cat.price));
+    }
+    
+    // Add regular/starting price if available
+    if (event.startingPrice) {
+      prices.push(event.startingPrice);
+    } else if (event.price) {
+      prices.push(event.price);
+    }
+    
+    // Return minimum price, or 0 if no prices found
+    return prices.length > 0 ? Math.min(...prices) : 0;
+  }, [event.ticketCategories, event.startingPrice, event.price]);
+
+  // Get all ticket categories including regular if it exists
+  const allTicketCategories = useMemo(() => {
+    const categories = [...(event.ticketCategories || [])];
+    
+    // Check if regular category exists in ticketCategories
+    const hasRegular = categories.some(
+      (cat) => cat.name.toLowerCase() === "regular"
+    );
+    
+    // If regular doesn't exist in ticketCategories but we have startingPrice or price, add it
+    if (!hasRegular && (event.startingPrice || event.price)) {
+      const regularPrice = event.startingPrice || event.price;
+      categories.unshift({
+        name: "Regular",
+        price: regularPrice,
+        totalTickets: event.totalTickets || 0,
+        ticketsSold: event.ticketsSold || 0,
+        ticketsAvailable: event.ticketsAvailable || 0,
+      });
+    }
+    
+    return categories;
+  }, [event.ticketCategories, event.startingPrice, event.price, event.totalTickets, event.ticketsSold, event.ticketsAvailable]);
+
   const handleBooking = () => navigate(`/booking/${id}`);
 
   const handleAddToCalendar = () => {
@@ -762,13 +806,13 @@ const EventDetail: React.FC = () => {
               )}
 
               {/* Ticket Categories */}
-              {event.ticketCategories && event.ticketCategories.length > 0 && (
+              {allTicketCategories && allTicketCategories.length > 0 && (
                 <div className="pt-6">
                   <h2 className="text-xl font-semibold text-foreground mb-4">
                     {t("eventDetail.ticketCategories")}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {event.ticketCategories.map((ticket, index) => (
+                    {allTicketCategories.map((ticket, index) => (
                       <div
                         key={index}
                         className="bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 rounded-lg p-4 hover:shadow-lg transition-all duration-300"
@@ -783,37 +827,6 @@ const EventDetail: React.FC = () => {
                           >
                             {ticket.price} {t("currency.egp")}
                           </Badge>
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              {t("eventDetail.totalTickets")}:
-                            </span>
-                            <span className="font-medium text-foreground">
-                              {ticket.totalTickets || "N/A"}
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              {t("eventDetail.available")}:
-                            </span>
-                            <span className="font-medium text-foreground">
-                              {ticket.ticketsAvailable || "N/A"}
-                            </span>
-                          </div>
-                          {ticket.ticketsSold > 0 && (
-                            <div className="w-full bg-secondary rounded-full h-2">
-                              <div
-                                className="bg-primary h-2 rounded-full transition-all duration-500"
-                                style={{
-                                  width: `${
-                                    (ticket.ticketsSold / ticket.totalTickets) *
-                                    100
-                                  }%`,
-                                }}
-                              ></div>
-                            </div>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -941,22 +954,21 @@ const EventDetail: React.FC = () => {
                       </span>
                     )}
                     <span className="text-3xl font-bold text-primary">
-                      {event.price} {t("currency.egp")}
+                      {minTicketPrice} {t("currency.egp")}
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    {t("eventDetail.perTicket")}
+                    {t("eventDetail.startingFrom", "Starting from")} {t("eventDetail.perTicket", "per ticket")}
                   </p>
 
                   {/* Ticket Categories Preview */}
-                  {event.ticketCategories &&
-                    event.ticketCategories.length > 0 && (
+                  {allTicketCategories && allTicketCategories.length > 0 && (
                       <div className="mt-3 space-y-2">
                         <p className="text-sm font-medium text-foreground">
                           {t("eventDetail.ticketOptions")}:
                         </p>
                         <div className="space-y-1">
-                          {event.ticketCategories
+                          {allTicketCategories
                             .slice(0, 3)
                             .map((ticket, index) => (
                               <div
@@ -971,9 +983,9 @@ const EventDetail: React.FC = () => {
                                 </span>
                               </div>
                             ))}
-                          {event.ticketCategories.length > 3 && (
+                          {allTicketCategories.length > 3 && (
                             <p className="text-xs text-muted-foreground">
-                              +{event.ticketCategories.length - 3}{" "}
+                              +{allTicketCategories.length - 3}{" "}
                               {t("eventDetail.moreOptions")}
                             </p>
                           )}

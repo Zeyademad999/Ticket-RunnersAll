@@ -6,8 +6,8 @@ This document contains all the mock credentials and test data used in the Ticket
 
 ### Merchant Login
 
-- **Mobile Number**: `+971501234567`
-- **Password**: `password123`
+- **Mobile Number**: `01104484492`
+- **Password**: `password`
 - **OTP Code**: `123456`
 
 ### Test Scenarios
@@ -24,7 +24,7 @@ This document contains all the mock credentials and test data used in the Ticket
 - **Name**: `Tech Solutions Store`
 - **Address**: `123 Main Street, Downtown, City`
 - **Google Maps Location**: `https://maps.google.com/?q=123+Main+Street`
-- **Mobile Number**: `+971501234567`
+- **Mobile Number**: `01104484492`
 - **Contact Name**: `Ahmed Al Mansouri`
 - **Status**: `active`
 - **Created**: `2024-01-15T10:30:00Z`
@@ -88,7 +88,7 @@ This document contains all the mock credentials and test data used in the Ticket
 
 ### Password Change
 
-- **Current Password**: `password123`
+- **Current Password**: `password`
 - **New Password Requirements**: Minimum 8 characters
 - **Validation**: New password must match confirm password
 
@@ -154,3 +154,10 @@ This document contains all the mock credentials and test data used in the Ticket
 ## 🔒 Security Note
 
 ⚠️ **Important**: These are mock credentials for development and testing only. Do not use these credentials in production environments. The mock data is stored in memory and will be reset when the application restarts.
+
+
+
+
+
+
+TEST-CARD-1F556673

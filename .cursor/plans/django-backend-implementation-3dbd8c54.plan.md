@@ -10,6 +10,7 @@ Backend (Django) - Single Port
 ├── /api/v1/              → WebApp Portal (Customer-facing)
 ├── /api/organizer/       → Organizer Portal
 ├── /api/merchant/        → Merchant Portal  
+├── /api/usher/           → EVS App (Web & Mobile - Usher Apps)
 └── /api/                 → Admin Dashboard (Full platform management)
     ├── /api/auth/        → Admin authentication
     ├── /api/events/      → Event CRUD
@@ -32,6 +33,8 @@ Merchant → assigns → NFCCard → belongs to → Customer
 Customer (WebApp) → books → Ticket → for → Event
 Customer → has → NFCCard → assigned by → Merchant
 Organizer → receives → Payout → for → Event
+Usher (EVS App) → scans → NFCCard → verifies → Ticket → for → Event
+Usher → logs → CheckinLog → tracks → Scan activity
 ```
 
 ---
@@ -548,6 +551,507 @@ Merchants assign NFC cards to customers, manage card inventory, and view dashboa
 
 ---
 
+## Plan 5: EVS App Integration (React-based Web Application)
+
+### Portal Purpose
+
+Web application for ushers to scan NFC cards, verify attendees at events, and log scan activity. Enables real-time event entry verification with offline caching support using Web NFC API.
+
+### Backend Endpoints Used
+
+- Base URL: `/api/usher/`
+- Authentication: JWT tokens (usher_id in token)
+- Total Endpoints: ~18 endpoints
+
+### Key Linkages
+
+1. **Usher Model** (`users.Usher`)
+
+   - Authentication: `username` + `password` + `event_id`
+   - Permission checks (ushering role)
+   - Event assignment validation
+   - Links to: Events, ScanLogs
+
+2. **Event Model** (`events.Event`)
+
+   - Event assignment validation
+   - Event details for scanning context
+   - Links to: Tickets, Attendees, Ushers
+
+3. **NFCCard Model** (`nfc_cards.NFCCard`)
+
+   - Card ID lookup and validation
+   - Card status verification
+   - Links to: Customer, Ticket
+
+4. **Ticket Model** (`tickets.Ticket`)
+
+   - Attendee verification
+   - Ticket status (Valid/Invalid)
+   - Ticket tier (VIP/Standard)
+   - Scan status tracking
+   - Links to: Customer, Event
+
+5. **Customer Model** (`customers.Customer`)
+
+   - Attendee information lookup
+   - Profile data (name, photo, emergency contact, blood type)
+   - Dependents/children information
+   - Links to: Tickets, NFCCards
+
+6. **CheckinLog Model** (`logs.CheckinLog`)
+
+   - Scan activity logging
+   - Scan history with pagination
+   - Search and filtering
+   - Links to: Usher, Event, Ticket, Customer
+
+### Integration Steps
+
+#### Phase 1: Authentication & Event Setup
+
+1. Configure API base URL: `http://localhost:8000/api/usher/` (or production URL)
+2. Create API service layer:
+
+   - `src/lib/api/usherApi.ts` - Create usher-specific API service
+   - Axios instance with usher endpoints
+   - Request/response interceptors
+   - Token storage (localStorage)
+   - Token refresh logic
+
+3. Update authentication flow:
+
+   - `POST /api/usher/login/` - Login with event_id, username, password
+   - Validate usher permissions (ushering role)
+   - Validate event assignment
+   - Store JWT tokens (access + refresh)
+   - Extract `usher_id` and `event_id` from token
+
+4. Event validation:
+
+   - `GET /api/usher/events/` - List assigned events
+   - `GET /api/usher/events/:id/` - Get event details
+   - `POST /api/usher/events/:id/validate-assignment/` - Validate event assignment
+
+5. Update Login page/component to use real event validation
+
+#### Phase 2: NFC Scanning & Verification
+
+1. Card lookup and validation:
+
+   - `POST /api/usher/scan/verify-card/` - Verify NFC card ID
+   - `GET /api/usher/scan/card/:card_id/` - Get card details
+   - `POST /api/usher/scan/card/:card_id/validate/` - Validate card for event
+
+2. Attendee lookup:
+
+   - `GET /api/usher/scan/attendee/:card_id/` - Get attendee by card ID
+   - `GET /api/usher/scan/attendee/:card_id/event/:event_id/` - Get attendee with event context
+   - Returns attendee information:
+     - Name, photo, card ID
+     - Ticket status (Valid/Invalid)
+     - Ticket tier (VIP/Standard)
+     - Scan status (Previously Scanned/Not Scanned)
+     - Emergency contact
+     - Blood type
+     - Ticket/profile labels
+     - Children/dependents (if enabled)
+
+3. Scan result processing:
+
+   - `POST /api/usher/scan/result/` - Process scan result
+   - Handle scan statuses:
+     - Valid (first scan)
+     - Invalid (ticket not valid for event)
+     - Already Scanned (previously scanned)
+     - Not Found (card/ticket not found)
+   - Update ticket scan status
+   - Log scan activity
+
+4. Additional scan features:
+
+   - `POST /api/usher/scan/part-time-leave/` - Log part-time leave
+   - `GET /api/usher/scan/part-time-leave/` - Get part-time leave history
+   - `POST /api/usher/scan/report/` - Report scan issue or incident
+
+5. Update Scan page/component to use real API calls
+
+#### Phase 3: Scan Logging & History
+
+1. Scan log operations:
+
+   - `POST /api/usher/scan/log/` - Log scan activity
+   - `GET /api/usher/scan/logs/` - List scan logs (paginated, 10 per page)
+   - `GET /api/usher/scan/logs/:id/` - Get scan log details
+   - `GET /api/usher/scan/logs/search/` - Search scan logs
+
+2. Search parameters:
+
+   - Card ID
+   - Username (usher)
+   - Result (Valid, Invalid, Already Scanned, Not Found)
+   - Attendee name
+   - Event ID
+
+3. Update Logs page/component to use real API calls
+
+#### Phase 4: Offline Sync & Real-time Updates
+
+1. Offline data sync:
+
+   - `GET /api/usher/sync/attendees/` - Get attendees for event (for offline cache)
+   - `GET /api/usher/sync/cards/` - Get card data for event
+   - `POST /api/usher/sync/logs/` - Sync offline scan logs to server
+   - `GET /api/usher/sync/status/` - Get sync status
+
+2. Cache management:
+
+   - Implement 24-hour cache expiration using localStorage/IndexedDB
+   - Cache attendee data for assigned events
+   - Cache scan logs locally
+   - Sync logs when online using Service Worker or background sync
+
+3. Real-time updates:
+
+   - `GET /api/usher/nfc/status/` - Get NFC availability status
+   - `GET /api/usher/nfc/test/` - Test NFC connection
+   - `GET /api/usher/events/:id/status/` - Get real-time event status
+   - Check Web NFC API browser support
+   - Handle browser compatibility (Chrome/Edge on Android)
+
+4. Update offline cache service and NFC service/hook to sync with backend
+
+#### Phase 5: Error Handling, Optimization & Production
+
+1. Error handling:
+
+   - Handle network errors (offline mode)
+   - Handle API errors (401, 403, 404, 500)
+   - Token refresh on 401
+   - Retry logic with exponential backoff
+   - Input validation (Card ID, Event ID, Username)
+
+2. Performance optimization:
+
+   - Implement request debouncing (1 second)
+   - Batch scan log uploads
+   - Cache frequently accessed data
+   - Reduce unnecessary API calls
+   - Show loading indicators during API calls
+   - Handle timeout scenarios (30 seconds)
+   - Retry failed requests (3 retries)
+
+3. Production readiness:
+
+   - Remove debug/test features ("Clear Cache" button, console logs, mock data)
+   - Add error reporting service integration
+   - Add analytics integration
+   - Security enhancements (secure token storage, encrypt cached data, HTTPS, CSRF protection)
+   - Testing (unit tests, integration tests, E2E tests, Web NFC API testing)
+
+### Files to Modify
+
+- `src/lib/api/usherApi.ts` - Create API service layer
+- `src/services/nfcService.ts` or `src/hooks/useNFC.ts` - Update with backend validation
+- `src/services/offlineCache.ts` - Add sync functionality
+- `src/pages/Login.tsx` or `src/pages/UsherLogin.tsx` - Real authentication with event validation
+- `src/pages/Scan.tsx` or `src/pages/ScanScreen.tsx` - Real NFC scanning and attendee lookup
+- `src/pages/Logs.tsx` or `src/pages/LogsScreen.tsx` - Real scan log API integration
+- `src/hooks/useNFC.ts` - Update with backend integration
+- `src/context/ScanLogContext.tsx` - Sync with backend
+
+---
+
+## Plan 6: EVS App Mobile Integration (React Native/Expo Mobile App)
+
+### Portal Purpose
+
+Mobile application (React Native/Expo) for ushers to scan NFC cards, verify attendees at events, and log scan activity. Enables real-time event entry verification with offline caching support using react-native-nfc-manager.
+
+### Backend Endpoints Used
+
+- Base URL: `/api/usher/`
+- Authentication: JWT tokens (usher_id in token)
+- Total Endpoints: ~18 endpoints
+
+### Key Linkages
+
+1. **Usher Model** (`users.Usher`)
+
+   - Authentication: `username` + `password` + `event_id`
+   - Permission checks (ushering role)
+   - Event assignment validation
+   - Links to: Events, ScanLogs
+
+2. **Event Model** (`events.Event`)
+
+   - Event assignment validation
+   - Event details for scanning context
+   - Links to: Tickets, Attendees, Ushers
+
+3. **NFCCard Model** (`nfc_cards.NFCCard`)
+
+   - Card ID lookup and validation
+   - Card status verification
+   - Links to: Customer, Ticket
+
+4. **Ticket Model** (`tickets.Ticket`)
+
+   - Attendee verification
+   - Ticket status (Valid/Invalid)
+   - Ticket tier (VIP/Standard)
+   - Scan status tracking
+   - Links to: Customer, Event
+
+5. **Customer Model** (`customers.Customer`)
+
+   - Attendee information lookup
+   - Profile data (name, photo, emergency contact, blood type)
+   - Dependents/children information
+   - Links to: Tickets, NFCCards
+
+6. **CheckinLog Model** (`logs.CheckinLog`)
+
+   - Scan activity logging
+   - Scan history with pagination
+   - Search and filtering
+   - Links to: Usher, Event, Ticket, Customer
+
+### Integration Steps
+
+#### Phase 1: Authentication Setup
+
+1. Configure API base URL: `http://localhost:8000/api/usher/` (or production URL)
+2. Create API service layer:
+
+   - `src/services/api.ts` - Update with usher endpoints
+   - Axios instance with usher endpoints
+   - Request/response interceptors
+   - Token storage (AsyncStorage for React Native)
+   - Token refresh logic
+
+3. Update authentication flow:
+
+   - `POST /api/usher/login/` - Login with event_id, username, password
+   - Validate usher permissions (ushering role)
+   - Validate event assignment
+   - Store JWT tokens (access + refresh) in AsyncStorage
+   - Extract `usher_id` and `event_id` from token
+
+4. Update LoginScreen.js to replace mock authentication
+
+#### Phase 2: Event Assignment & Context
+
+1. Event validation:
+
+   - `GET /api/usher/events/` - List assigned events
+   - `GET /api/usher/events/:id/` - Get event details
+   - `POST /api/usher/events/:id/validate-assignment/` - Validate event assignment
+
+2. Update LoginScreen.js to use real event validation
+
+#### Phase 3: NFC Card Scanning & Verification
+
+1. Card lookup and validation:
+
+   - `POST /api/usher/scan/verify-card/` - Verify NFC card ID
+   - `GET /api/usher/scan/card/:card_id/` - Get card details
+   - `POST /api/usher/scan/card/:card_id/validate/` - Validate card for event
+
+2. Attendee lookup:
+
+   - `GET /api/usher/scan/attendee/:card_id/` - Get attendee by card ID
+   - `GET /api/usher/scan/attendee/:card_id/event/:event_id/` - Get attendee with event context
+   - Returns attendee information:
+     - Name, photo, card ID
+     - Ticket status (Valid/Invalid)
+     - Ticket tier (VIP/Standard)
+     - Scan status (Previously Scanned/Not Scanned)
+     - Emergency contact
+     - Blood type
+     - Ticket/profile labels
+     - Children/dependents (if enabled)
+
+3. Update ScanScreen.js to use real API calls
+4. Integrate react-native-nfc-manager with backend validation
+5. Update NFCService.js to call backend APIs
+
+#### Phase 4: Scan Logging & History
+
+1. Scan log operations:
+
+   - `POST /api/usher/scan/log/` - Log scan activity
+   - `GET /api/usher/scan/logs/` - List scan logs (paginated, 10 per page)
+   - `GET /api/usher/scan/logs/:id/` - Get scan log details
+   - `GET /api/usher/scan/logs/search/` - Search scan logs
+
+2. Search parameters:
+
+   - Card ID
+   - Username (usher)
+   - Result (Valid, Invalid, Already Scanned, Not Found)
+   - Attendee name
+   - Event ID
+
+3. Update LogsScreen.js to use real API calls
+4. Implement pagination (10 per page)
+5. Implement search functionality
+
+#### Phase 5: Scan Result Processing
+
+1. Scan result handling:
+
+   - `POST /api/usher/scan/result/` - Process scan result
+   - Handle scan statuses:
+     - Valid (first scan)
+     - Invalid (ticket not valid for event)
+     - Already Scanned (previously scanned)
+     - Not Found (card/ticket not found)
+   - Update ticket scan status
+   - Log scan activity
+
+2. Part-time leave tracking:
+
+   - `POST /api/usher/scan/part-time-leave/` - Log part-time leave
+   - `GET /api/usher/scan/part-time-leave/` - Get part-time leave history
+
+3. User reporting:
+
+   - `POST /api/usher/scan/report/` - Report scan issue or incident
+
+4. Update ScanScreen.js result popup and actions
+
+#### Phase 6: Offline Sync & Caching
+
+1. Offline data sync:
+
+   - `GET /api/usher/sync/attendees/` - Get attendees for event (for offline cache)
+   - `GET /api/usher/sync/cards/` - Get card data for event
+   - `POST /api/usher/sync/logs/` - Sync offline scan logs to server
+   - `GET /api/usher/sync/status/` - Get sync status
+
+2. Cache management:
+
+   - Implement 24-hour cache expiration using AsyncStorage
+   - Cache attendee data for assigned events
+   - Cache scan logs locally
+   - Sync logs when online
+   - Implement background sync when app comes online
+
+3. Update OfflineCache.js to sync with backend
+4. Remove "Clear Cache" button from production UI
+
+#### Phase 7: Real-time Updates & Status
+
+1. NFC status and availability:
+
+   - `GET /api/usher/nfc/status/` - Get NFC availability status
+   - `GET /api/usher/nfc/test/` - Test NFC connection
+   - Check device NFC availability using react-native-nfc-manager
+
+2. Event status:
+
+   - `GET /api/usher/events/:id/status/` - Get real-time event status
+   - Check if event is active
+   - Check if scanning is enabled
+   - Poll for status updates (optional)
+
+3. Update NFCService.js to check backend status
+4. Update useNFC.js hook with backend integration
+
+#### Phase 8: Error Handling & Validation
+
+1. Implement error handling:
+
+   - Handle network errors (offline mode)
+   - Handle API errors (401, 403, 404, 500)
+   - Token refresh on 401
+   - Retry logic with exponential backoff (3 retries)
+   - 30-second timeout handling
+
+2. Input validation:
+
+   - Card ID validation and sanitization
+   - Event ID validation
+   - Username validation
+   - 1-second debounce for NFC scans
+
+3. Update error handling throughout the app
+4. Add error reporting service (e.g., Sentry)
+
+#### Phase 9: Performance & Optimization
+
+1. Optimize API calls:
+
+   - Implement request debouncing (1 second)
+   - Batch scan log uploads
+   - Cache frequently accessed data
+   - Reduce unnecessary API calls
+
+2. Loading states:
+
+   - Show loading indicators during API calls
+   - Handle timeout scenarios (30 seconds)
+   - Retry failed requests (3 retries with exponential backoff)
+
+3. Image optimization:
+
+   - Optimize attendee photo loading
+   - Implement image caching
+
+4. Update components with optimized API calls
+
+#### Phase 10: Testing & Production Readiness
+
+1. Remove debug/test features:
+
+   - Remove "Clear Cache" button from production
+   - Remove debug console logs
+   - Clean up mock data references (mockData.js)
+
+2. Add production features:
+
+   - Error reporting service integration (Sentry)
+   - Analytics integration
+   - Push notifications (optional)
+   - Data export functionality
+
+3. Security enhancements:
+
+   - Secure token storage (encrypted AsyncStorage)
+   - Encrypt cached data
+   - Implement certificate pinning for API calls
+   - Remove hardcoded credentials
+
+4. Testing:
+
+   - Unit tests for API service layer
+   - Integration tests for scan flow
+   - E2E tests for critical paths
+   - NFC device testing (Android/iOS)
+   - Test on physical devices
+
+5. Platform-specific:
+
+   - Android: Test NFC permissions and APK builds
+   - iOS: Test NFC usage and tablet support
+   - Verify EAS build profiles (development, preview, production)
+
+### Files to Modify
+
+- `src/services/api.ts` - Replace mock data with real API calls
+- `src/services/NFCService.js` - Update with backend validation
+- `src/services/OfflineCache.js` - Add sync functionality
+- `src/screens/LoginScreen.js` - Real authentication with event validation
+- `src/screens/ScanScreen.js` - Real NFC scanning and attendee lookup
+- `src/screens/LogsScreen.js` - Real scan log API integration
+- `src/hooks/useNFC.js` - Update with backend integration
+- `src/context/ScanLogContext.js` - Sync with backend
+- `App.js` - Update navigation and authentication flow
+- `data/mockData.js` - Remove or keep only for development/testing
+
+---
+
 ## Integration Order Recommendation
 
 ### Recommended Sequence
@@ -567,7 +1071,20 @@ Merchants assign NFC cards to customers, manage card inventory, and view dashboa
    - Event management and analytics
    - Builds on patterns from WebApp
 
-4. **Admin Dashboard** (Last - Most comprehensive)
+4. **EVS App Web** (Fourth - Web-based)
+
+   - NFC scanning and verification (Web NFC API)
+   - Offline-first architecture
+   - Real-time event entry verification
+
+5. **EVS App Mobile** (Fifth - React Native/Expo)
+
+   - NFC scanning and verification (react-native-nfc-manager)
+   - Offline-first architecture with AsyncStorage
+   - Real-time event entry verification
+   - Android/iOS native support
+
+6. **Admin Dashboard** (Last - Most comprehensive)
 
    - Full CRUD operations
    - Most endpoints to integrate
@@ -579,6 +1096,8 @@ Merchants assign NFC cards to customers, manage card inventory, and view dashboa
 2. WebApp Portal
 3. Organizer Portal
 4. Merchant Portal
+5. EVS App Web
+6. EVS App Mobile
 
 ---
 
@@ -684,15 +1203,17 @@ api.interceptors.response.use(
 
 ## Notes
 
-1. **CORS Configuration**: Ensure backend CORS allows all frontend ports (8080, 8081, 8082, 8083)
+1. **CORS Configuration**: Ensure backend CORS allows all frontend ports (8080, 8081, 8082, 8083, 8084 for EVS Web App) and mobile app origins
 
 2. **Environment Variables**: Each frontend should have:
 
    - `VITE_API_BASE_URL` or `REACT_APP_API_BASE_URL` (depending on build tool)
+   - EVS Mobile App: `EXPO_PUBLIC_API_BASE_URL` or similar
 
 3. **Token Management**: 
 
-   - WebApp/Organizer/Merchant: Store in localStorage
+   - WebApp/Organizer/Merchant/EVS Web App: Store in localStorage
+   - EVS Mobile App: Store in AsyncStorage (encrypted)
    - Admin: Can use httpOnly cookies for better security
 
 4. **API Response Format**: All endpoints return JSON with consistent error format:

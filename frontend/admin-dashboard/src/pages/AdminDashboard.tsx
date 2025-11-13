@@ -41,6 +41,7 @@ import {
   Handshake,
   PiggyBank,
   Wallet,
+  Layout,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { format, parseISO, subDays, startOfMonth, endOfMonth } from "date-fns";
@@ -103,6 +104,7 @@ import ProfitShareManagement from "@/components/admin/ProfitShareManagement";
 import Settlements from "@/components/admin/Settlements";
 import Deposits from "@/components/admin/Deposits";
 import ProfitWithdrawals from "@/components/admin/ProfitWithdrawals";
+import HomePageSectionsManagement from "@/components/admin/HomePageSectionsManagement";
 
 // Types
 interface AdminUser {
@@ -266,6 +268,11 @@ const EnhancedTabsList: React.FC<EnhancedTabsListProps> = ({
           value: "customers",
           label: t("admin.dashboard.tabs.customers"),
           icon: Users,
+        },
+        {
+          value: "home-page-sections",
+          label: t("admin.dashboard.tabs.homePageSections"),
+          icon: Layout,
         },
       ],
     },
@@ -1475,6 +1482,14 @@ const AdminDashboard: React.FC = () => {
             className="space-y-6 transition-all duration-300 ease-in-out"
           >
             <CustomerManagement />
+          </TabsContent>
+
+          {/* Home Page Sections Management Tab */}
+          <TabsContent
+            value="home-page-sections"
+            className="space-y-6 transition-all duration-300 ease-in-out"
+          >
+            <HomePageSectionsManagement />
           </TabsContent>
 
           {/* Organizers Management Tab */}

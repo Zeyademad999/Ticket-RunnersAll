@@ -231,13 +231,34 @@ def merchant_assign_card(request):
     card_serial = serializer.validated_data['card_serial']
     customer_mobile = serializer.validated_data['customer_mobile']
     
+    # Check if card exists in the system (added by admin)
     try:
-        card = NFCCard.objects.get(serial_number=card_serial, merchant=merchant)
+        card = NFCCard.objects.get(serial_number=card_serial)
     except NFCCard.DoesNotExist:
         return Response({
-            'error': {'code': 'CARD_NOT_FOUND', 'message': 'Card not found'}
+            'error': {'code': 'CARD_NOT_FOUND', 'message': 'Card not found. Please ensure the card is registered in the admin portal.'}
         }, status=status.HTTP_404_NOT_FOUND)
     
+    # Check if card is already assigned to a customer
+    if card.customer is not None:
+        # Check if it's assigned to the same customer
+        try:
+            customer = Customer.objects.get(mobile_number=customer_mobile)
+            if card.customer == customer:
+                return Response({
+                    'error': {'code': 'CARD_ALREADY_ASSIGNED', 'message': f'Card is already assigned to this customer ({customer.name})'}
+                }, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                return Response({
+                    'error': {'code': 'CARD_ALREADY_ASSIGNED', 'message': f'Card is already assigned to another customer ({card.customer.name})'}
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Customer.DoesNotExist:
+            # Customer doesn't exist, but card is assigned to someone else
+            return Response({
+                'error': {'code': 'CARD_ALREADY_ASSIGNED', 'message': f'Card is already assigned to another customer'}
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Card is not assigned, proceed with customer lookup
     try:
         customer = Customer.objects.get(mobile_number=customer_mobile)
     except Customer.DoesNotExist:
@@ -285,12 +306,39 @@ def merchant_verify_customer_otp(request):
     if not verify_otp(customer_mobile, otp_code, 'customer_verification'):
         raise AuthenticationError("Invalid or expired OTP")
     
+    # Check if card exists in the system (added by admin)
     try:
-        card = NFCCard.objects.get(serial_number=card_serial, merchant=merchant)
-        customer = Customer.objects.get(mobile_number=customer_mobile)
-    except (NFCCard.DoesNotExist, Customer.DoesNotExist):
+        card = NFCCard.objects.get(serial_number=card_serial)
+    except NFCCard.DoesNotExist:
         return Response({
-            'error': {'code': 'NOT_FOUND', 'message': 'Card or customer not found'}
+            'error': {'code': 'CARD_NOT_FOUND', 'message': 'Card not found. Please ensure the card is registered in the admin portal.'}
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    # Check if card is already assigned to a customer
+    if card.customer is not None:
+        # Check if it's assigned to the same customer
+        try:
+            customer = Customer.objects.get(mobile_number=customer_mobile)
+            if card.customer == customer:
+                return Response({
+                    'error': {'code': 'CARD_ALREADY_ASSIGNED', 'message': f'Card is already assigned to this customer ({customer.name})'}
+                }, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                return Response({
+                    'error': {'code': 'CARD_ALREADY_ASSIGNED', 'message': f'Card is already assigned to another customer ({card.customer.name})'}
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Customer.DoesNotExist:
+            # Customer doesn't exist, but card is assigned to someone else
+            return Response({
+                'error': {'code': 'CARD_ALREADY_ASSIGNED', 'message': f'Card is already assigned to another customer'}
+            }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Card is not assigned, proceed with customer lookup
+    try:
+        customer = Customer.objects.get(mobile_number=customer_mobile)
+    except Customer.DoesNotExist:
+        return Response({
+            'error': {'code': 'CUSTOMER_NOT_FOUND', 'message': 'Customer not found'}
         }, status=status.HTTP_404_NOT_FOUND)
     
     # Generate hashed code for card writing

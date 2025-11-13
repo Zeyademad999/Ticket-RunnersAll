@@ -101,8 +101,48 @@ def send_sms_otp(phone: str, otp_code: str, app_name: str = "TicketRunners") -> 
         logger.debug(f"SMS payload: {payload}")
         response = requests.post(FLOKI_SMS_URL, headers=headers, data=payload, timeout=10)
         response.raise_for_status()
-        result = response.json()
+        
+        # Try to parse JSON response
+        try:
+            result = response.json()
+        except ValueError:
+            # If response is not JSON, check if status code indicates success
+            result = {
+                "status": response.status_code == 200,
+                "message": response.text[:200] if response.text else "Unknown response format"
+            }
+        
         logger.info(f"SMS API response for {phone}: {result}")
+        
+        # Handle different response formats
+        # Check for common success indicators
+        if isinstance(result, dict):
+            # Check various possible success indicators
+            status = result.get("status")
+            if status is None:
+                # Check for other common success fields
+                if result.get("success") is True or result.get("sent") is True:
+                    result["status"] = True
+                elif response.status_code == 200:
+                    # If HTTP status is 200, assume success even if status field is missing
+                    result["status"] = True
+                    logger.info(f"HTTP 200 response, assuming SMS sent successfully for {phone}")
+                else:
+                    result["status"] = False
+            elif isinstance(status, bool):
+                result["status"] = status
+            elif isinstance(status, str):
+                # Handle string status values
+                result["status"] = status.lower() in ("true", "success", "sent", "1")
+            elif isinstance(status, int):
+                result["status"] = status == 1 or status == 200
+        else:
+            # Non-dict response, assume success if HTTP 200
+            result = {
+                "status": response.status_code == 200,
+                "message": str(result)[:200]
+            }
+        
         return result
     except requests.RequestException as e:
         logger.error(f"Failed to send OTP to {phone}: {str(e)}", exc_info=True)

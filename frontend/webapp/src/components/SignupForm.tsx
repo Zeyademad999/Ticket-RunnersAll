@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { OtpInput } from "@/components/ui/input-otp";
 import { AuthService } from "@/lib/api/services/auth";
 import {
   SignupStartRequest,
@@ -95,13 +96,13 @@ export const SignupForm: React.FC<SignupFormProps> = ({
   const sendMobileOtp = async (signupId: string) => {
     setIsSendingOtp(true);
     try {
-      const otpData: SendMobileOtpRequest = {
-        signup_id: parseInt(signupId),
+      // Resend OTP by calling register again (backend will resend OTP)
+      await AuthService.register({
         mobile_number: formData.mobile_number,
-        otp_code: otpCode || "123456", // For testing, in real app this would be empty initially
-      };
-
-      await AuthService.sendMobileOtp(otpData);
+        password: "", // Not needed for resend
+        name: formData.first_name + " " + formData.last_name,
+        email: formData.email,
+      });
       setOtpSent(true);
       toast.success("OTP sent to your mobile number!");
     } catch (error: any) {
@@ -539,12 +540,36 @@ export const SignupForm: React.FC<SignupFormProps> = ({
   }
 
   if (currentStep === "password" && signupId) {
+    const passwordValidation = password ? ValidationService.validatePassword(password, PASSWORD_RULES) : null;
+    
     return (
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Set Your Password</h2>
         <p className="text-sm text-gray-600">
           Create a secure password for your account
         </p>
+
+        {/* Password Requirements */}
+        <div className="bg-gray-50 p-3 rounded-md text-sm">
+          <p className="font-semibold mb-2">Password Requirements:</p>
+          <ul className="list-disc list-inside space-y-1 text-gray-700">
+            <li className={password && password.length >= 8 ? "text-green-600" : ""}>
+              At least 8 characters long
+            </li>
+            <li className={password && /[A-Z]/.test(password) ? "text-green-600" : ""}>
+              One uppercase letter
+            </li>
+            <li className={password && /[a-z]/.test(password) ? "text-green-600" : ""}>
+              One lowercase letter
+            </li>
+            <li className={password && /\d/.test(password) ? "text-green-600" : ""}>
+              One number
+            </li>
+            <li className={password && /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) ? "text-green-600" : ""}>
+              One special character
+            </li>
+          </ul>
+        </div>
 
         <form onSubmit={handlePasswordSubmit} className="space-y-4">
           <div>
@@ -555,10 +580,14 @@ export const SignupForm: React.FC<SignupFormProps> = ({
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password (min 8 characters)"
+              placeholder="Enter password"
               required
-              minLength={8}
             />
+            {passwordValidation && !passwordValidation.isValid && (
+              <p className="text-sm text-red-500 mt-1">
+                {passwordValidation.errors[0]}
+              </p>
+            )}
           </div>
 
           <div>
@@ -571,8 +600,12 @@ export const SignupForm: React.FC<SignupFormProps> = ({
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm your password"
               required
-              minLength={8}
             />
+            {confirmPassword && password !== confirmPassword && (
+              <p className="text-sm text-red-500 mt-1">
+                Passwords do not match
+              </p>
+            )}
           </div>
 
           <Button type="submit" disabled={isSettingPassword} className="w-full">
@@ -600,15 +633,11 @@ export const SignupForm: React.FC<SignupFormProps> = ({
         <form onSubmit={handleOtpSubmit} className="space-y-4">
           <div>
             <Label htmlFor="otp_code">Enter OTP Code</Label>
-            <Input
-              id="otp_code"
-              name="otp_code"
-              type="text"
+            <OtpInput
               value={otpCode}
-              onChange={(e) => setOtpCode(e.target.value)}
-              placeholder="Enter 6-digit code"
-              maxLength={6}
-              required
+              onChange={setOtpCode}
+              length={6}
+              autoFocus
             />
           </div>
 
@@ -677,9 +706,21 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             name="mobile_number"
             type="tel"
             value={formData.mobile_number}
-            onChange={handleInputChange}
+            onChange={(e) => {
+              const value = e.target.value;
+              // Only allow numbers, +, spaces, dashes, and parentheses
+              if (/^[\d\s\+\-\(\)]*$/.test(value) || value === "") {
+                handleInputChange(e);
+              }
+            }}
+            placeholder="+1234567890"
             required
           />
+          {formData.mobile_number && !ValidationService.validatePhone(formData.mobile_number) && (
+            <p className="text-sm text-red-500 mt-1">
+              Please enter a valid phone number (10-15 digits)
+            </p>
+          )}
         </div>
 
         <div>
@@ -692,6 +733,31 @@ export const SignupForm: React.FC<SignupFormProps> = ({
             onChange={handleInputChange}
             required
           />
+        </div>
+
+        <div className="text-sm text-gray-600">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              required
+              className="w-4 h-4"
+            />
+            <span>
+              I agree to the{" "}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline"
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.open("/terms", "_blank");
+                }}
+              >
+                Terms & Conditions
+              </a>
+            </span>
+          </label>
         </div>
 
         <Button type="submit" disabled={isLoading} className="w-full">

@@ -23,15 +23,21 @@ urlpatterns = [
     path('scan/log/', views.usher_scan_log, name='usher-scan-log'),
     path('scan/logs/', views.usher_scan_logs_list, name='usher-scan-logs-list'),
     path('scan/logs/search/', views.usher_scan_logs_search, name='usher-scan-logs-search'),
-    path('scan/part-time-leave/', views.usher_part_time_leave_list, name='usher-part-time-leave-list'),
-    path('scan/part-time-leave/create/', views.usher_part_time_leave, name='usher-part-time-leave'),
+    path('scan/part-time-leave/', views.usher_part_time_leave, name='usher-part-time-leave'),
+    path('scan/part-time-leave/list/', views.usher_part_time_leave_list, name='usher-part-time-leave-list'),
     path('scan/report/', views.usher_scan_report, name='usher-scan-report'),
     
     # Sync
     path('sync/attendees/', views.usher_sync_attendees, name='usher-sync-attendees'),
     path('sync/cards/', views.usher_sync_cards, name='usher-sync-cards'),
+    path('sync/logs/', views.usher_sync_logs, name='usher-sync-logs'),
+    path('sync/status/', views.usher_sync_status, name='usher-sync-status'),
     
     # NFC Status
     path('nfc/status/', views.usher_nfc_status, name='usher-nfc-status'),
+    path('nfc/test/', views.usher_nfc_test, name='usher-nfc-test'),
+    
+    # Token Refresh
+    path('refresh/', views.usher_refresh_token, name='usher-refresh-token'),
 ]
 

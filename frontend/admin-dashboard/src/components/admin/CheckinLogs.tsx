@@ -1378,7 +1378,7 @@ const CheckInLogs: React.FC = () => {
                     <TableCell colSpan={12} className="text-center py-12">
                       <QrCode className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                       <p className="text-muted-foreground">
-                        {t("admin.dashboard.logs.noCheckInLogsFound")}
+                        {t("admin.tickets.checkInLogs.noLogsFound")}
                       </p>
                     </TableCell>
                   </TableRow>

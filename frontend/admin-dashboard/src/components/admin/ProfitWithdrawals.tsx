@@ -257,21 +257,21 @@ const ProfitWithdrawals = () => {
         return (
           <Badge className="bg-green-100 text-green-800">
             <CheckCircle className="w-3 h-3 mr-1" />
-            Completed
+            {t("admin.profitWithdrawals.status.completed")}
           </Badge>
         );
       case "pending":
         return (
           <Badge className="bg-yellow-100 text-yellow-800">
             <Clock className="w-3 h-3 mr-1" />
-            Pending
+            {t("admin.profitWithdrawals.status.pending")}
           </Badge>
         );
       case "rejected":
         return (
           <Badge className="bg-red-100 text-red-800">
             <AlertTriangle className="w-3 h-3 mr-1" />
-            Rejected
+            {t("admin.profitWithdrawals.status.rejected")}
           </Badge>
         );
       default:
@@ -298,7 +298,9 @@ const ProfitWithdrawals = () => {
               <span className="hidden sm:inline">
                 {t("admin.profitWithdrawals.newWithdrawal")}
               </span>
-              <span className="sm:hidden">Add</span>
+              <span className="sm:hidden">
+                {t("admin.profitWithdrawals.newWithdrawal")}
+              </span>
             </Button>
           </DialogTrigger>
           <DialogContent

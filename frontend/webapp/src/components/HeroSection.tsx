@@ -17,49 +17,21 @@ interface FeaturedEvent {
 interface HeroSectionProps {
   onShowTrending?: () => void;
   featuredEvent: FeaturedEvent | null;
+  featuredEvents?: Array<{
+    id: string;
+    title: string;
+    date: string;
+    image: string;
+    venue: string;
+    organizer: string;
+    bookNowLink?: string;
+  }>;
 }
-const featuredEvents = [
-  {
-    id: "1",
-    title: "Cairo Jazz Night",
-    date: "July 22, 2026",
-    image: "/event1.jpg", // remove /public prefix
-    venue: "Cairo Opera House",
-    organizer: "Cairo Music Society",
-    bookNowLink: "https://example.com/book/1",
-  },
-  {
-    id: "2",
-    title: "Giza Art Festival",
-    date: "July 25, 2025",
-    image: "/event2.jpg",
-    venue: "Giza Cultural Center",
-    organizer: "Egyptian Art Foundation",
-    bookNowLink: "https://example.com/book/2",
-  },
-  {
-    id: "3",
-    title: "Alexandria Food Carnival",
-    date: "August 5, 2025",
-    image: "/event3.jpg",
-    venue: "Alexandria Corniche",
-    organizer: "Taste Egypt",
-    bookNowLink: "https://example.com/book/3",
-  },
-  {
-    id: "4",
-    title: "Sahara EDM Bash",
-    date: "August 10, 2025",
-    image: "/event4.jpg",
-    venue: "Siwa Oasis",
-    organizer: "Desert Beats",
-    bookNowLink: "https://example.com/book/4",
-  },
-];
 
 export function HeroSection({
   onShowTrending,
   featuredEvent,
+  featuredEvents = [],
 }: HeroSectionProps) {
   const { t } = useTranslation();
 
@@ -154,7 +126,16 @@ export function HeroSection({
             </div>
           </div>
           {/* Right Column: Featured Event */}
-          <FeaturedCarousel events={featuredEvents} />
+          {featuredEvents.length > 0 ? (
+            <FeaturedCarousel events={featuredEvents} />
+          ) : (
+            <div className="mt-10">
+              <h2 className="text-2xl font-bold mb-4">{t("hero.featured_title")}</h2>
+              <div className="bg-card rounded-xl shadow-md p-8 text-center">
+                <p className="text-muted-foreground">{t("hero.no_featured_events", "No featured events available at the moment.")}</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </section>

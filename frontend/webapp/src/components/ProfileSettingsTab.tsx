@@ -16,6 +16,10 @@ import { useProfileUpdate } from "@/hooks/useProfileUpdate";
 import { useMobileVerification } from "@/hooks/useMobileVerification";
 import { useEmailVerification } from "@/hooks/useEmailVerification";
 import { Loader2 } from "lucide-react";
+import { BookingsService } from "@/lib/api/services/bookings";
+import { getSecureToken } from "@/lib/secureStorage";
+import { apiClient } from "@/lib/api/config";
+import { useToast } from "@/hooks/use-toast";
 
 interface ProfileSettingsTabProps {
   t: (key: string, defaultValue?: string) => string;
@@ -99,6 +103,7 @@ export const ProfileSettingsTab: React.FC<ProfileSettingsTabProps> = (
   } = props;
 
   const { updateProfile, loading } = useProfileUpdate();
+  const { toast } = useToast();
   const { verifyMobile, loading: verifyLoading } = useMobileVerification();
   const { verifyEmail, loading: emailVerifyLoading } = useEmailVerification();
 
@@ -135,7 +140,14 @@ export const ProfileSettingsTab: React.FC<ProfileSettingsTabProps> = (
 
   const handleBloodTypeUpdate = async () => {
     if (bloodType) {
-      await updateProfile("blood_type", bloodType);
+      try {
+        const success = await updateProfile("blood_type", bloodType);
+        if (success) {
+          // Profile updated successfully
+        }
+      } catch (error) {
+        console.error("Failed to update blood type:", error);
+      }
     }
   };
 
@@ -385,8 +397,66 @@ export const ProfileSettingsTab: React.FC<ProfileSettingsTabProps> = (
                   id="profileImage"
                   type="file"
                   accept="image/*"
-                  disabled
-                  className="opacity-50 cursor-not-allowed"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      // Validate file type
+                      const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+                      if (!allowedTypes.includes(file.type)) {
+                        toast({
+                          title: "Invalid File Type",
+                          description: "Please select a valid image file (JPEG, PNG, or WebP)",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+
+                      // Validate file size (5MB)
+                      const maxSize = 5 * 1024 * 1024;
+                      if (file.size > maxSize) {
+                        toast({
+                          title: "File Too Large",
+                          description: "Image size must be less than 5MB",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+
+                      // Create preview
+                      const reader = new FileReader();
+                      reader.onloadend = () => {
+                        const base64Image = reader.result as string;
+                        setProfileImage(base64Image);
+                      };
+                      reader.readAsDataURL(file);
+
+                      // Upload to backend using BookingsService
+                      try {
+                        const formData = new FormData();
+                        formData.append("profile_image", file);
+                        const token = await getSecureToken();
+                        const response = await apiClient.put("/users/profile/", formData, {
+                          headers: {
+                            "Content-Type": "multipart/form-data",
+                            ...(token && { Authorization: `Bearer ${token}` }),
+                          },
+                        });
+                        if (response.data) {
+                          toast({
+                            title: "Profile Image Updated",
+                            description: "Your profile image has been updated successfully",
+                          });
+                        }
+                      } catch (error: any) {
+                        console.error("Error uploading profile image:", error);
+                        toast({
+                          title: "Upload Failed",
+                          description: error.message || "Failed to upload profile image. Please try again.",
+                          variant: "destructive",
+                        });
+                      }
+                    }
+                  }}
                 />
               </div>
               <p

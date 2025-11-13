@@ -64,11 +64,11 @@ class EventSerializer(serializers.ModelSerializer):
 
 class AttendeeSerializer(serializers.Serializer):
     """Serializer for attendee information."""
-    customer_id = serializers.UUIDField()
+    customer_id = serializers.CharField()  # Accept as string (UUID will be validated)
     name = serializers.CharField()
     photo = serializers.CharField(allow_null=True, required=False)
     card_id = serializers.CharField()
-    ticket_id = serializers.UUIDField(allow_null=True, required=False)
+    ticket_id = serializers.CharField(allow_null=True, required=False)  # Accept as string
     ticket_status = serializers.CharField()
     ticket_tier = serializers.CharField()
     scan_status = serializers.CharField()
@@ -78,6 +78,7 @@ class AttendeeSerializer(serializers.Serializer):
     labels = serializers.ListField(child=serializers.CharField(), allow_empty=True, required=False)
     children = serializers.ListField(allow_empty=True, required=False)
     customer_events = serializers.ListField(allow_empty=True, required=False)  # All events customer has tickets for
+    part_time_leave = serializers.DictField(allow_null=True, required=False)  # Part-time leave status
 
 
 class ScanCardSerializer(serializers.Serializer):
@@ -88,7 +89,7 @@ class ScanCardSerializer(serializers.Serializer):
 class ScanResultSerializer(serializers.Serializer):
     """Serializer for scan result."""
     card_id = serializers.CharField(max_length=100, required=True)
-    event_id = serializers.UUIDField(required=True)
+    event_id = serializers.CharField(required=True)  # Accept both int and UUID as string
     result = serializers.ChoiceField(
         choices=['valid', 'invalid', 'already_scanned', 'not_found'],
         required=True
@@ -126,8 +127,38 @@ class ScanLogSearchSerializer(serializers.Serializer):
 
 class PartTimeLeaveSerializer(serializers.ModelSerializer):
     """Serializer for part-time leave."""
-    usher_name = serializers.CharField(source='usher.name', read_only=True)
-    event_title = serializers.CharField(source='event.title', read_only=True)
+    usher_name = serializers.SerializerMethodField()
+    event_title = serializers.SerializerMethodField()
+    usher = serializers.SerializerMethodField()
+    event = serializers.SerializerMethodField()
+    
+    def get_usher_name(self, obj):
+        """Safely get usher name."""
+        try:
+            return obj.usher.name if obj.usher and hasattr(obj.usher, 'name') else None
+        except Exception:
+            return None
+    
+    def get_event_title(self, obj):
+        """Safely get event title."""
+        try:
+            return obj.event.title if obj.event and hasattr(obj.event, 'title') else None
+        except Exception:
+            return None
+    
+    def get_usher(self, obj):
+        """Safely get usher ID."""
+        try:
+            return str(obj.usher.id) if obj.usher and hasattr(obj.usher, 'id') else None
+        except Exception:
+            return None
+    
+    def get_event(self, obj):
+        """Safely get event ID."""
+        try:
+            return str(obj.event.id) if obj.event and hasattr(obj.event, 'id') else None
+        except Exception:
+            return None
     
     class Meta:
         model = PartTimeLeave
@@ -135,7 +166,7 @@ class PartTimeLeaveSerializer(serializers.ModelSerializer):
             'id', 'usher', 'usher_name', 'event', 'event_title',
             'leave_time', 'return_time', 'reason', 'created_at'
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'usher', 'event']
 
 
 class ScanReportSerializer(serializers.ModelSerializer):

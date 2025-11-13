@@ -38,7 +38,9 @@ class PartTimeLeave(models.Model):
         ordering = ['-leave_time']
     
     def __str__(self):
-        return f"Leave for {self.usher.username} at {self.event.title}"
+        usher_name = self.usher.name if hasattr(self.usher, 'name') and self.usher.name else str(self.usher.id)
+        event_title = self.event.title if hasattr(self.event, 'title') and self.event.title else str(self.event.id)
+        return f"Leave for {usher_name} at {event_title}"
 
 
 class ScanReport(models.Model):

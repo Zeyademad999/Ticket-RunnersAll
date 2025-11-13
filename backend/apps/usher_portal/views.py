@@ -301,16 +301,17 @@ def usher_scan_attendee_by_card(request, card_id):
     ticket_status = 'invalid'
     ticket_tier = 'standard'
     scan_status = 'not_scanned'
+    event_obj = None  # Store event object for later use
     
     if event_id:
         try:
             event_id_int = int(event_id)
-            event = Event.objects.get(id=event_id_int)
+            event_obj = Event.objects.get(id=event_id_int)
             
             # Look for tickets for this customer and event
             # Check both customer (current owner) and buyer (original purchaser) relationships
             tickets = Ticket.objects.filter(
-                event=event
+                event=event_obj
             ).filter(
                 Q(customer=customer) | Q(buyer=customer)
             ).exclude(
@@ -321,10 +322,24 @@ def usher_scan_attendee_by_card(request, card_id):
                 ticket = tickets.first()
                 
                 # Determine ticket status
-                if ticket.status == 'valid':
+                # Check if ticket was already scanned by looking at CheckinLog
+                try:
+                    existing_logs = CheckinLog.objects.filter(
+                        ticket=ticket,
+                        event=event_obj,
+                        scan_result='success'
+                    ).exists()
+                except Exception as e:
+                    # If CheckinLog check fails, fall back to ticket status
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Error checking CheckinLog: {str(e)}")
+                    existing_logs = False
+                
+                if ticket.status == 'valid' and not existing_logs:
                     ticket_status = 'valid'
                     scan_status = 'not_scanned'
-                elif ticket.status == 'used':
+                elif ticket.status == 'used' or existing_logs:
                     ticket_status = 'valid'  # Still valid, just already scanned
                     scan_status = 'already_scanned'
                 else:
@@ -355,18 +370,51 @@ def usher_scan_attendee_by_card(request, card_id):
         # Get unique events (avoid duplicates)
         seen_events = set()
         for ticket in all_tickets:
-            if ticket.event.id not in seen_events:
+            if ticket.event and ticket.event.id not in seen_events:
                 seen_events.add(ticket.event.id)
                 customer_events.append({
-                    'event_id': ticket.event.id,
-                    'event_title': ticket.event.title,
-                    'ticket_status': ticket.status,
+                    'event_id': str(ticket.event.id),  # Convert to string for JSON serialization
+                    'event_title': ticket.event.title if ticket.event.title else '',
+                    'ticket_status': ticket.status if ticket.status else 'unknown',
                     'ticket_tier': ticket.category.lower() if ticket.category else 'standard'
                 })
                 if len(customer_events) >= 10:  # Limit to 10 most recent
                     break
-    except Exception:
+    except Exception as e:
+        # Log error but don't fail
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Error getting customer events: {str(e)}")
         pass
+    
+    # Check if customer is on part-time leave
+    part_time_leave = None
+    if event_obj and hasattr(request, 'usher') and request.usher:
+        try:
+            # Check for active leave (no return_time) for this customer
+            active_leaves = PartTimeLeave.objects.filter(
+                usher=request.usher,
+                event=event_obj,
+                return_time__isnull=True
+            ).order_by('-leave_time')
+            
+            # Try to match by customer name in reason
+            customer_name = customer.name if customer else None
+            if customer_name:
+                for leave in active_leaves:
+                    if leave.reason and customer_name in leave.reason:
+                        part_time_leave = {
+                            'id': str(leave.id),
+                            'leave_time': leave.leave_time.isoformat() if leave.leave_time else None,
+                            'reason': leave.reason
+                        }
+                        break
+        except (AttributeError, Exception) as e:
+            # Silently fail - part-time leave check is optional
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Error checking part-time leave: {str(e)}")
+            pass
     
     # Get dependents/children
     children = []
@@ -394,50 +442,63 @@ def usher_scan_attendee_by_card(request, card_id):
         pass
     
     # Prepare attendee data
-    attendee_data = {
-        'customer_id': customer.id,  # Keep as UUID, serializer will handle it
-        'name': customer.name if customer.name else '',
-        'photo': photo_url,
-        'card_id': card_id,
-        'ticket_id': ticket.id if ticket and hasattr(ticket, 'id') else None,
-        'ticket_status': ticket_status,
-        'ticket_tier': ticket_tier,
-        'scan_status': scan_status,
-        'emergency_contact': customer.emergency_contact_mobile if hasattr(customer, 'emergency_contact_mobile') and customer.emergency_contact_mobile else None,
-        'emergency_contact_name': customer.emergency_contact_name if hasattr(customer, 'emergency_contact_name') and customer.emergency_contact_name else None,
-        'blood_type': customer.blood_type if hasattr(customer, 'blood_type') and customer.blood_type else None,
-        'labels': [],
-        'children': children,
-        'customer_events': customer_events  # All events customer has tickets for
-    }
-    
-    # Validate and serialize
-    serializer = AttendeeSerializer(data=attendee_data)
-    if serializer.is_valid():
-        return Response(serializer.validated_data, status=status.HTTP_200_OK)
-    else:
-        # If serializer validation fails, return data anyway but log the error
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"AttendeeSerializer validation failed: {serializer.errors}")
-        # Return the data directly, converting UUIDs to strings for JSON serialization
-        response_data = {
-            'customer_id': str(customer.id),
-            'name': attendee_data['name'],
-            'photo': attendee_data['photo'],
-            'card_id': attendee_data['card_id'],
+    try:
+        attendee_data = {
+            'customer_id': str(customer.id),  # Convert UUID to string
+            'name': customer.name if customer.name else '',
+            'photo': photo_url or None,
+            'card_id': card_id,
             'ticket_id': str(ticket.id) if ticket and hasattr(ticket, 'id') else None,
-            'ticket_status': attendee_data['ticket_status'],
-            'ticket_tier': attendee_data['ticket_tier'],
-            'scan_status': attendee_data['scan_status'],
-            'emergency_contact': attendee_data.get('emergency_contact'),
-            'emergency_contact_name': attendee_data.get('emergency_contact_name'),
-            'blood_type': attendee_data.get('blood_type'),
-            'labels': attendee_data['labels'],
-            'children': attendee_data['children'],
-            'customer_events': attendee_data.get('customer_events', [])
+            'ticket_status': ticket_status,
+            'ticket_tier': ticket_tier,
+            'scan_status': scan_status,
+            'emergency_contact': customer.emergency_contact_mobile if hasattr(customer, 'emergency_contact_mobile') and customer.emergency_contact_mobile else None,
+            'emergency_contact_name': customer.emergency_contact_name if hasattr(customer, 'emergency_contact_name') and customer.emergency_contact_name else None,
+            'blood_type': customer.blood_type if hasattr(customer, 'blood_type') and customer.blood_type else None,
+            'labels': [],
+            'children': children,
+            'customer_events': customer_events,  # All events customer has tickets for
+            'part_time_leave': part_time_leave  # Part-time leave status
         }
-        return Response(response_data, status=status.HTTP_200_OK)
+        
+        # Validate and serialize
+        serializer = AttendeeSerializer(data=attendee_data)
+        if serializer.is_valid():
+            return Response(serializer.validated_data, status=status.HTTP_200_OK)
+        else:
+            # If serializer validation fails, return data anyway but log the error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"AttendeeSerializer validation failed: {serializer.errors}")
+            # Return the data directly, ensuring all values are JSON serializable
+            response_data = {
+                'customer_id': str(customer.id),
+                'name': attendee_data['name'],
+                'photo': attendee_data['photo'],
+                'card_id': attendee_data['card_id'],
+                'ticket_id': str(ticket.id) if ticket and hasattr(ticket, 'id') else None,
+                'ticket_status': attendee_data['ticket_status'],
+                'ticket_tier': attendee_data['ticket_tier'],
+                'scan_status': attendee_data['scan_status'],
+                'emergency_contact': attendee_data.get('emergency_contact'),
+                'emergency_contact_name': attendee_data.get('emergency_contact_name'),
+                'blood_type': attendee_data.get('blood_type'),
+                'labels': attendee_data['labels'],
+                'children': attendee_data['children'],
+                'customer_events': attendee_data.get('customer_events', []),
+                'part_time_leave': attendee_data.get('part_time_leave')
+            }
+            return Response(response_data, status=status.HTTP_200_OK)
+    except Exception as e:
+        # Log the full error for debugging
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in usher_scan_attendee_by_card: {str(e)}")
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': {'code': 'INTERNAL_ERROR', 'message': f'An error occurred: {str(e)}'}
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -466,10 +527,22 @@ def usher_scan_result(request):
     
     try:
         card = NFCCard.objects.get(serial_number=card_id)
-        event = Event.objects.get(id=event_id)
-    except (NFCCard.DoesNotExist, Event.DoesNotExist):
+    except NFCCard.DoesNotExist:
         return Response({
-            'error': {'code': 'NOT_FOUND', 'message': 'Card or event not found'}
+            'error': {'code': 'NOT_FOUND', 'message': 'Card not found'}
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    try:
+        # Handle both integer and UUID event IDs
+        try:
+            event_id_int = int(event_id)
+            event = Event.objects.get(id=event_id_int)
+        except (ValueError, TypeError):
+            # Try as UUID
+            event = Event.objects.get(id=event_id)
+    except Event.DoesNotExist:
+        return Response({
+            'error': {'code': 'NOT_FOUND', 'message': 'Event not found'}
         }, status=status.HTTP_404_NOT_FOUND)
     
     if not card.customer:
@@ -479,13 +552,19 @@ def usher_scan_result(request):
     
     customer = card.customer
     
-    # Get ticket
-    ticket = Ticket.objects.filter(customer=customer, event=event).first()
+    # Get ticket - check both customer and buyer relationships
+    ticket = Ticket.objects.filter(
+        event=event
+    ).filter(
+        Q(customer=customer) | Q(buyer=customer)
+    ).exclude(
+        status__in=['refunded', 'banned']
+    ).order_by('-purchase_date').first()
     
     # Update ticket status if valid scan
     if result == 'valid' and ticket:
         ticket.status = 'used'
-        ticket.save()
+        ticket.save(update_fields=['status'])
     
     # Create check-in log
     scan_result_map = {
@@ -495,18 +574,29 @@ def usher_scan_result(request):
         'not_found': 'failed'
     }
     
-    CheckinLog.objects.create(
-        customer=customer,
-        event=event,
-        ticket=ticket,
-        nfc_card=card,
-        scan_result=scan_result_map.get(result, 'failed'),
-        scan_type='nfc',
-        operator=usher.user if usher.user else None,
-        operator_role='usher',
-        timestamp=timezone.now(),
-        notes=notes
-    )
+    try:
+        # Get operator (AdminUser) from usher if available
+        operator = None
+        if hasattr(usher, 'user') and usher.user:
+            operator = usher.user
+        
+        CheckinLog.objects.create(
+            customer=customer,
+            event=event,
+            ticket=ticket,
+            nfc_card=card,
+            scan_result=scan_result_map.get(result, 'failed'),
+            scan_type='nfc',
+            operator=operator,
+            operator_role='usher',
+            timestamp=timezone.now(),
+            notes=notes or ''
+        )
+    except Exception as e:
+        # Log error but don't fail the request
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating check-in log: {str(e)}", exc_info=True)
     
     return Response({
         'message': 'Scan result processed successfully',
@@ -620,8 +710,9 @@ def usher_scan_logs_search(request):
 @authentication_classes([UsherJWTAuthentication])
 def usher_part_time_leave(request):
     """
-    Log part-time leave.
+    Log part-time leave or return from leave.
     POST /api/usher/scan/part-time-leave/
+    Body: { "event_id": 1, "card_id": "card123", "reason": "...", "return": true/false }
     """
     if not hasattr(request, 'usher') or request.usher is None:
         return Response({
@@ -630,27 +721,104 @@ def usher_part_time_leave(request):
     
     usher = request.usher
     event_id = request.data.get('event_id')
-    reason = request.data.get('reason', '')
+    reason = request.data.get('reason') or request.data.get('comment', '')
+    card_id = request.data.get('card_id')  # Optional - for tracking which attendee
+    is_return = request.data.get('return', False)  # If True, mark as return
     
     if not event_id:
         raise ValidationError("event_id is required")
     
     try:
-        event = Event.objects.get(id=event_id)
-    except Event.DoesNotExist:
+        # Handle both integer and UUID event IDs
+        try:
+            event_id_int = int(event_id)
+            event = Event.objects.get(id=event_id_int)
+        except (ValueError, TypeError):
+            # Try as UUID
+            event = Event.objects.get(id=event_id)
+    except (Event.DoesNotExist, ValueError, TypeError):
         return Response({
             'error': {'code': 'NOT_FOUND', 'message': 'Event not found'}
         }, status=status.HTTP_404_NOT_FOUND)
     
-    leave = PartTimeLeave.objects.create(
-        usher=usher,
-        event=event,
-        leave_time=timezone.now(),
-        reason=reason
-    )
+    # If card_id provided, try to get customer info for notes
+    customer_name = None
+    customer = None
+    if card_id:
+        try:
+            card = NFCCard.objects.get(serial_number=card_id.strip())
+            if card.customer:
+                customer = card.customer
+                customer_name = card.customer.name
+                if reason:
+                    reason = f"{customer_name}: {reason}"
+                else:
+                    if is_return:
+                        reason = f"Returned from part-time leave: {customer_name}"
+                    else:
+                        reason = f"Part-time leave for {customer_name}"
+        except NFCCard.DoesNotExist:
+            pass
     
-    serializer = PartTimeLeaveSerializer(leave)
-    return Response(serializer.data, status=status.HTTP_201_CREATED)
+    if is_return and card_id and customer:
+        # Mark the most recent active leave as returned
+        active_leaves = PartTimeLeave.objects.filter(
+            usher=usher,
+            event=event,
+            return_time__isnull=True
+        ).order_by('-leave_time')
+        
+        # Try to find leave for this customer by matching reason
+        leave_to_update = None
+        for leave in active_leaves:
+            if customer_name and customer_name in (leave.reason or ''):
+                leave_to_update = leave
+                break
+        
+        # If no specific match, update the most recent one
+        if not leave_to_update and active_leaves.exists():
+            leave_to_update = active_leaves.first()
+        
+        if leave_to_update:
+            try:
+                leave_to_update.return_time = timezone.now()
+                if reason:
+                    leave_to_update.reason = f"{leave_to_update.reason} - {reason}"
+                leave_to_update.save()
+                serializer = PartTimeLeaveSerializer(leave_to_update)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            except Exception as e:
+                # Log the full error for debugging
+                import logging
+                import traceback
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error updating part-time leave return: {str(e)}")
+                logger.error(traceback.format_exc())
+                return Response({
+                    'error': {'code': 'INTERNAL_ERROR', 'message': f'Failed to update part-time leave: {str(e)}'}
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    # Create new leave record
+    try:
+        leave = PartTimeLeave.objects.create(
+            usher=usher,
+            event=event,
+            leave_time=timezone.now(),
+            reason=reason or 'Part-time leave'
+        )
+        
+        serializer = PartTimeLeaveSerializer(leave)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    except Exception as e:
+        # Log the full error for debugging
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error creating part-time leave: {str(e)}")
+        logger.error(traceback.format_exc())
+        return Response({
+            'error': {'code': 'INTERNAL_ERROR', 'message': f'Failed to create part-time leave: {str(e)}'}
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
@@ -792,6 +960,131 @@ def usher_nfc_status(request):
         'nfc_available': True,  # Browser will check actual NFC support
         'message': 'NFC status check'
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsUsherPortal])
+@authentication_classes([UsherJWTAuthentication])
+def usher_sync_logs(request):
+    """
+    Sync offline scan logs to server.
+    POST /api/usher/sync/logs/
+    Body: { "logs": [...] }
+    """
+    logs = request.data.get('logs', [])
+    if not logs:
+        return Response({
+            'error': {'code': 'VALIDATION_ERROR', 'message': 'logs array is required'}
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    synced_count = 0
+    errors = []
+    
+    for log_data in logs:
+        try:
+            # Create or update checkin log
+            card_id = log_data.get('cardId') or log_data.get('card_id')
+            event_id = log_data.get('eventId') or log_data.get('event_id')
+            result = log_data.get('result') or log_data.get('scan_result', 'Unknown')
+            
+            if not card_id or not event_id:
+                errors.append({'log': log_data, 'error': 'Missing card_id or event_id'})
+                continue
+            
+            # Get ticket if available
+            ticket = None
+            try:
+                card = NFCCard.objects.get(serial_number=card_id.strip())
+                if card.customer:
+                    ticket = Ticket.objects.filter(
+                        customer=card.customer,
+                        event_id=int(event_id)
+                    ).first()
+            except (NFCCard.DoesNotExist, ValueError, Ticket.DoesNotExist):
+                pass
+            
+            # Create checkin log
+            CheckinLog.objects.create(
+                usher=request.usher,
+                event_id=int(event_id),
+                ticket=ticket,
+                customer=card.customer if ticket and hasattr(ticket, 'customer') else None,
+                scan_result=result,
+                scan_time=log_data.get('time') or timezone.now(),
+                notes=log_data.get('notes', '')
+            )
+            synced_count += 1
+        except Exception as e:
+            errors.append({'log': log_data, 'error': str(e)})
+    
+    return Response({
+        'synced': synced_count,
+        'total': len(logs),
+        'errors': errors if errors else None
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsUsherPortal])
+@authentication_classes([UsherJWTAuthentication])
+def usher_sync_status(request):
+    """
+    Get sync status.
+    GET /api/usher/sync/status/
+    """
+    # Get pending logs count (if we had a way to track them)
+    # For now, just return basic status
+    return Response({
+        'sync_enabled': True,
+        'last_sync': None,  # Could track this in a model
+        'pending_logs': 0
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsUsherPortal])
+@authentication_classes([UsherJWTAuthentication])
+def usher_nfc_test(request):
+    """
+    Test NFC connection.
+    GET /api/usher/nfc/test/
+    """
+    return Response({
+        'nfc_test': True,
+        'message': 'NFC test endpoint - actual NFC testing is done on device'
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@authentication_classes([])
+def usher_refresh_token(request):
+    """
+    Refresh JWT token.
+    POST /api/usher/refresh/
+    Body: { "refresh": "refresh_token_string" }
+    """
+    from rest_framework_simplejwt.tokens import RefreshToken
+    from rest_framework_simplejwt.exceptions import TokenError
+    
+    refresh_token = request.data.get('refresh')
+    if not refresh_token:
+        return Response({
+            'error': {'code': 'VALIDATION_ERROR', 'message': 'refresh token is required'}
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        refresh = RefreshToken(refresh_token)
+        access_token = refresh.access_token
+        
+        return Response({
+            'access': str(access_token),
+            'refresh': str(refresh)
+        }, status=status.HTTP_200_OK)
+    except TokenError as e:
+        return Response({
+            'error': {'code': 'TOKEN_ERROR', 'message': str(e)}
+        }, status=status.HTTP_401_UNAUTHORIZED)
 
 
 @api_view(['GET'])

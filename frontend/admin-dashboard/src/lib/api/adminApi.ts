@@ -7,7 +7,8 @@ import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'ax
 
 // Get API base URL from environment variable or use default
 // In production, set VITE_API_BASE_URL in .env file
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+// Use relative URL to work with Vite proxy (works for both localhost and network access)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // Create axios instance
 const adminApi: AxiosInstance = axios.create({
@@ -395,10 +396,18 @@ export const nfcCardsApi = {
   },
 
   /**
-   * Update card
+   * Update card (uses PATCH for partial updates)
    */
   updateCard: async (id: string, data: any) => {
-    const response = await adminApi.put(`/nfc-cards/${id}/`, data);
+    const response = await adminApi.patch(`/nfc-cards/${id}/`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete card
+   */
+  deleteCard: async (id: string) => {
+    const response = await adminApi.delete(`/nfc-cards/${id}/`);
     return response.data;
   },
 

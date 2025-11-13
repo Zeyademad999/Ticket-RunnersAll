@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/Contexts/AuthContext";
+import { ValidationService } from "@/lib/validation";
 import { TicketsService } from "@/lib/api/services/tickets";
 import { PaymentsService } from "@/lib/api/services/payments";
 import { EventsService } from "@/lib/api/services/events";
@@ -183,6 +184,22 @@ const Booking = () => {
         ? "regular" 
         : selectedTier.label; // Use label which matches the TicketCategory name
       
+      // Validate phone numbers before proceeding
+      const invalidTickets = tickets.slice(0, totalTickets).filter((t) => {
+        if (t.isOwnerTicket || t.child) return false; // Skip owner tickets and children
+        if (!t.mobile || !t.mobile.trim()) return true; // Missing mobile
+        return !/^\+?[\d\s\-\(\)]{10,15}$/.test(t.mobile.trim()); // Invalid format
+      });
+
+      if (invalidTickets.length > 0) {
+        toast({
+          title: t("booking.validationError", "Validation Error"),
+          description: t("booking.invalidPhoneNumbers", "Please enter valid phone numbers for all tickets"),
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Prepare ticket details for assignment
       // Map tickets array to ticket_details, ensuring we have details for all tickets
       // Include category and price for each ticket based on ticketType
@@ -912,15 +929,20 @@ const Booking = () => {
                                       <Input
                                         type="tel"
                                         value={ticket.mobile}
-                                        onChange={(e) =>
-                                          updateTicket(
-                                            index,
-                                            "mobile",
-                                            e.target.value
-                                          )
-                                        }
-                                        placeholder={t("booking.mobile")}
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          // Only allow numbers, +, spaces, dashes, and parentheses
+                                          if (/^[\d\s\+\-\(\)]*$/.test(value) || value === "") {
+                                            updateTicket(index, "mobile", value);
+                                          }
+                                        }}
+                                        placeholder="+1234567890"
                                       />
+                                      {ticket.mobile && !/^\+?[\d\s\-\(\)]{10,15}$/.test(ticket.mobile.trim()) && (
+                                        <p className="text-sm text-red-500">
+                                          Please enter a valid phone number (10-15 digits)
+                                        </p>
+                                      )}
                                     </div>
                                   )}
                                 </>

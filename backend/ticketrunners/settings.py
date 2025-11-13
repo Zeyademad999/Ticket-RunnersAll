@@ -206,11 +206,34 @@ SIMPLE_JWT = {
 # CORS Configuration
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:5173,http://localhost:8081,http://localhost:8082,http://localhost:8083,http://localhost:3000,http://192.168.0.103:8083,http://192.168.0.101:8083',
+    default='http://localhost:5173,http://localhost:8081,http://localhost:8082,http://localhost:8083,http://localhost:3000,http://localhost:3001,http://192.168.0.103:8081,http://192.168.0.103:8083,http://192.168.0.101:8081,http://192.168.0.101:8083',
     cast=lambda v: [s.strip() for s in v.split(',')]
 )
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Allow all common HTTP methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Allow common headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # Security Headers
 SECURE_BROWSER_XSS_FILTER = True

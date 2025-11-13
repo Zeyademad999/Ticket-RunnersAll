@@ -39,17 +39,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     // Check if user is already logged in on app start
-    const token = localStorage.getItem("authToken");
+    const accessToken = localStorage.getItem("access_token");
     const merchantData = localStorage.getItem("merchantData");
 
-    if (token && merchantData) {
+    if (accessToken && merchantData) {
       try {
         const parsedMerchant = JSON.parse(merchantData);
         setMerchant(parsedMerchant);
         setIsAuthenticated(true);
       } catch (error) {
         console.error("Error parsing merchant data:", error);
-        localStorage.removeItem("authToken");
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
         localStorage.removeItem("merchantData");
       }
     }
@@ -80,12 +81,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         otp,
       });
       if (response.success && response.data) {
-        localStorage.setItem("authToken", response.data.token);
-        localStorage.setItem(
-          "merchantData",
-          JSON.stringify(response.data.merchant)
-        );
-        setMerchant(response.data.merchant);
+        // Store access and refresh tokens
+        localStorage.setItem("access_token", response.data.access);
+        localStorage.setItem("refresh_token", response.data.refresh);
+        
+        // Transform backend merchant data to frontend format
+        const merchantData: any = response.data.merchant;
+        const transformedMerchant: Merchant = {
+          id: merchantData.id?.toString() || "",
+          name: merchantData.business_name || "",
+          address: merchantData.address || "",
+          gmaps_location: merchantData.gmaps_location || "",
+          mobile_number: merchantData.mobile_number || "",
+          contact_name: merchantData.contact_name || merchantData.owner_name || "",
+          status: merchantData.status || "active",
+          created_at: merchantData.registration_date || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        
+        localStorage.setItem("merchantData", JSON.stringify(transformedMerchant));
+        setMerchant(transformedMerchant);
         setIsAuthenticated(true);
       } else {
         throw new Error(response.message || "OTP verification failed");
@@ -101,7 +116,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
-      localStorage.removeItem("authToken");
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
       localStorage.removeItem("merchantData");
       setMerchant(null);
       setIsAuthenticated(false);

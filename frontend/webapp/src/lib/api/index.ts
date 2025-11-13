@@ -127,7 +127,7 @@ export const apiUtils = {
    * Get current API base URL
    */
   getBaseUrl(): string {
-    return import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+    return import.meta.env.VITE_API_BASE_URL;
   },
 };
 

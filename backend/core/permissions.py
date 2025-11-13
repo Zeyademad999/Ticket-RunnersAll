@@ -67,6 +67,11 @@ class IsOrganizer(permissions.BasePermission):
     """
     
     def has_permission(self, request, view):
+        # First check if user is authenticated (has a user object)
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Then check if organizer is set on request
         return (
             hasattr(request, 'organizer') and
             request.organizer is not None

@@ -253,9 +253,9 @@ export default function TicketDetails() {
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      {/* Only allow selection of buyer's own tickets that can be transferred */}
+                      {/* Allow selection for own tickets or tickets assigned to me */}
                       {ticketItem.status === "valid" && 
-                       !ticketItem.is_assigned_to_other && 
+                       (!ticketItem.is_assigned_to_other || ticketItem.is_assigned_to_me) && 
                        ticketItem.ticket_transfer_enabled !== false && (
                         <input
                           type="checkbox"
@@ -277,8 +277,8 @@ export default function TicketDetails() {
                       )}
                     </div>
 
-                    {/* Only show transfer button for buyer's own tickets (not assigned to others) */}
-                    {ticketItem.status === "valid" && !ticketItem.is_assigned_to_other && (
+                    {/* Show transfer button for own tickets or tickets assigned to me */}
+                    {ticketItem.status === "valid" && (!ticketItem.is_assigned_to_other || ticketItem.is_assigned_to_me) && (
                       <>
                         {ticketItem.ticket_transfer_enabled === false && (
                           <Badge variant="outline" className="text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-300 dark:border-red-700">
@@ -315,8 +315,8 @@ export default function TicketDetails() {
                       </div>
                     )}
                     
-                    {/* Show assigned person name if ticket was assigned to someone else (read-only) */}
-                    {ticketItem.is_assigned_to_other && ticketItem.assigned_name && (
+                    {/* Show assigned person name if ticket was assigned to someone else (read-only for buyer) */}
+                    {ticketItem.is_assigned_to_other && ticketItem.assigned_name && !ticketItem.is_assigned_to_me && (
                       <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
                         <User className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                         <div className="flex-1">
@@ -334,6 +334,29 @@ export default function TicketDetails() {
                         </div>
                         <Badge variant="outline" className="text-xs bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700">
                           {t("ticketDetails.tickets.readOnly", "Read Only")}
+                        </Badge>
+                      </div>
+                    )}
+                    
+                    {/* Show assigned info if ticket was assigned to me (fully functional) */}
+                    {ticketItem.is_assigned_to_me && ticketItem.assigned_name && (
+                      <div className="flex items-center gap-2 text-sm mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+                        <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <div className="flex-1">
+                          <span className="text-xs text-muted-foreground">
+                            {t("ticketDetails.tickets.assignedTo", "Assigned to")}:
+                          </span>
+                          <span className="font-medium text-blue-700 dark:text-blue-300 ml-1">
+                            {ticketItem.assigned_name}
+                          </span>
+                          {ticketItem.assigned_mobile && (
+                            <span className="text-xs text-muted-foreground ml-2">
+                              ({ticketItem.assigned_mobile})
+                            </span>
+                          )}
+                        </div>
+                        <Badge variant="outline" className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
+                          {t("ticketDetails.tickets.myTicket", "My Ticket")}
                         </Badge>
                       </div>
                     )}

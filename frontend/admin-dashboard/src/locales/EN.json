@@ -4200,6 +4200,8 @@
         },
         "actions": {
           "export": "Export",
+          "scanCard": "Scan NFC Card",
+          "addScanned": "Add This Card",
           "assignCard": "Add New Card",
           "addNewCard": "Add New Card",
           "assignBySerial": "Assign by Serial",
@@ -4277,6 +4279,14 @@
           "threeYears": "3 Years",
           "zero": "0"
         },
+        "scan": "Scan NFC Card",
+        "scanning": "Scanning...",
+        "scanHint": "Click the scan button and hold your NFC card near the device",
+        "notSupported": "NFC scanning is only available in Chrome or Edge on Android devices",
+        "manualEntryAvailable": "You can manually enter the serial number below, or start the NFC Bridge Server for browser scanning (see nfc-bridge-server/README.md)",
+        "readerConnected": "Reader Ready",
+        "readerDisconnected": "Reader Offline",
+        "autoAdd": "Auto-Add Cards",
         "toast": {
           "cardDeleted": "Card deleted",
           "cardDeletedDesc": "NFC card has been successfully deleted",
@@ -4297,6 +4307,9 @@
           "assignCard": "Assign card",
           "assignCardDesc": "Card assignment dialog opened successfully",
           "copyKey": "Key copied",
+          "cardScanned": "Card scanned successfully",
+          "cardAutoAdded": "Card Auto-Added",
+          "cardExists": "Card Already Exists",
           "copyKeyDesc": "Card key has been copied to clipboard",
           "saveCardChanges": "Card updated",
           "saveCardChangesDesc": "Card information has been successfully updated",

@@ -62,6 +62,7 @@ import {
   CalendarX,
   AlertCircle,
   RefreshCw,
+  Scan,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { format, parseISO, isAfter } from "date-fns";
@@ -72,6 +73,7 @@ import { ExportDialog } from "@/components/ui/export-dialog";
 import { commonColumns } from "@/lib/exportUtils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { nfcCardsApi, customersApi } from "@/lib/api/adminApi";
+import { useWebNFC } from "@/hooks/useWebNFC";
 
 type NFCCard = {
   id: string;
@@ -110,6 +112,28 @@ const NFCCardManagement: React.FC = () => {
   const [isAddByRangeDialogOpen, setIsAddByRangeDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [cardsPerPage, setCardsPerPage] = useState(10);
+
+  // Web NFC hook
+  const { 
+    isScanning, 
+    isSupported, 
+    error: nfcError, 
+    scanCard, 
+    stopScanning,
+    isConnected,
+    bridgeAvailable,
+    onCardScanned
+  } = useWebNFC();
+
+  // State for scanned card
+  const [scannedCardUID, setScannedCardUID] = useState<string>("");
+  const [autoAddEnabled, setAutoAddEnabled] = useState(true); // Auto-add enabled by default
+  const [lastScannedCardId, setLastScannedCardId] = useState<string | null>(null); // Track last auto-added card
+  const [lastScannedCardUID, setLastScannedCardUID] = useState<string | null>(null); // Track last scanned UID as fallback
+  const [isAssignScannedCardDialogOpen, setIsAssignScannedCardDialogOpen] = useState(false);
+  const [assignScannedCardForm, setAssignScannedCardForm] = useState({
+    phoneNumber: "",
+  });
 
   // Form state for dialogs
   const [newCardForm, setNewCardForm] = useState({
@@ -590,6 +614,208 @@ const NFCCardManagement: React.FC = () => {
     },
   });
 
+  // Auto-add cards when scanned (if auto-add is enabled)
+  useEffect(() => {
+    if (!onCardScanned) {
+      console.log('⚠️  onCardScanned is not available');
+      return;
+    }
+
+    console.log('✅ Auto-add handler registered. Auto-add enabled:', autoAddEnabled);
+
+    const handleAutoAdd = async (uid: string) => {
+      console.log('🎫 Card scanned received:', uid);
+      console.log('   Auto-add enabled:', autoAddEnabled);
+      
+      if (!autoAddEnabled) {
+        setScannedCardUID(uid);
+        toast({
+          title: t("admin.tickets.nfc.toast.cardScanned"),
+          description: `Card scanned: ${uid}. Auto-add is disabled.`,
+        });
+        return;
+      }
+      
+      console.log('   Checking if card exists...');
+
+      // Check if card already exists
+      try {
+        const existingCards = await nfcCardsApi.getCards({ search: uid, page_size: 1 });
+        if (existingCards.results && existingCards.results.length > 0) {
+          console.log('   ❌ Card already exists');
+          toast({
+            title: t("admin.tickets.nfc.toast.cardExists"),
+            description: `Card ${uid} already exists in the system`,
+            variant: "destructive",
+          });
+          return;
+        }
+        console.log('   ✅ Card does not exist, proceeding to add...');
+      } catch (error: any) {
+        console.error('   ⚠️  Error checking existing cards:', error);
+        // Continue with adding if check fails
+      }
+
+      // Auto-add the card
+      // Format UID properly (ensure it's a string, uppercase, no spaces)
+      const formattedUID = uid.toString().toUpperCase().trim().replace(/\s+/g, '');
+      
+      const cardData = {
+        serial_number: formattedUID,
+        status: 'active',
+        card_type: 'standard',
+        expiry_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      };
+
+      try {
+        console.log('   📤 Adding card to database...', cardData);
+        const createdCardResponse = await createCardMutation.mutateAsync(cardData);
+        console.log('   ✅ Card successfully added!', createdCardResponse);
+        
+        // Get the created card ID from response or search
+        let cardId: string | null = null;
+        if (createdCardResponse && createdCardResponse.id) {
+          cardId = createdCardResponse.id;
+          console.log('   📋 Card ID from response:', cardId);
+        } else {
+          // If not in response, search for it
+          console.log('   🔍 Card ID not in response, searching...');
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const createdCard = await nfcCardsApi.getCards({ search: formattedUID, page_size: 1 });
+          if (createdCard.results && createdCard.results.length > 0) {
+            cardId = createdCard.results[0].id;
+            console.log('   📋 Card ID from search:', cardId);
+          }
+        }
+        
+        // Store UID as fallback
+        setLastScannedCardUID(formattedUID);
+        
+        if (cardId) {
+          setLastScannedCardId(cardId);
+          console.log('   🔍 Checking if card has customer assigned...');
+          
+          // Check if card has no customer assigned
+          try {
+            const fetchedCard = await nfcCardsApi.getCard(cardId);
+            console.log('   📋 Fetched card data:', {
+              id: fetchedCard.id,
+              customer_id: fetchedCard.customer_id,
+              customer: fetchedCard.customer,
+              hasCustomer: !!(fetchedCard.customer_id || fetchedCard.customer)
+            });
+            
+            if (!fetchedCard.customer_id && !fetchedCard.customer) {
+              console.log('   ✅ No customer assigned, opening assign dialog...');
+              // Use setTimeout to ensure state update happens after render
+              setTimeout(() => {
+                setIsAssignScannedCardDialogOpen(true);
+              }, 100);
+            } else {
+              console.log('   ℹ️  Card already has customer assigned');
+            }
+          } catch (fetchError) {
+            console.error('   ⚠️  Error fetching card:', fetchError);
+            // Still try to show dialog - assume no customer if we can't check
+            console.log('   ✅ Opening assign dialog (assuming no customer)...');
+            setTimeout(() => {
+              setIsAssignScannedCardDialogOpen(true);
+            }, 100);
+          }
+        } else {
+          console.log('   ⚠️  Could not get card ID, but card was created - showing dialog anyway');
+          // Even if we can't get card ID, show dialog since card was just created
+          // We'll search for the card by UID when assigning
+          setTimeout(() => {
+            setIsAssignScannedCardDialogOpen(true);
+          }, 100);
+        }
+        
+        toast({
+          title: t("admin.tickets.nfc.toast.cardAutoAdded"),
+          description: `Card ${uid} has been automatically added to the system`,
+        });
+      } catch (error: any) {
+        console.error('   ❌ Error adding card:', error);
+        
+        // If it's a 500 error, check if card was actually created
+        if (error.response?.status === 500) {
+          console.log('   ⚠️  Server error, checking if card was created...');
+          try {
+            // Wait a bit for the database to commit
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            const existingCards = await nfcCardsApi.getCards({ search: formattedUID, page_size: 1 });
+            if (existingCards.results && existingCards.results.length > 0) {
+              console.log('   ✅ Card was actually created despite error!');
+              const cardId = existingCards.results[0].id;
+              setLastScannedCardId(cardId);
+              setLastScannedCardUID(formattedUID);
+              console.log('   📋 Card ID:', cardId);
+              
+              // Check if card has no customer assigned and show assign dialog
+              try {
+                const fetchedCard = await nfcCardsApi.getCard(cardId);
+                console.log('   📋 Fetched card data:', {
+                  id: fetchedCard.id,
+                  customer_id: fetchedCard.customer_id,
+                  customer: fetchedCard.customer,
+                  hasCustomer: !!(fetchedCard.customer_id || fetchedCard.customer)
+                });
+                
+                if (!fetchedCard.customer_id && !fetchedCard.customer) {
+                  console.log('   ✅ No customer assigned, opening assign dialog...');
+                  setTimeout(() => {
+                    setIsAssignScannedCardDialogOpen(true);
+                  }, 100);
+                } else {
+                  console.log('   ℹ️  Card already has customer assigned');
+                }
+              } catch (fetchError) {
+                console.error('   ⚠️  Error fetching card:', fetchError);
+                // Still show dialog - assume no customer if we can't check
+                console.log('   ✅ Opening assign dialog (assuming no customer)...');
+                setTimeout(() => {
+                  setIsAssignScannedCardDialogOpen(true);
+                }, 100);
+              }
+              
+              // Refresh the list
+              queryClient.invalidateQueries({ queryKey: ['nfcCards'] });
+              toast({
+                title: t("admin.tickets.nfc.toast.cardAutoAdded"),
+                description: `Card ${uid} has been automatically added to the system`,
+              });
+              return; // Success, exit early
+            }
+          } catch (checkError) {
+            console.error('   ⚠️  Error checking if card exists:', checkError);
+          }
+        }
+        
+        const errorMessage = error.response?.data?.error?.message || 
+                           error.response?.data?.message || 
+                           error.response?.data?.serial_number?.[0] ||
+                           error.message || 
+                           "Failed to add card";
+        toast({
+          title: t("common.error"),
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
+    };
+
+    // Subscribe to card scans
+    console.log('📡 Subscribing to card scan events...');
+    const unsubscribe = onCardScanned(handleAutoAdd);
+    console.log('✅ Subscribed to card scan events');
+
+    return () => {
+      console.log('🔌 Unsubscribing from card scan events');
+      if (unsubscribe) unsubscribe();
+    };
+  }, [onCardScanned, autoAddEnabled, createCardMutation, toast, t]);
+
   // Update card mutation
   const updateCardMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
@@ -607,6 +833,27 @@ const NFCCardManagement: React.FC = () => {
       toast({
         title: t("common.error"),
         description: error.response?.data?.error?.message || error.message || t("admin.tickets.nfc.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete card mutation
+  const deleteCardMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await nfcCardsApi.deleteCard(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['nfcCards'] });
+      toast({
+        title: t("admin.tickets.nfc.toast.cardDeleted") || "Card Deleted",
+        description: t("admin.tickets.nfc.toast.cardDeletedDesc") || "Card has been successfully deleted",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.response?.data?.message || error.message || t("admin.tickets.nfc.toast.error"),
         variant: "destructive",
       });
     },
@@ -639,8 +886,8 @@ const NFCCardManagement: React.FC = () => {
   };
 
   const handleDeleteCard = (cardId: string) => {
-    // Note: Backend may not support DELETE, so we deactivate instead
-    updateCardMutation.mutate({ id: cardId, data: { status: 'inactive' } });
+    // Actually delete the card
+    deleteCardMutation.mutate(cardId);
   };
 
   const handleExportCards = () => {
@@ -667,9 +914,18 @@ const NFCCardManagement: React.FC = () => {
   };
 
   const handleAssignCard = () => {
+    if (!newCardForm.startSerialNumber.trim()) {
+      toast({
+        title: t("common.error"),
+        description: t("admin.tickets.nfc.form.enterSerialNumber"),
+        variant: "destructive",
+      });
+      return;
+    }
+
     // Create card with customer assignment
     const cardData = {
-      serial_number: newCardForm.startSerialNumber || `NFC-${Date.now()}`,
+      serial_number: newCardForm.startSerialNumber.trim(),
       customer_id: customerFilter !== 'all' ? customerFilter : null,
       status: 'active',
       card_type: 'standard',
@@ -680,6 +936,83 @@ const NFCCardManagement: React.FC = () => {
     setNewCardForm({ quantity: 1, startSerialNumber: "" });
   };
 
+  // Handle NFC scan (standalone button)
+  const handleStandaloneScan = async () => {
+    if (!isSupported && !bridgeAvailable) {
+      toast({
+        title: t("common.error"),
+        description: "NFC scanning is not available. Please start the NFC Bridge Server (see nfc-bridge-server/README-NODE.md) or use Chrome/Edge on Android.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const result = await scanCard();
+      
+      if (result.success && result.serialNumber) {
+        setScannedCardUID(result.serialNumber);
+        toast({
+          title: t("admin.tickets.nfc.toast.cardScanned"),
+          description: `Card scanned: ${result.serialNumber}. Click "Add New Card" to add it.`,
+        });
+      } else {
+        toast({
+          title: t("common.error"),
+          description: result.error || "Failed to scan NFC card",
+          variant: "destructive",
+        });
+        setScannedCardUID("");
+      }
+    } catch (error: any) {
+      toast({
+        title: t("common.error"),
+        description: error.message || "Failed to scan NFC card",
+        variant: "destructive",
+      });
+      setScannedCardUID("");
+    }
+  };
+
+  // Handle NFC scan (in dialog)
+  const handleNFCScan = async () => {
+    if (!isSupported && !bridgeAvailable) {
+      toast({
+        title: t("common.error"),
+        description: "NFC scanning is not available. Please start the NFC Bridge Server.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const result = await scanCard();
+      
+      if (result.success && result.serialNumber) {
+        setNewCardForm(prev => ({
+          ...prev,
+          startSerialNumber: result.serialNumber || "",
+        }));
+        toast({
+          title: t("admin.tickets.nfc.toast.cardScanned"),
+          description: `Serial number: ${result.serialNumber}`,
+        });
+      } else {
+        toast({
+          title: t("common.error"),
+          description: result.error || "Failed to scan NFC card",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: t("common.error"),
+        description: error.message || "Failed to scan NFC card",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleAssignCardBySerial = () => {
     // Find card by serial number and assign to customer
     // This would require finding the card first, then updating it
@@ -688,6 +1021,98 @@ const NFCCardManagement: React.FC = () => {
       description: t("admin.tickets.nfc.toast.cardAssignedBySerialDesc"),
     });
     setIsAssignBySerialDialogOpen(false);
+  };
+
+  // Handle assigning customer to scanned card
+  const handleAssignScannedCard = async () => {
+    // If we don't have card ID, try to find it by UID
+    let cardId = lastScannedCardId;
+    if (!cardId && lastScannedCardUID) {
+      console.log('   🔍 Card ID not found, searching by UID:', lastScannedCardUID);
+      try {
+        const cards = await nfcCardsApi.getCards({ search: lastScannedCardUID, page_size: 1 });
+        if (cards.results && cards.results.length > 0) {
+          cardId = cards.results[0].id;
+          setLastScannedCardId(cardId);
+          console.log('   ✅ Found card ID:', cardId);
+        }
+      } catch (error) {
+        console.error('   ❌ Error finding card by UID:', error);
+      }
+    }
+    
+    if (!cardId) {
+      toast({
+        title: t("common.error"),
+        description: "Could not find the card. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (!assignScannedCardForm.phoneNumber.trim()) {
+      toast({
+        title: t("common.error"),
+        description: "Please enter a phone number",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      // Search for customer by phone number
+      const customers = await customersApi.getCustomers({ 
+        search: assignScannedCardForm.phoneNumber.trim(),
+        page_size: 10 
+      });
+
+      if (!customers.results || customers.results.length === 0) {
+        toast({
+          title: t("common.error"),
+          description: "Customer not found with this phone number",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Find exact match by phone number
+      const customer = customers.results.find(
+        (c: any) => 
+          (c.phone === assignScannedCardForm.phoneNumber.trim()) ||
+          (c.mobile_number === assignScannedCardForm.phoneNumber.trim())
+      );
+
+      if (!customer) {
+        toast({
+          title: t("common.error"),
+          description: "Customer not found with this phone number",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Assign card to customer
+      await updateCardMutation.mutateAsync({
+        id: lastScannedCardId,
+        data: { customer_id: customer.id }
+      });
+
+      toast({
+        title: "Card Assigned",
+        description: `Card has been assigned to ${customer.name}`,
+      });
+
+      setIsAssignScannedCardDialogOpen(false);
+      setAssignScannedCardForm({ phoneNumber: "" });
+      setLastScannedCardId(null);
+      setLastScannedCardUID(null);
+    } catch (error: any) {
+      toast({
+        title: t("common.error"),
+        description: error.response?.data?.error?.message || error.message || "Failed to assign card",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAddCardsByRange = () => {
@@ -819,15 +1244,71 @@ const NFCCardManagement: React.FC = () => {
               <span className="sm:hidden">Export</span>
             </Button>
           </ExportDialog>
+          {(isSupported || bridgeAvailable) && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
+                <div className="flex items-center gap-1">
+                  <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+                  <span className="text-xs text-blue-700 dark:text-blue-300">
+                    {isConnected ? t("admin.tickets.nfc.readerConnected") : t("admin.tickets.nfc.readerDisconnected")}
+                  </span>
+                </div>
+              </div>
+              <div className={`flex items-center gap-1 px-2 py-1 border rounded-md ${autoAddEnabled ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'}`}>
+                <input
+                  type="checkbox"
+                  id="auto-add-toggle"
+                  checked={autoAddEnabled}
+                  onChange={(e) => setAutoAddEnabled(e.target.checked)}
+                  className="h-3 w-3"
+                />
+                <label htmlFor="auto-add-toggle" className={`text-xs cursor-pointer ${autoAddEnabled ? 'text-green-700 dark:text-green-300 font-medium' : 'text-gray-700 dark:text-gray-300'}`}>
+                  {t("admin.tickets.nfc.autoAdd")} {autoAddEnabled && '✓'}
+                </label>
+              </div>
+            </div>
+          )}
+          {scannedCardUID && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+              <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+              <span className="text-xs sm:text-sm text-green-700 dark:text-green-300 font-mono">
+                {scannedCardUID}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setNewCardForm(prev => ({
+                    ...prev,
+                    startSerialNumber: scannedCardUID,
+                  }));
+                  setIsAssignDialogOpen(true);
+                  setScannedCardUID("");
+                }}
+                className="h-6 px-2 text-xs"
+              >
+                {t("admin.tickets.nfc.actions.addScanned")}
+              </Button>
+            </div>
+          )}
           <Button
-            onClick={() => setIsAssignDialogOpen(true)}
+            onClick={() => {
+              if (scannedCardUID) {
+                setNewCardForm(prev => ({
+                  ...prev,
+                  startSerialNumber: scannedCardUID,
+                }));
+                setScannedCardUID("");
+              }
+              setIsAssignDialogOpen(true);
+            }}
             className="text-xs sm:text-sm"
           >
             <Plus className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 rtl:ml-1 sm:rtl:ml-2 rtl:mr-0" />
             <span className="hidden sm:inline">
               {t("admin.tickets.nfc.actions.assignCard")}
             </span>
-            <span className="sm:hidden">Assign</span>
+            <span className="sm:hidden">Add</span>
           </Button>
           <Button
             variant="outline"
@@ -1015,10 +1496,14 @@ const NFCCardManagement: React.FC = () => {
                     </TableCell>
                     <TableCell>
                       <div className="rtl:text-right">
-                        <p className="font-medium">{card.customerName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {t("admin.tickets.nfc.table.id")}: {card.customerId}
+                        <p className="font-medium">
+                          {card.customerName || t("admin.tickets.nfc.table.unassigned")}
                         </p>
+                        {card.customerId && (
+                          <p className="text-sm text-muted-foreground">
+                            {t("admin.tickets.nfc.table.id")}: {card.customerId}
+                          </p>
+                        )}
                       </div>
                     </TableCell>
 
@@ -1296,7 +1781,13 @@ const NFCCardManagement: React.FC = () => {
       </Dialog>
 
       {/* Add New Card Dialog */}
-      <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
+      <Dialog open={isAssignDialogOpen} onOpenChange={(open) => {
+        setIsAssignDialogOpen(open);
+        if (!open) {
+          stopScanning();
+          setNewCardForm({ quantity: 1, startSerialNumber: "" });
+        }
+      }}>
         <DialogContent className="rtl:text-right ltr:text-left">
           <DialogHeader>
             <DialogTitle className="rtl:text-right ltr:text-left">
@@ -1311,20 +1802,69 @@ const NFCCardManagement: React.FC = () => {
               <label className="text-sm font-medium rtl:text-right">
                 {t("admin.tickets.nfc.form.serialNumber")}
               </label>
-              <Input
-                placeholder={t("admin.tickets.nfc.form.enterSerialNumber")}
-                dir={i18n.language === "ar" ? "rtl" : "ltr"}
-              />
+              <div className="flex gap-2 rtl:flex-row-reverse">
+                <Input
+                  placeholder={t("admin.tickets.nfc.form.enterSerialNumber")}
+                  value={newCardForm.startSerialNumber}
+                  onChange={(e) =>
+                    setNewCardForm((prev) => ({
+                      ...prev,
+                      startSerialNumber: e.target.value,
+                    }))
+                  }
+                  dir={i18n.language === "ar" ? "rtl" : "ltr"}
+                  className="flex-1"
+                />
+                {isSupported && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleNFCScan}
+                    disabled={isScanning}
+                    className="shrink-0"
+                  >
+                    {isScanning ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0 animate-spin" />
+                        {t("admin.tickets.nfc.scanning")}
+                      </>
+                    ) : (
+                      <>
+                        <Scan className="h-4 w-4 mr-2 rtl:ml-2 rtl:mr-0" />
+                        {t("admin.tickets.nfc.scan")}
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+              {isSupported ? (
+                <p className="text-xs text-muted-foreground mt-1 rtl:text-right">
+                  {t("admin.tickets.nfc.scanHint")}
+                </p>
+              ) : (
+                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 rtl:text-right">
+                  💡 {t("admin.tickets.nfc.manualEntryAvailable")}
+                </p>
+              )}
+              {nfcError && (
+                <p className="text-xs text-red-600 mt-1 rtl:text-right">
+                  {nfcError}
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter className="rtl:flex-row-reverse">
             <Button
               variant="outline"
-              onClick={() => setIsAssignDialogOpen(false)}
+              onClick={() => {
+                stopScanning();
+                setIsAssignDialogOpen(false);
+                setNewCardForm({ quantity: 1, startSerialNumber: "" });
+              }}
             >
               {t("admin.tickets.nfc.dialogs.cancel")}
             </Button>
-            <Button onClick={handleAssignCard}>
+            <Button onClick={handleAssignCard} disabled={isScanning}>
               {t("admin.tickets.nfc.dialogs.addNewCardButton")}
             </Button>
           </DialogFooter>
@@ -1482,6 +2022,67 @@ const NFCCardManagement: React.FC = () => {
             </Button>
             <Button onClick={handleAddCardsByRange}>
               {t("admin.tickets.nfc.dialogs.addByRangeButton")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Customer to Scanned Card Dialog */}
+      <Dialog
+        open={isAssignScannedCardDialogOpen}
+        onOpenChange={(open) => {
+          setIsAssignScannedCardDialogOpen(open);
+          if (!open) {
+            setAssignScannedCardForm({ phoneNumber: "" });
+            setLastScannedCardId(null);
+            setLastScannedCardUID(null);
+          }
+        }}
+      >
+        <DialogContent className="rtl:text-right ltr:text-left">
+          <DialogHeader>
+            <DialogTitle className="rtl:text-right ltr:text-left">
+              Assign Customer to Card
+            </DialogTitle>
+            <DialogDescription className="rtl:text-right ltr:text-left">
+              Enter the customer's phone number to assign this card
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium rtl:text-right">
+                Phone Number
+              </label>
+              <Input
+                placeholder="Enter customer phone number"
+                value={assignScannedCardForm.phoneNumber}
+                onChange={(e) =>
+                  setAssignScannedCardForm((prev) => ({
+                    ...prev,
+                    phoneNumber: e.target.value,
+                  }))
+                }
+                dir={i18n.language === "ar" ? "rtl" : "ltr"}
+              />
+              <p className="text-xs text-muted-foreground mt-1 rtl:text-right">
+                Enter the phone number of the customer to assign this card to
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="rtl:flex-row-reverse">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAssignScannedCardDialogOpen(false);
+                setAssignScannedCardForm({ phoneNumber: "" });
+                setLastScannedCardId(null);
+                setLastScannedCardUID(null);
+              }}
+            >
+              {t("admin.tickets.nfc.dialogs.cancel")}
+            </Button>
+            <Button onClick={handleAssignScannedCard}>
+              Assign Customer
             </Button>
           </DialogFooter>
         </DialogContent>

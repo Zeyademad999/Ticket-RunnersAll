@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Smartphone, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useProfile } from "@/contexts/ProfileContext";
 import { format } from "date-fns";
+import nfcCardBack from "@/assetsTR/Back.png";
+import nfcCardFront from "@/assetsTR/Front.png";
 
 export const ProfileNfcTab = (props: any) => {
   const {
@@ -119,7 +121,7 @@ export const ProfileNfcTab = (props: any) => {
                 <div className="relative mb-4 group w-44 h-auto flex items-center justify-center">
                   <div className="transition-opacity duration-500 ease-in-out group-hover:opacity-0 z-10">
                     <img
-                      src="/public/NFC CARD Back-1.png"
+                      src={nfcCardBack}
                       alt="NFC Card Back"
                       className="shadow-2xl w-44 rounded-lg"
                     />
@@ -157,7 +159,7 @@ export const ProfileNfcTab = (props: any) => {
                   </div>
                   <div className="absolute transition-opacity duration-500 ease-in-out opacity-0 group-hover:opacity-100 z-20 flex items-center justify-center">
                     <img
-                      src="/public/NFC CARD Front -1.png"
+                      src={nfcCardFront}
                       alt="NFC Front"
                       className="shadow-2xl w-44 rounded-lg"
                     />
@@ -170,7 +172,7 @@ export const ProfileNfcTab = (props: any) => {
                     <Loader2 className="h-6 w-6 animate-spin mr-2" />
                     <span>{t("profilepage.nfc.loading")}</span>
                   </div>
-                ) : cardDetails ? (
+                ) : cardDetails && cardDetails.nfc_card && cardDetails.wallet ? (
                   <div className="border border-border rounded-lg p-4">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="font-semibold text-foreground">
@@ -185,7 +187,7 @@ export const ProfileNfcTab = (props: any) => {
                         }
                       >
                         {t(
-                          `profilepage.nfc.status.${cardDetails.nfc_card.card_status.toLowerCase()}`
+                          `profilepage.nfc.status.${cardDetails.nfc_card.card_status?.toLowerCase() || "unknown"}`
                         )}
                       </Badge>
                     </div>
@@ -249,7 +251,7 @@ export const ProfileNfcTab = (props: any) => {
                           }
                         >
                           {t(
-                            `profilepage.nfc.walletStatusOptions.${cardDetails.wallet.wallet_status.toLowerCase()}`
+                            `profilepage.nfc.walletStatusOptions.${cardDetails.wallet.wallet_status?.toLowerCase() || "unknown"}`
                           )}
                         </Badge>
                       </div>

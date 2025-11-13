@@ -140,11 +140,16 @@ export class BookingsService {
     updateData: UpdateProfileRequest
   ): Promise<UpdateProfileResponse> {
     return retryRequest(async () => {
-      const response = await apiClient.patch<UpdateProfileResponse>(
-        `/me/profile`,
+      const response = await apiClient.put<UpdateProfileResponse>(
+        `/users/profile/`,
         updateData
       );
-      return handleApiResponse(response);
+      const data = handleApiResponse(response);
+      // Backend returns full profile data, convert to expected format
+      return {
+        updated: true,
+        field: Object.keys(updateData)[0] || 'profile'
+      };
     });
   }
 

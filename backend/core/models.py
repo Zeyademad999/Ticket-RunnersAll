@@ -52,3 +52,67 @@ class OTP(models.Model):
         """Check if OTP is valid (not used and not expired)."""
         return not self.used and not self.is_expired()
 
+
+class HomePageSection(models.Model):
+    """
+    Model for managing home page sections (Trending Events, Upcoming Events, etc.).
+    Allows admins to configure which events appear in which sections.
+    """
+    SECTION_KEY_CHOICES = [
+        ('trending', 'Trending Events'),
+        ('upcoming', 'Upcoming Events'),
+        ('recommended', 'Recommended Events'),
+        ('featured', 'Featured Event'),
+    ]
+    
+    section_key = models.CharField(
+        max_length=50,
+        choices=SECTION_KEY_CHOICES,
+        unique=True,
+        db_index=True,
+        help_text="Unique identifier for the section"
+    )
+    title = models.CharField(
+        max_length=200,
+        help_text="Section title displayed on the home page"
+    )
+    subtitle = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text="Section subtitle/description"
+    )
+    events = models.ManyToManyField(
+        'events.Event',
+        related_name='home_page_sections',
+        blank=True,
+        help_text="Events to display in this section"
+    )
+    order = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        help_text="Display order on the home page (lower numbers appear first)"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Whether this section is visible on the home page"
+    )
+    max_events = models.PositiveIntegerField(
+        default=10,
+        help_text="Maximum number of events to display in this section"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'home_page_sections'
+        verbose_name = 'Home Page Section'
+        verbose_name_plural = 'Home Page Sections'
+        ordering = ['order', 'section_key']
+        indexes = [
+            models.Index(fields=['section_key', 'is_active']),
+            models.Index(fields=['order', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return f"{self.get_section_key_display()} - {self.title}"

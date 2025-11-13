@@ -4320,6 +4320,8 @@
         },
         "actions": {
           "export": "تصدير",
+          "scanCard": "مسح بطاقة NFC",
+          "addScanned": "إضافة هذه البطاقة",
           "assignCard": "إضافة بطاقة جديدة",
           "addNewCard": "إضافة بطاقة جديدة",
           "assignBySerial": "تعيين بالرقم التسلسلي",
@@ -4397,6 +4399,14 @@
           "threeYears": "3 سنوات",
           "zero": "0"
         },
+        "scan": "مسح بطاقة NFC",
+        "scanning": "جارٍ المسح...",
+        "scanHint": "انقر على زر المسح وأمسك بطاقة NFC بالقرب من الجهاز",
+        "notSupported": "مسح NFC متاح فقط في Chrome أو Edge على أجهزة Android",
+        "manualEntryAvailable": "يمكنك إدخال الرقم التسلسلي يدوياً أدناه، أو بدء خادم NFC Bridge للمسح من المتصفح (راجع nfc-bridge-server/README.md)",
+        "readerConnected": "القارئ جاهز",
+        "readerDisconnected": "القارئ غير متصل",
+        "autoAdd": "إضافة تلقائية",
         "toast": {
           "cardDeleted": "تم حذف البطاقة",
           "cardDeletedDesc": "تم حذف بطاقة NFC بنجاح",
@@ -4418,6 +4428,9 @@
           "assignCardDesc": "تم فتح حوار تعيين البطاقة بنجاح",
           "copyKey": "تم نسخ المفتاح",
           "copyKeyDesc": "تم نسخ مفتاح البطاقة إلى الحافظة",
+          "cardScanned": "تم مسح البطاقة بنجاح",
+          "cardAutoAdded": "تمت إضافة البطاقة تلقائياً",
+          "cardExists": "البطاقة موجودة بالفعل",
           "saveCardChanges": "تم تحديث البطاقة",
           "saveCardChangesDesc": "تم تحديث معلومات البطاقة بنجاح",
           "cardAssigned": "تم تعيين البطاقة",

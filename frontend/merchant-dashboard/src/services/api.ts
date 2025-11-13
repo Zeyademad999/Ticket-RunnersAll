@@ -63,9 +63,11 @@ class ApiService {
         async (error) => {
           const originalRequest = error.config;
           
-          // Don't redirect on 401 during login/verify-otp endpoints - let the component handle the error
+          // Don't redirect on 401 during login/verify-otp/assign-card endpoints - let the component handle the error
           const isAuthEndpoint = originalRequest?.url?.includes('/login/') || 
-                                 originalRequest?.url?.includes('/verify-otp/');
+                                 originalRequest?.url?.includes('/verify-otp/') ||
+                                 originalRequest?.url?.includes('/assign-card/') ||
+                                 originalRequest?.url?.includes('/verify-customer-otp/');
           
           if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
             originalRequest._retry = true;

@@ -8,6 +8,9 @@ import {
   ArrowRight,
   AlertCircle,
   User,
+  Scan,
+  RefreshCw,
+  X,
 } from "lucide-react";
 import { apiService } from "../services/api";
 import { Customer } from "../types";
@@ -15,6 +18,7 @@ import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import { useTranslation } from "react-i18next";
 import { useLanguage } from "../context/LanguageContext";
+import { useWebNFC } from "../hooks/useWebNFC";
 
 type AssignmentStep = "input" | "verification" | "otp" | "success";
 
@@ -28,8 +32,21 @@ const AssignCard: React.FC = () => {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [scannedSerial, setScannedSerial] = useState<string | null>(null);
   const { t } = useTranslation();
   const { isRTL } = useLanguage();
+  
+  // NFC scanning hook
+  const {
+    isScanning,
+    isSupported,
+    error: nfcError,
+    scanCard,
+    stopScanning,
+    isConnected,
+    bridgeAvailable,
+  } = useWebNFC();
 
   const handleInputSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,20 +70,34 @@ const AssignCard: React.FC = () => {
         
         // Fees are paid in person to merchant, no check needed
         // Assign card (this sends OTP to customer automatically)
-        await apiService.assignCard({
-          card_serial: cardSerial,
-          customer_mobile: customerMobile,
-          otp: "",
-          hashed_code: "",
-        });
-        
-        setStep("otp");
-        toast.success("Customer verified! OTP sent to customer mobile.");
+        try {
+          await apiService.assignCard({
+            card_serial: cardSerial,
+            customer_mobile: customerMobile,
+            otp: "",
+            hashed_code: "",
+          });
+          
+          setStep("otp");
+          toast.success("Customer verified! OTP sent to customer mobile.");
+        } catch (assignError: any) {
+          // Handle card assignment errors specifically
+          const errorMessage = assignError?.response?.data?.error?.message || 
+                              assignError?.message || 
+                              "Failed to assign card. Please check if the card is registered and not already assigned.";
+          toast.error(errorMessage, { duration: 5000 });
+          // Don't proceed to OTP step if assignment failed
+          return;
+        }
       } else {
         toast.error("Customer not found or not registered");
       }
     } catch (error: any) {
-      toast.error(error.message || "Failed to verify customer");
+      // Handle customer verification errors
+      const errorMessage = error?.response?.data?.error?.message || 
+                          error?.message || 
+                          "Failed to verify customer";
+      toast.error(errorMessage, { duration: 5000 });
     } finally {
       setIsVerifying(false);
     }
@@ -97,10 +128,16 @@ const AssignCard: React.FC = () => {
         setStep("success");
         toast.success("Card assigned successfully!");
       } else {
-        toast.error("Failed to assign card");
+        const errorMessage = response.message || "Failed to assign card";
+        toast.error(errorMessage, { duration: 5000 });
       }
     } catch (error: any) {
-      toast.error(error.message || "Failed to assign card");
+      // Handle OTP verification errors with better messages
+      const errorMessage = error?.response?.data?.error?.message || 
+                          error?.response?.data?.message ||
+                          error?.message || 
+                          "Failed to assign card. Please check the OTP and try again.";
+      toast.error(errorMessage, { duration: 5000 });
     } finally {
       setIsLoading(false);
     }
@@ -122,6 +159,45 @@ const AssignCard: React.FC = () => {
     setOtp("");
     setHashedCode("");
     setCustomer(null);
+    setScannedSerial(null);
+    setShowScanModal(false);
+  };
+
+  // Handle NFC scan
+  const handleNFCScan = async () => {
+    if (!isSupported && !bridgeAvailable) {
+      toast.error("NFC scanning is not available. Please start the NFC Bridge Server (see nfc-bridge-server/README.md) or use Chrome/Edge on Android.");
+      return;
+    }
+
+    setShowScanModal(true);
+    setScannedSerial(null);
+    stopScanning();
+
+    try {
+      const result = await scanCard();
+      
+      if (result.success && result.serialNumber) {
+        setScannedSerial(result.serialNumber);
+        toast.success("Card scanned successfully!");
+      } else {
+        toast.error(result.error || "Failed to scan NFC card");
+        setShowScanModal(false);
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Failed to scan NFC card");
+      setShowScanModal(false);
+    }
+  };
+
+  // Use scanned serial number
+  const useScannedSerial = () => {
+    if (scannedSerial) {
+      setCardSerial(scannedSerial);
+      setShowScanModal(false);
+      setScannedSerial(null);
+      toast.success("Serial number added to form");
+    }
   };
 
   const renderInputStep = () => (
@@ -149,19 +225,50 @@ const AssignCard: React.FC = () => {
         <div>
           <label
             htmlFor="cardSerial"
-            className="block text-sm font-medium text-gray-700"
+            className="block text-sm font-medium text-gray-700 mb-1"
           >
             {t("assignCard.cardNumber")}
           </label>
-          <input
-            id="cardSerial"
-            type="text"
-            value={cardSerial}
-            onChange={(e) => setCardSerial(e.target.value)}
-            className="input-field mt-1"
-            placeholder="Enter card serial number"
-            required
-          />
+          <div className="flex gap-2">
+            <input
+              id="cardSerial"
+              type="text"
+              value={cardSerial}
+              onChange={(e) => setCardSerial(e.target.value)}
+              className="input-field mt-1 flex-1"
+              placeholder="Enter card serial number"
+              required
+            />
+            {(isSupported || bridgeAvailable) && (
+              <button
+                type="button"
+                onClick={handleNFCScan}
+                disabled={isScanning}
+                className="mt-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                title="Scan NFC Card"
+              >
+                {isScanning ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span className="hidden sm:inline">Scanning...</span>
+                  </>
+                ) : (
+                  <>
+                    <Scan className="h-4 w-4" />
+                    <span className="hidden sm:inline">Scan</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+          {(isSupported || bridgeAvailable) && (
+            <div className="mt-1 flex items-center gap-2">
+              <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+              <span className="text-xs text-gray-500">
+                {isConnected ? "Reader Connected" : "Reader Offline"}
+              </span>
+            </div>
+          )}
         </div>
 
         <div>
@@ -422,6 +529,113 @@ const AssignCard: React.FC = () => {
       {step === "input" && renderInputStep()}
       {step === "otp" && renderOTPStep()}
       {step === "success" && renderSuccessStep()}
+
+      {/* NFC Scan Modal */}
+      {showScanModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Scan NFC Card
+              </h3>
+              <button
+                onClick={() => {
+                  stopScanning();
+                  setShowScanModal(false);
+                  setScannedSerial(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {!scannedSerial ? (
+              <div className="text-center py-8">
+                {isScanning ? (
+                  <>
+                    <div className="mx-auto h-16 w-16 bg-primary-100 rounded-full flex items-center justify-center mb-4">
+                      <RefreshCw className="h-8 w-8 text-primary-600 animate-spin" />
+                    </div>
+                    <p className="text-gray-700 font-medium mb-2">
+                      Scanning for NFC card...
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Place the card on the reader
+                    </p>
+                    <button
+                      onClick={() => {
+                        stopScanning();
+                        setShowScanModal(false);
+                      }}
+                      className="mt-4 px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="mx-auto h-16 w-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <Scan className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <p className="text-gray-700 font-medium mb-2">
+                      Ready to scan
+                    </p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      Click the button below to start scanning
+                    </p>
+                    <button
+                      onClick={handleNFCScan}
+                      className="btn-primary"
+                    >
+                      Start Scanning
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <div className="mx-auto h-16 w-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                  <CheckCircle className="h-8 w-8 text-green-600" />
+                </div>
+                <p className="text-gray-700 font-medium mb-2">
+                  Card Scanned Successfully!
+                </p>
+                <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                  <p className="text-xs text-gray-500 mb-1">Serial Number:</p>
+                  <p className="text-lg font-mono font-semibold text-gray-900">
+                    {scannedSerial}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      stopScanning();
+                      setShowScanModal(false);
+                      setScannedSerial(null);
+                    }}
+                    className="btn-secondary flex-1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={useScannedSerial}
+                    className="btn-primary flex-1"
+                  >
+                    Use This Serial
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {nfcError && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800">{nfcError}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
