@@ -51,7 +51,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'email', 'phone', 'mobile_number', 'status',
             'total_bookings', 'total_spent', 'attended_events', 'is_recurrent',
-            'registration_date'
+            'registration_date', 'emergency_contact_name', 'emergency_contact_mobile',
+            'blood_type', 'profile_image'
         ]
         read_only_fields = ['id', 'total_bookings', 'total_spent', 'attended_events', 'registration_date']
 

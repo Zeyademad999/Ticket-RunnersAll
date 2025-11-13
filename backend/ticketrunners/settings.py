@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'apps.webapp',
     'apps.organizer_portal',
     'apps.merchant_portal',
+    'apps.usher_portal',
 ]
 
 MIDDLEWARE = [

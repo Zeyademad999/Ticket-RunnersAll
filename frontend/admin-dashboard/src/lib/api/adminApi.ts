@@ -449,6 +449,22 @@ export const ushersApi = {
     const response = await adminApi.delete(`/ushers/${id}/`);
     return response.data;
   },
+
+  /**
+   * Create EVS credentials for usher
+   */
+  createCredentials: async (id: string, data: { username: string; password: string; event_ids?: number[] }) => {
+    const response = await adminApi.post(`/ushers/${id}/create_credentials/`, data);
+    return response.data;
+  },
+
+  /**
+   * Assign usher to events
+   */
+  assignEvent: async (id: string, data: { event_ids: number[] }) => {
+    const response = await adminApi.post(`/ushers/${id}/assign_event/`, data);
+    return response.data;
+  },
 };
 
 // Merchants API

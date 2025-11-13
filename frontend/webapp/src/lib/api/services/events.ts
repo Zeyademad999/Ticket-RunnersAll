@@ -8,13 +8,10 @@ import {
   ApiResponse,
   PaginatedResponse,
   EventData,
-  FeaturedEvent,
-  EventFilters,
   EventAnalytics,
   EventImage,
   Facility,
   TicketCategory,
-  SearchEventsRequest,
   SearchEventsResponse,
   FilterEventsRequest,
   FilterEventsResponse,
@@ -324,18 +321,6 @@ export class EventsService {
         `/events/${id}`
       );
       return handleApiResponse(response);
-    });
-  }
-
-  /**
-   * Get featured events
-   */
-  static async getFeaturedEvents(): Promise<FeaturedEvent[]> {
-    return retryRequest(async () => {
-      const response = await apiClient.get<ApiResponse<FeaturedEvent[]>>(
-        "/events/featured"
-      );
-      return handleApiResponse(response).data;
     });
   }
 
@@ -696,6 +681,44 @@ export class EventsService {
         `/events/filter?${queryString}`
       );
       return handleApiResponse(response);
+    });
+  }
+
+  /**
+   * Get home page sections with events
+   * GET /api/core/home-page-sections/public_list/
+   */
+  static async getHomePageSections(): Promise<Array<{
+    section_key: string;
+    title: string;
+    subtitle: string;
+    events: Array<{
+      id: number | string;
+      title: string;
+      date?: string;
+      time?: string;
+      location?: string;
+      venue_name?: string;
+      thumbnail_path?: string;
+      image_url?: string;
+      category_name?: string;
+      category?: string;
+      starting_price?: number | string;
+      price?: number;
+    }>;
+    order: number;
+  }>> {
+    return retryRequest(async () => {
+      // Use the core API endpoint (public endpoint, no auth needed)
+      // The endpoint is at /api/core/home-page-sections/public_list/
+      const baseURL = import.meta.env.VITE_API_BASE_URL || "/api";
+      // Ensure we use the correct base URL (remove /v1 if present, add /core)
+      const apiBase = baseURL.replace(/\/v1$/, "");
+      const response = await apiClient.get("/core/home-page-sections/public_list/", {
+        baseURL: apiBase,
+      });
+      const data = handleApiResponse(response);
+      return Array.isArray(data) ? data : [];
     });
   }
 }

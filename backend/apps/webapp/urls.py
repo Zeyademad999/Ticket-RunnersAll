@@ -11,6 +11,7 @@ urlpatterns = [
     path('users/send-email-otp/', views.user_send_email_otp, name='user-send-email-otp'),
     path('users/verify-email-otp/', views.user_verify_email_otp, name='user-verify-email-otp'),
     path('users/complete-registration/', views.user_complete_registration, name='user-complete-registration'),
+    path('users/save-optional-info/', views.user_save_optional_info, name='user-save-optional-info'),
     path('users/login/', views.user_login, name='user-login'),
     path('users/verify-login-otp/', views.user_verify_login_otp, name='user-verify-login-otp'),
     path('users/refresh-token/', views.user_refresh_token, name='user-refresh-token'),

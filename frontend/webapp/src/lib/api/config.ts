@@ -433,8 +433,11 @@ export const handleApiError = (error: any): never => {
     const errorData = error.response.data;
     let errorMessage = "Server error";
     
-    // Extract error message properly
-    if (typeof errorData?.message === "string") {
+    // Extract error message properly - check for custom error format first
+    if (errorData?.error?.message) {
+      // Custom exception format: { error: { code: '...', message: '...' } }
+      errorMessage = errorData.error.message;
+    } else if (typeof errorData?.message === "string") {
       errorMessage = errorData.message;
     } else if (typeof errorData?.message === "object" && errorData.message !== null) {
       // Django serializer errors format: { field_name: [ErrorDetail(...)] }
@@ -451,7 +454,7 @@ export const handleApiError = (error: any): never => {
     } else if (typeof errorData === "object" && errorData !== null) {
       // Handle direct serializer errors format: { field_name: [ErrorDetail(...)] }
       const errorKeys = Object.keys(errorData);
-      if (errorKeys.length > 0 && !errorKeys.includes("code") && !errorKeys.includes("status")) {
+      if (errorKeys.length > 0 && !errorKeys.includes("code") && !errorKeys.includes("status") && !errorKeys.includes("error")) {
         const firstKey = errorKeys[0];
         const firstError = errorData[firstKey];
         if (Array.isArray(firstError) && firstError.length > 0) {

@@ -2841,13 +2841,18 @@
       "status": {
         "active": "نشط",
         "inactive": "غير نشط",
-        "suspended": "معلق"
+        "suspended": "معلق",
+        "onLeave": "في إجازة"
       },
       "roles": {
         "coordinator": "منسق",
         "supervisor": "مشرف",
         "senior": "كبير",
-        "junior": "مبتدئ"
+        "junior": "مبتدئ",
+        "general": "عام",
+        "entry": "الدخول",
+        "exit": "الخروج",
+        "security": "الأمن"
       },
       "performance": {
         "excellent": "ممتاز",
@@ -2862,7 +2867,10 @@
         "assignEvents": "تعيين الفعاليات",
         "deactivateUsher": "إلغاء تفعيل المرشد",
         "reactivateUsher": "إعادة تفعيل المرشد",
-        "deleteUsher": "حذف المرشد"
+        "deleteUsher": "حذف المرشد",
+        "viewDetails": "عرض التفاصيل",
+        "rateAndFeedback": "التقييم والملاحظات",
+        "createCredentials": "إنشاء بيانات اعتماد EVS"
       },
       "form": {
         "fullName": "الاسم الكامل",
@@ -2939,10 +2947,32 @@
         "usherReactivatedDesc": "تم إعادة تفعيل المرشد بنجاح",
         "usherAdded": "تم إضافة المرشد",
         "usherAddedDesc": "تم إضافة المرشد الجديد بنجاح",
+        "credentialsCreated": "تم إنشاء بيانات الاعتماد",
+        "credentialsCreatedDesc": "تم إنشاء بيانات اعتماد EVS بنجاح",
+        "validationError": "خطأ في التحقق",
+        "requiredFields": "يرجى ملء جميع الحقول المطلوبة",
+        "invalidRating": "يجب أن يكون التقييم بين 0 و 5",
+        "ratingUpdated": "تم تحديث التقييم",
+        "ratingUpdatedDesc": "تم تحديث التقييم والملاحظات بنجاح",
         "eventsAssigned": "تم تعيين الفعاليات",
         "eventsAssignedDesc": "تم تحديث تعيينات الفعاليات بنجاح",
         "usherUpdated": "تم تحديث المرشد",
-        "usherUpdatedDesc": "تم تحديث معلومات المرشد بنجاح"
+        "usherUpdatedDesc": "تم تحديث معلومات المرشد بنجاح",
+        "error": "خطأ"
+      },
+      "credentials": {
+        "title": "إنشاء بيانات اعتماد EVS",
+        "subtitle": "إنشاء بيانات تسجيل الدخول لهذا المرشد للوصول إلى تطبيق EVS",
+        "username": "اسم المستخدم",
+        "usernamePlaceholder": "أدخل اسم المستخدم",
+        "password": "كلمة المرور",
+        "passwordPlaceholder": "أدخل كلمة المرور",
+        "passwordHint": "يجب أن تكون كلمة المرور 6 أحرف على الأقل",
+        "assignEvents": "تعيين الفعاليات",
+        "assignEventsHint": "حدد الفعاليات التي سيتم تعيين هذا المرشد لها. إذا لم يتم تحديد أي منها، سيتم الاحتفاظ بالتعيينات الموجودة فقط.",
+        "noEvents": "لا توجد فعاليات متاحة",
+        "cancel": "إلغاء",
+        "create": "إنشاء بيانات الاعتماد"
       },
       "mock": {
         "ahmedHassan": "أحمد حسن",

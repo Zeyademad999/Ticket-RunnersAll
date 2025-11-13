@@ -81,8 +81,104 @@ class UsherViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=201, headers=headers)
     
     @action(detail=True, methods=['post'])
+    def create_credentials(self, request, pk=None):
+        """
+        Create EVS portal credentials for an usher.
+        POST /api/ushers/{id}/create_credentials/
+        Body: { 
+            "username": "usher1", 
+            "password": "password123",
+            "event_ids": [1, 2, 3]  // Optional: assign to events
+        }
+        """
+        usher = self.get_object()
+        
+        username = request.data.get('username')
+        password = request.data.get('password')
+        event_ids = request.data.get('event_ids', [])
+        
+        if not username:
+            raise ValidationError("Username is required")
+        
+        if not password:
+            raise ValidationError("Password is required")
+        
+        if len(password) < 6:
+            raise ValidationError("Password must be at least 6 characters long")
+        
+        # Check if username already exists (for different usher)
+        existing_user = AdminUser.objects.filter(username=username).exclude(id=usher.user.id if usher.user else None).first()
+        if existing_user:
+            raise ValidationError(f"Username '{username}' is already taken by another user")
+        
+        # Create or update AdminUser
+        if usher.user:
+            # Update existing AdminUser
+            admin_user = usher.user
+            admin_user.username = username
+            admin_user.set_password(password)
+            admin_user.role = 'USHER'
+            admin_user.is_active = True
+            admin_user.save()
+        else:
+            # Create new AdminUser
+            admin_user = AdminUser.objects.create_user(
+                username=username,
+                email=usher.email,
+                password=password,
+                role='USHER',
+                is_active=True,
+                is_staff=False,
+            )
+            usher.user = admin_user
+        
+        # Activate usher and save (saves both user link and status)
+        usher.status = 'active'
+        usher.save()
+        
+        # Assign to events if provided
+        if event_ids:
+            from events.models import Event
+            events = Event.objects.filter(id__in=event_ids)
+            if events.count() != len(event_ids):
+                raise ValidationError("Some event IDs are invalid")
+            usher.events.set(events)
+        
+        return Response({
+            'message': 'EVS credentials created successfully',
+            'usher': UsherSerializer(usher).data,
+            'username': username,
+            'assigned_events': [e.id for e in usher.events.all()]
+        }, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'])
     def assign_event(self, request, pk=None):
-        return Response({'message': 'Usher assigned to event'})
+        """
+        Assign usher to one or more events.
+        POST /api/ushers/{id}/assign_event/
+        Body: { "event_ids": [1, 2, 3] }
+        """
+        usher = self.get_object()
+        event_ids = request.data.get('event_ids', [])
+        
+        if not event_ids:
+            raise ValidationError("event_ids is required")
+        
+        from events.models import Event
+        events = Event.objects.filter(id__in=event_ids)
+        
+        if events.count() != len(event_ids):
+            invalid_ids = set(event_ids) - set(events.values_list('id', flat=True))
+            raise ValidationError(f"Invalid event IDs: {list(invalid_ids)}")
+        
+        # Add events to usher (preserves existing assignments)
+        usher.events.add(*events)
+        
+        return Response({
+            'message': f'Usher assigned to {events.count()} event(s)',
+            'usher': UsherSerializer(usher).data,
+            'assigned_events': [e.id for e in usher.events.all()]
+        }, status=status.HTTP_200_OK)
 
 
 class AdminUserViewSet(viewsets.ModelViewSet):

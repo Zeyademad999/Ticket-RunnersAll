@@ -38,7 +38,10 @@ def user_register(request):
     """
     serializer = UserRegistrationSerializer(data=request.data)
     if not serializer.is_valid():
-        raise ValidationError(serializer.errors)
+        raise ValidationError(
+            detail='Invalid input data.',
+            details=serializer.errors
+        )
     
     mobile_number = serializer.validated_data['mobile_number']
     name = serializer.validated_data.get('name', '')
@@ -82,7 +85,10 @@ def user_verify_otp(request):
     """
     serializer = UserOTPSerializer(data=request.data)
     if not serializer.is_valid():
-        raise ValidationError(serializer.errors)
+        raise ValidationError(
+            detail='Invalid input data.',
+            details=serializer.errors
+        )
     
     mobile_number = serializer.validated_data['mobile_number']
     otp_code = serializer.validated_data['otp_code']
@@ -103,6 +109,15 @@ def user_verify_otp(request):
     
     # Mark mobile as verified in cache
     registration_data['mobile_verified'] = True
+    
+    # Store optional info if provided
+    if request.data.get('emergency_contact_name'):
+        registration_data['emergency_contact_name'] = request.data.get('emergency_contact_name')
+    if request.data.get('emergency_contact_mobile'):
+        registration_data['emergency_contact_mobile'] = request.data.get('emergency_contact_mobile')
+    if request.data.get('blood_type'):
+        registration_data['blood_type'] = request.data.get('blood_type')
+    
     cache.set(cache_key, registration_data, timeout=600)  # Reset timeout to 10 minutes
     
     return Response({
@@ -255,13 +270,21 @@ def user_complete_registration(request):
         cache.delete(cache_key)
         raise ValidationError("User with this mobile number already exists")
     
+    # Get optional info from request if provided
+    emergency_contact_name = request.data.get('emergency_contact_name') or registration_data.get('emergency_contact_name')
+    emergency_contact_mobile = request.data.get('emergency_contact_mobile') or registration_data.get('emergency_contact_mobile')
+    blood_type = request.data.get('blood_type') or registration_data.get('blood_type')
+    
     # Create customer
     customer = Customer.objects.create(
         name=registration_data['name'],
         email=registration_data['email'],
         mobile_number=mobile_number,
         phone=mobile_number,
-        status='active'
+        status='active',
+        emergency_contact_name=emergency_contact_name,
+        emergency_contact_mobile=emergency_contact_mobile,
+        blood_type=blood_type
     )
     customer.set_password(password)
     customer.save()
@@ -318,7 +341,10 @@ def user_login(request):
     """
     serializer = UserLoginSerializer(data=request.data)
     if not serializer.is_valid():
-        raise ValidationError(serializer.errors)
+        raise ValidationError(
+            detail='Invalid input data.',
+            details=serializer.errors
+        )
     
     mobile_number = serializer.validated_data['mobile_number']
     password = serializer.validated_data['password']
@@ -326,13 +352,22 @@ def user_login(request):
     try:
         customer = Customer.objects.get(mobile_number=mobile_number)
     except Customer.DoesNotExist:
-        raise AuthenticationError("Invalid mobile number or password")
+        raise AuthenticationError(
+            detail="Invalid mobile number or password",
+            code="INVALID_CREDENTIALS"
+        )
     
     if not customer.check_password(password):
-        raise AuthenticationError("Invalid mobile number or password")
+        raise AuthenticationError(
+            detail="Invalid mobile number or password",
+            code="INVALID_CREDENTIALS"
+        )
     
     if customer.status != 'active':
-        raise AuthenticationError("Your account is not active")
+        raise AuthenticationError(
+            detail="Your account is not active. Please contact support.",
+            code="ACCOUNT_INACTIVE"
+        )
     
     # Create and send OTP
     otp, success = create_and_send_otp(mobile_number, 'login', app_name="TicketRunners")
@@ -357,7 +392,10 @@ def user_verify_login_otp(request):
     """
     serializer = UserOTPSerializer(data=request.data)
     if not serializer.is_valid():
-        raise ValidationError(serializer.errors)
+        raise ValidationError(
+            detail='Invalid input data.',
+            details=serializer.errors
+        )
     
     mobile_number = serializer.validated_data['mobile_number']
     otp_code = serializer.validated_data['otp_code']
@@ -609,7 +647,10 @@ def ticket_book(request):
     """
     serializer = TicketBookingSerializer(data=request.data)
     if not serializer.is_valid():
-        raise ValidationError(serializer.errors)
+        raise ValidationError(
+            detail='Invalid input data.',
+            details=serializer.errors
+        )
     
     # Get customer from request (set by CustomerJWTAuthentication)
     customer = getattr(request, 'customer', None)
@@ -1015,7 +1056,10 @@ def user_dependents(request):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     
-    raise ValidationError(serializer.errors)
+    raise ValidationError(
+        detail='Invalid input data.',
+        details=serializer.errors
+    )
 
 
 @api_view(['GET', 'POST', 'DELETE'])
@@ -1298,6 +1342,47 @@ def user_reset_password(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def user_save_optional_info(request):
+    """
+    Save optional information during signup (before account creation).
+    POST /api/v1/users/save-optional-info/
+    Body: {
+        "signup_id": "mobile_number",
+        "blood_type": "A+",
+        "emergency_contact_name": "John Doe",
+        "emergency_contact_mobile": "01234567890"
+    }
+    """
+    signup_id = request.data.get('signup_id')  # This is mobile_number
+    if not signup_id:
+        raise ValidationError("signup_id is required")
+    
+    # Store in registration cache
+    from django.core.cache import cache
+    cache_key = f"registration_{signup_id}"
+    registration_data = cache.get(cache_key)
+    
+    if not registration_data:
+        raise ValidationError("Registration session expired. Please start again.")
+    
+    # Update optional info in cache
+    if request.data.get('blood_type'):
+        registration_data['blood_type'] = request.data.get('blood_type')
+    if request.data.get('emergency_contact_name'):
+        registration_data['emergency_contact_name'] = request.data.get('emergency_contact_name')
+    if request.data.get('emergency_contact_mobile'):
+        registration_data['emergency_contact_mobile'] = request.data.get('emergency_contact_mobile')
+    
+    cache.set(cache_key, registration_data, timeout=600)  # Reset timeout
+    
+    return Response({
+        'optional_saved': True,
+        'message': 'Optional information saved successfully'
+    }, status=status.HTTP_200_OK)
+
+
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated])
 def user_profile_update(request):
@@ -1323,7 +1408,10 @@ def user_profile_update(request):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-    raise ValidationError(serializer.errors)
+    raise ValidationError(
+        detail='Invalid input data.',
+        details=serializer.errors
+    )
 
 
 @api_view(['GET'])

@@ -22,6 +22,7 @@ urlpatterns = [
     
     # API Routes
     path('api/auth/', include('authentication.urls')),
+    path('api/core/', include('core.urls')),
     path('api/events/', include('events.urls')),
     path('api/tickets/', include('tickets.urls')),
     path('api/customers/', include('customers.urls')),
@@ -50,6 +51,7 @@ urlpatterns = [
     # Portal APIs
     path('api/organizer/', include('apps.organizer_portal.urls')),
     path('api/merchant/', include('apps.merchant_portal.urls')),
+    path('api/usher/', include('apps.usher_portal.urls')),
     path('api/v1/', include('apps.webapp.urls')),
 ]
 

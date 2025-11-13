@@ -60,6 +60,7 @@ import {
   Eye,
   MapPin,
   Tag,
+  Key,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "react-i18next";
@@ -125,6 +126,7 @@ const UsherManagement: React.FC = () => {
   const [isAddUsherDialogOpen, setIsAddUsherDialogOpen] = useState(false);
   const [isRatingDialogOpen, setIsRatingDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [isCreateCredentialsDialogOpen, setIsCreateCredentialsDialogOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [ushersPerPage, setUshersPerPage] = useState(10);
   const [tempAssignedEvents, setTempAssignedEvents] = useState<string[]>([]);
@@ -149,6 +151,11 @@ const UsherManagement: React.FC = () => {
     experience: 0,
   });
   const [selectedEventsForNewUsher, setSelectedEventsForNewUsher] = useState<string[]>([]);
+  const [credentialsForm, setCredentialsForm] = useState({
+    username: "",
+    password: "",
+    event_ids: [] as number[],
+  });
 
   const queryClient = useQueryClient();
 
@@ -340,6 +347,34 @@ const UsherManagement: React.FC = () => {
       toast({
         title: t("common.error"),
         description: error.response?.data?.error?.message || error.message || t("admin.ushers.toast.error"),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create credentials mutation
+  const createCredentialsMutation = useMutation({
+    mutationFn: async (data: { username: string; password: string; event_ids?: number[] }) => {
+      if (!selectedUsher) throw new Error("Usher not selected");
+      return await ushersApi.createCredentials(selectedUsher.id, data);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['ushers'] });
+      toast({
+        title: t("admin.ushers.toast.credentialsCreated") || "Credentials Created",
+        description: t("admin.ushers.toast.credentialsCreatedDesc") || `EVS credentials created successfully. Username: ${data.username}`,
+      });
+      setIsCreateCredentialsDialogOpen(false);
+      setCredentialsForm({ username: "", password: "", event_ids: [] });
+      setSelectedUsher(null);
+    },
+    onError: (error: any) => {
+      toast({
+        title: t("common.error"),
+        description:
+          error?.response?.data?.error?.message ||
+          error?.message ||
+          "Failed to create credentials",
         variant: "destructive",
       });
     },
@@ -545,6 +580,32 @@ const UsherManagement: React.FC = () => {
       });
     }
     setIsAssignEventsDialogOpen(false);
+  };
+
+  const handleCreateCredentials = () => {
+    if (!credentialsForm.username || !credentialsForm.password) {
+      toast({
+        title: t("admin.ushers.toast.validationError") || "Validation Error",
+        description: "Username and password are required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (credentialsForm.password.length < 6) {
+      toast({
+        title: t("admin.ushers.toast.validationError") || "Validation Error",
+        description: "Password must be at least 6 characters long",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    createCredentialsMutation.mutate({
+      username: credentialsForm.username,
+      password: credentialsForm.password,
+      event_ids: credentialsForm.event_ids.length > 0 ? credentialsForm.event_ids : undefined,
+    });
   };
 
   const handleSaveUsherChanges = () => {
@@ -938,6 +999,21 @@ const UsherManagement: React.FC = () => {
                           >
                             <Calendar className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
                             {t("admin.ushers.actions.assignEvents")}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedUsher(usher);
+                              setCredentialsForm({
+                                username: "",
+                                password: "",
+                                event_ids: usher.assignedEventsDetails?.map((e: any) => parseInt(e.id)) || [],
+                              });
+                              setIsCreateCredentialsDialogOpen(true);
+                            }}
+                          >
+                            <Key className="h-4 w-4 rtl:ml-2 ltr:mr-2" />
+                            {t("admin.ushers.actions.createCredentials") || "Create EVS Credentials"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => {
@@ -2118,6 +2194,115 @@ const UsherManagement: React.FC = () => {
                 {t("admin.ushers.actions.editUsher") || "Edit Usher"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Credentials Dialog */}
+      <Dialog open={isCreateCredentialsDialogOpen} onOpenChange={setIsCreateCredentialsDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 rtl:text-right ltr:text-left">
+              <Key className="h-5 w-5" />
+              {t("admin.ushers.credentials.title") || "Create EVS Credentials"}
+            </DialogTitle>
+            <DialogDescription className="rtl:text-right ltr:text-left">
+              {t("admin.ushers.credentials.subtitle") || `Create login credentials for ${selectedUsher?.name || 'this usher'} to access the EVS web app.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                {t("admin.ushers.credentials.username") || "Username"} *
+              </label>
+              <Input
+                type="text"
+                placeholder={t("admin.ushers.credentials.usernamePlaceholder") || "Enter username"}
+                value={credentialsForm.username}
+                onChange={(e) =>
+                  setCredentialsForm({ ...credentialsForm, username: e.target.value })
+                }
+                className="mt-1"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium rtl:text-right ltr:text-left">
+                {t("admin.ushers.credentials.password") || "Password"} *
+              </label>
+              <Input
+                type="password"
+                placeholder={t("admin.ushers.credentials.passwordPlaceholder") || "Enter password"}
+                value={credentialsForm.password}
+                onChange={(e) =>
+                  setCredentialsForm({ ...credentialsForm, password: e.target.value })
+                }
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1 rtl:text-right ltr:text-left">
+                {t("admin.ushers.credentials.passwordHint") || "Password must be at least 6 characters long"}
+              </p>
+            </div>
+            <div>
+              <label className="text-sm font-medium rtl:text-right ltr:text-left mb-2 block">
+                {t("admin.ushers.credentials.assignEvents") || "Assign to Events (Optional)"}
+              </label>
+              <p className="text-xs text-muted-foreground mb-2 rtl:text-right ltr:text-left">
+                {t("admin.ushers.credentials.assignEventsHint") || "Select events this usher will be assigned to. If none selected, only existing assignments will be kept."}
+              </p>
+              <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-2">
+                {events.length === 0 ? (
+                  <p className="text-sm text-muted-foreground rtl:text-right ltr:text-left">
+                    {t("admin.ushers.credentials.noEvents") || "No events available"}
+                  </p>
+                ) : (
+                  events.map((event) => (
+                    <div key={event.id} className="flex items-center space-x-2 rtl:space-x-reverse rtl:flex-row-reverse">
+                      <Checkbox
+                        id={`event-${event.id}`}
+                        checked={credentialsForm.event_ids.includes(parseInt(event.id))}
+                        onCheckedChange={(checked) => {
+                          const eventId = parseInt(event.id);
+                          if (checked) {
+                            setCredentialsForm({
+                              ...credentialsForm,
+                              event_ids: [...credentialsForm.event_ids, eventId],
+                            });
+                          } else {
+                            setCredentialsForm({
+                              ...credentialsForm,
+                              event_ids: credentialsForm.event_ids.filter((id) => id !== eventId),
+                            });
+                          }
+                        }}
+                      />
+                      <label
+                        htmlFor={`event-${event.id}`}
+                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer flex-1"
+                      >
+                        {event.title}
+                      </label>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setIsCreateCredentialsDialogOpen(false);
+              setCredentialsForm({ username: "", password: "", event_ids: [] });
+            }}>
+              {t("admin.ushers.credentials.cancel") || "Cancel"}
+            </Button>
+            <Button
+              onClick={handleCreateCredentials}
+              disabled={createCredentialsMutation.isPending}
+            >
+              {createCredentialsMutation.isPending
+                ? t("common.loading")
+                : t("admin.ushers.credentials.create") || "Create Credentials"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

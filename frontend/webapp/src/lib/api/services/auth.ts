@@ -469,7 +469,7 @@ export class AuthService {
   ): Promise<SaveOptionalInfoResponse> {
     return retryRequest(async () => {
       const response = await apiClient.post<SaveOptionalInfoResponse>(
-        "/signup/optional",
+        "/users/save-optional-info/",
         optionalData
       );
       return handleApiResponse(response);

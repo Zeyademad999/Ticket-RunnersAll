@@ -50,6 +50,10 @@ class Customer(models.Model):
     attended_events = models.PositiveIntegerField(default=0)
     is_recurrent = models.BooleanField(default=False, db_index=True)
     fees_paid = models.BooleanField(default=False, db_index=True, help_text="Whether customer has paid registration fees")
+    emergency_contact_name = models.CharField(max_length=200, blank=True, null=True, help_text="Emergency contact person name")
+    emergency_contact_mobile = models.CharField(max_length=20, blank=True, null=True, help_text="Emergency contact mobile number")
+    blood_type = models.CharField(max_length=10, blank=True, null=True, help_text="Blood type (e.g., A+, B-, O+, AB+)")
+    profile_image = models.ImageField(upload_to='customer_profiles/', blank=True, null=True, help_text="Customer profile image")
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     

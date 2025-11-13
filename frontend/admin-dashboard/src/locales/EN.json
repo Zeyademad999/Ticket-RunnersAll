@@ -2814,13 +2814,18 @@
       "status": {
         "active": "Active",
         "inactive": "Inactive",
-        "suspended": "Suspended"
+        "suspended": "Suspended",
+        "onLeave": "On Leave"
       },
       "roles": {
         "coordinator": "Coordinator",
         "supervisor": "Supervisor",
         "senior": "Senior",
-        "junior": "Junior"
+        "junior": "Junior",
+        "general": "General",
+        "entry": "Entry",
+        "exit": "Exit",
+        "security": "Security"
       },
       "performance": {
         "excellent": "Excellent",
@@ -2835,7 +2840,10 @@
         "assignEvents": "Assign Events",
         "deactivateUsher": "Deactivate Usher",
         "reactivateUsher": "Reactivate Usher",
-        "deleteUsher": "Delete Usher"
+        "deleteUsher": "Delete Usher",
+        "viewDetails": "View Details",
+        "rateAndFeedback": "Rate & Feedback",
+        "createCredentials": "Create EVS Credentials"
       },
       "noUshersFound": "No ushers found",
       "form": {
@@ -2916,7 +2924,29 @@
         "eventsAssigned": "Events Assigned",
         "eventsAssignedDesc": "Event assignments have been updated successfully",
         "usherUpdated": "Usher Updated",
-        "usherUpdatedDesc": "Usher information has been updated successfully"
+        "usherUpdatedDesc": "Usher information has been updated successfully",
+        "credentialsCreated": "Credentials Created",
+        "credentialsCreatedDesc": "EVS credentials have been successfully created",
+        "validationError": "Validation Error",
+        "requiredFields": "Please fill in all required fields",
+        "invalidRating": "Rating must be between 0 and 5",
+        "ratingUpdated": "Rating Updated",
+        "ratingUpdatedDesc": "Rating and feedback have been updated successfully",
+        "error": "Error"
+      },
+      "credentials": {
+        "title": "Create EVS Credentials",
+        "subtitle": "Create login credentials for this usher to access the EVS web app",
+        "username": "Username",
+        "usernamePlaceholder": "Enter username",
+        "password": "Password",
+        "passwordPlaceholder": "Enter password",
+        "passwordHint": "Password must be at least 6 characters long",
+        "assignEvents": "Assign to Events",
+        "assignEventsHint": "Select events this usher will be assigned to. If none selected, only existing assignments will be kept.",
+        "noEvents": "No events available",
+        "cancel": "Cancel",
+        "create": "Create Credentials"
       },
       "mock": {
         "ahmedHassan": "Ahmed Hassan",

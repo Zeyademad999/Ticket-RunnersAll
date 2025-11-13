@@ -11,10 +11,11 @@ class EventCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(Event)
 class EventAdmin(admin.ModelAdmin):
-    list_display = ['title', 'organizer', 'venue', 'date', 'time', 'status', 'total_tickets', 'tickets_sold', 'tickets_available']
+    list_display = ['id', 'title', 'organizer', 'venue', 'date', 'time', 'status', 'total_tickets', 'tickets_sold', 'tickets_available']
     list_filter = ['status', 'category', 'date', 'created_at', 'featured']
     search_fields = ['title', 'description', 'organizer__name', 'venue__name']
     readonly_fields = ['created_at', 'updated_at', 'tickets_sold', 'tickets_available']
+    list_display_links = ['id', 'title']
     
     fieldsets = (
         ('Basic Information', {
